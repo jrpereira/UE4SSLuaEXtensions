@@ -49,7 +49,7 @@ jobs:
         run: |
           git fetch --tags --force
           python tools/build_collection.py --version "$PACKAGE_VERSION" \
-            --events-tag "$EVENTS_TAG" --files-tag "$FILES_TAG" \
+            --tag "$EVENTS_TAG" --tag "$FILES_TAG" \
             --output collection-dist --output-file "$GITHUB_ENV"
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4

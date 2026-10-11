@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "package": "UE4SSLuaEXtensions",
+  "repository": "jrpereira/UE4SSLuaEXtensions",
+  "archive": "UE4SSLuaEXtensions-v{version}.zip",
+  "release_tag": "extensions/v{version}",
+  "nexus_description": {
+    "source": "README.md",
+    "output": "NEXUS.bb"
+  },
+  "not_deployed": [
+    "README.md",
+    "NEXUS.bb",
+    "DEVELOPMENT.md"
+  ],
+  "forbidden_folders": [
+    "tools",
+    "tests"
+  ],
+  "filters": {
+    "drop_sections": [
+      "Internal native contract",
+      "Open points for review"
+    ],
+    "drop_paragraph_prefixes": [
+      "Status: **"
+    ],
+    "drop_lines_containing": [
+      "BUILD.md",
+      "SPEC-REVIEW.md",
+      "(#internal-native-contract)",
+      "(#open-points-for-review)"
+    ]
+  },
+  "extensions": [
+    {
+      "name": "UE4SSLuaEventBridge",
+      "folder": "bridge-events",
+      "mod_folder": "0_ModCore_UE4SSLuaEventBridge",
+      "documents": [
+        {"from": "README.md", "to": "docs/README.md"},
+        {"from": "docs/*.md", "to": "docs/", "except": ["BUILD.md", "SPEC-REVIEW.md"]},
+        {"from": "examples/**/*.lua", "to": "docs/examples/"},
+        {"from": "/LICENSE", "to": "docs/LICENSE"}
+      ]
+    },
+    {
+      "name": "UE4SSLuaFileBridge",
+      "folder": "bridge-files",
+      "mod_folder": "0_ModCore_UE4SSLuaFileBridge",
+      "documents": [
+        {"from": "README.md", "to": "docs/README.md"},
+        {"from": "docs/*.md", "to": "docs/", "except": ["BUILD.md", "SPEC-REVIEW.md"]},
+        {"from": "examples/**/*.lua", "to": "docs/examples/"},
+        {"from": "/LICENSE", "to": "docs/LICENSE"}
+      ]
+    }
+  ]
+}

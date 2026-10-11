@@ -15,14 +15,13 @@ Gives Lua mods file and folder access inside the game's own folders. Each mod ge
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaFileBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-files/README.md]File Bridge README[/url].
 
 [size=4][b]Installation[/b][/size]
-The Nexus download is one ZIP holding both extensions. Extract it into the UE4SS [font=Courier New]Mods[/font] directory, or install it with your mod manager. It adds three folders:
+The Nexus download is one ZIP holding both extensions. Extract it into the UE4SS [font=Courier New]Mods[/font] directory, or install it with your mod manager. It adds one folder for each extension:
 
 [code]Mods/
-├── 0_ModCore_UE4SSLuaEXtensions/
 ├── 0_ModCore_UE4SSLuaEventBridge/
 └── 0_ModCore_UE4SSLuaFileBridge/[/code]
 
-[font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] holds documentation and examples for mod authors. It is not a mod, and you may delete it after reading.
+Each folder's [font=Courier New]docs[/font] subfolder holds the README, developer guide, examples and license for mod authors.
 
 For deterministic startup before the Lua mods that use the extensions, list them first in [font=Courier New]Mods/mods.txt[/font]:
 

@@ -1,10 +1,10 @@
-"""Assemble the combined Nexus package from two published product releases.
+"""Assemble the combined Nexus package from published extension releases.
 
-The package holds the mod folders of UE4SSLuaEventBridge and UE4SSLuaFileBridge,
-copied byte for byte from their release ZIPs after each ZIP, checksum and payload
-manifest has been verified, plus the shared documentation in a folder of its own beside
-them: a top-level README, the LICENSE, and each extension's documentation under
-docs/<ProductName>/. The ZIP has no files at its root, only folders starting with 0_.
+What goes into the package is declared in package-manifest.json. Each extension's mod
+folder is copied byte for byte from its release ZIP after the ZIP, its checksum and its
+payload manifest have been verified, and the documents the manifest lists are added to
+that same folder under docs/. The ZIP holds only folders starting with 0_; the root
+README is not deployed, it is the source of the Nexus description (NEXUS.bb).
 Nothing is built here. It runs in CI so the result has a public hash record.
 """
 import argparse
@@ -23,27 +23,8 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from release_notes import extract_notes
 
-PACKAGE = 'UE4SSLuaEXtensions'
-REPOSITORY = 'jrpereira/UE4SSLuaEXtensions'
-SHARED_FOLDER = '0_ModCore_UE4SSLuaEXtensions'
+ROOT = Path(__file__).resolve().parent.parent
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
-PRODUCT_FOLDERS = ({'folder_in_repo': 'bridge-events', 'product_name': 'UE4SSLuaEventBridge'},
-                  {'folder_in_repo': 'bridge-files', 'product_name': 'UE4SSLuaFileBridge'})
-# Documentation shipped for each extension, relative to its folder in the repository. Only
-# what a mod developer needs to use the extension: the README, the developer guide and API
-# reference, and the examples. Build instructions, maintainer guides, reviews and changelogs
-# (which record development) stay in the repository.
-DOC_FILES = ('README.md',)
-DOC_FOLDER = 'docs'
-DOC_EXCLUDED = ('BUILD.md', 'SPEC-REVIEW.md')
-EXAMPLES_FOLDER = 'examples'
-# Lines pointing at documents that do not ship are dropped from the shipped text.
-DROPPED_REFERENCES = ('BUILD.md', 'SPEC-REVIEW.md', '(#internal-native-contract)', '(#open-points-for-review)')
-# Sections and opening paragraphs that describe the extension's development, not its use.
-DROPPED_SECTIONS = ('Internal native contract', 'Open points for review')
-DROPPED_PARAGRAPHS = ('Status: **',)
-# Development folders never ship in a package, at any depth.
-EXCLUDED_FOLDERS = {'tools', 'tests'}
 LINK = re.compile(r'(\]\()([^)\s]+)(\))')
 
 
@@ -51,20 +32,36 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def verify_product(product, archive, checksum, manifest, commit):
-    """Check one product release; return its mod folder entries as {name: (info, bytes)}."""
-    name = product['product_name']
-    version = product['version']
+def load_manifest(path=ROOT / 'package-manifest.json'):
+    manifest = json.loads(Path(path).read_text(encoding='utf-8'))
+    if manifest.get('schema') != 1:
+        raise ValueError('Unsupported package manifest schema')
+    for key in ('package', 'repository', 'archive', 'release_tag', 'forbidden_folders', 'filters', 'extensions'):
+        if key not in manifest:
+            raise ValueError(f'The package manifest lacks "{key}"')
+    for extension in manifest['extensions']:
+        if extension['mod_folder'] != f'0_ModCore_{extension["name"]}':
+            raise ValueError(f'{extension["name"]}: the mod folder must be 0_ModCore_<name>')
+    return manifest
+
+
+def forbidden(path, manifest):
+    return bool({part.lower() for part in path.split('/')[:-1]} & {f.lower() for f in manifest['forbidden_folders']})
+
+
+def verify_product(product, archive, checksum, manifest_bytes, commit, package):
+    """Check one extension release; return its mod folder entries as {name: (date_time, bytes)}."""
+    name, version = product['product_name'], product['version']
     expected = f'{name}-v{version}.zip'
     digest = sha256(archive)
     if checksum.split()[0].lower() != digest:
         raise ValueError(f'{expected}: checksum does not match the published .sha256')
-    described = json.loads(manifest)
+    described = json.loads(manifest_bytes)
     if described.get('product') != name or described.get('version') != version:
         raise ValueError(f'{expected}: payload manifest names {described.get("product")} {described.get("version")}')
     if described.get('source_commit') != commit:
         raise ValueError(f'{expected}: payload manifest commit {described.get("source_commit")} is not the tag commit {commit}')
-    folder = f'0_ModCore_{name}/'
+    folder = product['mod_folder'] + '/'
     entries = {}
     with zipfile.ZipFile(io.BytesIO(archive)) as z:
         if z.testzip() is not None:
@@ -74,7 +71,7 @@ def verify_product(product, archive, checksum, manifest, commit):
                 continue
             if not info.filename.startswith(folder) or '..' in info.filename.split('/'):
                 raise ValueError(f'{expected}: unexpected entry {info.filename}')
-            if set(part.lower() for part in info.filename.split('/')[:-1]) & EXCLUDED_FOLDERS:
+            if forbidden(info.filename, package):
                 raise ValueError(f'{expected}: contains a tools or tests folder')
             entries[info.filename] = (info.date_time, z.read(info))
     files = {item['path']: item['sha256'] for item in described['files']}
@@ -86,12 +83,59 @@ def verify_product(product, archive, checksum, manifest, commit):
     return entries, digest
 
 
-def drop_references(text):
+def glob_regex(pattern):
+    out = ''
+    index = 0
+    while index < len(pattern):
+        if pattern.startswith('**/', index):
+            out += '(?:.*/)?'
+            index += 3
+        elif pattern[index] == '*':
+            out += '[^/]*'
+            index += 1
+        else:
+            out += re.escape(pattern[index])
+            index += 1
+    return re.compile(out)
+
+
+def plan_documents(extension, files):
+    """Resolve an extension's document rules to {destination in the mod folder: source}.
+
+    A source is relative to the extension's folder in the repository, or starts with / for
+    a path from the repository root. Every rule must match something."""
+    plan = {}
+    for rule in extension['documents']:
+        source = rule['from']
+        if source.startswith('/'):
+            matches = [source] if source[1:] in files['root'] else []
+            names = {source: rule['to']}
+        else:
+            regex = glob_regex(source)
+            literal = source.split('*')[0]
+            prefix = literal[:literal.rfind('/') + 1]
+            matches = sorted(path for path in files['extension'] if regex.fullmatch(path)
+                             and posixpath.basename(path) not in rule.get('except', []))
+            names = {path: rule['to'] + path[len(prefix):] if rule['to'].endswith('/') else rule['to']
+                     for path in matches}
+        if not matches:
+            raise ValueError(f'{extension["name"]}: the document rule for {source} matches nothing')
+        for path in matches:
+            destination = names[path]
+            if destination in plan and plan[destination] != path:
+                raise ValueError(f'{extension["name"]}: {destination} comes from two sources')
+            plan[destination] = path
+    return plan
+
+
+def drop_development_text(text, filters):
     """Remove what concerns the extension's development from a shipped document."""
-    lines = text.splitlines(keepends=True)
+    sections = set(filters['drop_sections'])
+    prefixes = tuple(filters['drop_paragraph_prefixes'])
+    references = filters['drop_lines_containing']
     kept = []
     skipping = None  # 'section' until the next ## heading, 'paragraph' until a blank line
-    for line in lines:
+    for line in text.splitlines(keepends=True):
         heading = re.match(r'^## (.+?)\s*$', line)
         if skipping == 'section' and not heading:
             continue
@@ -100,21 +144,22 @@ def drop_references(text):
                 continue
             skipping = None
         if heading:
-            skipping = 'section' if heading.group(1) in DROPPED_SECTIONS else None
+            skipping = 'section' if heading.group(1) in sections else None
             if skipping:
                 continue
-        if line.startswith(DROPPED_PARAGRAPHS):
+        if prefixes and line.startswith(prefixes):
             skipping = 'paragraph'
             continue
-        if any(name in line for name in DROPPED_REFERENCES):
+        if any(name in line for name in references):
             continue
         kept.append(line)
     return ''.join(kept)
 
 
-def rewrite_links(text, source_path, shipped, repository, tag, product_folder):
-    """Point relative links at shipped documents, or at the tagged source when not shipped."""
-    base = posixpath.dirname(source_path)
+def rewrite_links(text, source, plan_by_source, repository, tag, folder):
+    """Point relative links at the shipped copy of a document, or at the tagged source."""
+    base = posixpath.dirname(source)
+    here = posixpath.dirname(plan_by_source[source])
 
     def replace(match):
         target = match.group(2)
@@ -122,84 +167,75 @@ def rewrite_links(text, source_path, shipped, repository, tag, product_folder):
             return match.group(0)
         path, _, anchor = target.partition('#')
         resolved = posixpath.normpath(posixpath.join(base, path))
-        if resolved in shipped:
-            return match.group(0)
-        url = f'https://github.com/{repository}/blob/{tag}/{posixpath.join(product_folder, resolved)}'
-        return f'{match.group(1)}{url}{"#" + anchor if anchor else ""}{match.group(3)}'
+        suffix = f'#{anchor}' if anchor else ''
+        if resolved in plan_by_source:
+            new = posixpath.relpath(plan_by_source[resolved], here or '.')
+        else:
+            new = f'https://github.com/{repository}/blob/{tag}/{posixpath.join(folder, resolved)}'
+        return f'{match.group(1)}{new}{suffix}{match.group(3)}'
 
     return LINK.sub(replace, text)
 
 
-def product_docs(product, read_file, list_docs):
-    """The documents shipped for one extension, as {path in the ZIP: bytes}."""
-    folder = product['folder_in_repo']
-    wanted = [path for path in DOC_FILES if read_file(f'{folder}/{path}') is not None]
-    wanted += [path for path in list_docs(f'{folder}/{DOC_FOLDER}')
-               if path.endswith('.md') and posixpath.basename(path) not in DOC_EXCLUDED]
-    wanted += [path for path in list_docs(f'{folder}/{EXAMPLES_FOLDER}') if path.endswith('.lua')]
-    wanted = sorted(set(wanted))
-    shipped = set(wanted)
-    docs = {}
-    for path in wanted:
-        data = read_file(f'{folder}/{path}')
-        if path.endswith('.md'):
-            text = rewrite_links(drop_references(data.decode('utf-8')), path, shipped,
-                                 REPOSITORY, product['tag'], folder)
-            data = text.encode('utf-8')
-        docs[f'docs/{product["product_name"]}/{path}'] = data
-    return docs
+def product_documents(extension, tag, manifest, read_file, list_files):
+    """The documents shipped for one extension, as {path inside its mod folder: bytes}."""
+    folder = extension['folder']
+    files = {'extension': [path[len(folder) + 1:] for path in list_files(folder)],
+             'root': set(list_files(''))}
+    plan = plan_documents(extension, files)
+    by_source = {source: destination for destination, source in plan.items()}
+    documents = {}
+    for destination, source in sorted(plan.items()):
+        data = read_file(source[1:] if source.startswith('/') else f'{folder}/{source}')
+        if data is None:
+            raise ValueError(f'{extension["name"]}: {source} is missing at {tag}')
+        if destination.endswith('.md'):
+            text = drop_development_text(data.decode('utf-8'), manifest['filters'])
+            data = rewrite_links(text, source, by_source, manifest['repository'], tag, folder).encode('utf-8')
+        if forbidden(f'{extension["mod_folder"]}/{destination}', manifest):
+            raise ValueError(f'{extension["name"]}: {destination} is inside a tools or tests folder')
+        documents[destination] = data
+    return documents
 
 
-def collection_readme(text, shipped, repository, commit):
-    """The repository README as the shared folder's README: its links to an extension's
-    documentation point at the copy beside it, and any other relative link at the source."""
-    for product in PRODUCT_FOLDERS:
-        text = text.replace(f']({product["folder_in_repo"]}/', f'](docs/{product["product_name"]}/')
-    return rewrite_links(text, 'README.md', shipped, repository, commit, '')
-
-
-def assemble(collection_version, source_commit, products, readme, license_text, output, date_time):
+def assemble(manifest, collection_version, source_commit, products, output, date_time):
     """Write the package ZIP, its .sha256 and .manifest.json; return the ZIP's path."""
     if not VERSION.fullmatch(collection_version):
         raise ValueError('The collection version must look like 1.1.0')
-    archive_name = f'{PACKAGE}-v{collection_version}.zip'
+    archive_name = manifest['archive'].format(version=collection_version)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     target = output / archive_name
     for path in (target, Path(f'{target}.sha256'), Path(f'{target}.manifest.json')):
         if path.exists():
             raise FileExistsError(f'Refusing to overwrite {path}')
-    shipped = {name for product in products for name in product['docs']}
-    members = {f'{SHARED_FOLDER}/README.md': collection_readme(readme, shipped, REPOSITORY, source_commit).encode('utf-8'),
-               f'{SHARED_FOLDER}/LICENSE': license_text.encode('utf-8')}
-    dated = {name: date_time for name in members}
-    for product in products:
-        for name, data in product['docs'].items():
-            members[f'{SHARED_FOLDER}/{name}'] = data
-            dated[f'{SHARED_FOLDER}/{name}'] = date_time
+    members, dated = {}, {}
     for product in products:
         for name, (stamp, data) in product['entries'].items():
+            members[name] = data
+            dated[name] = stamp
+        for destination, data in product['docs'].items():
+            name = f'{product["mod_folder"]}/{destination}'
             if name in members:
                 raise ValueError(f'Duplicate package entry: {name}')
             members[name] = data
-            dated[name] = stamp
+            dated[name] = date_time
     for name in members:
         if not name.startswith('0_') or '/' not in name:
             raise ValueError(f'Every package entry must sit in a folder starting with 0_: {name}')
-        if set(part.lower() for part in name.split('/')[:-1]) & EXCLUDED_FOLDERS:
+        if forbidden(name, manifest):
             raise ValueError(f'The package must not contain tools or tests: {name}')
-    ordered = sorted(members, key=lambda name: (not name.startswith(SHARED_FOLDER + '/'), name))
     with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as z:
-        for name in ordered:
+        for name in sorted(members):
             info = zipfile.ZipInfo(name, dated[name])
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             z.writestr(info, members[name])
     digest = sha256(target.read_bytes())
     Path(f'{target}.sha256').write_text(f'{digest}  {archive_name}\n', encoding='utf-8')
-    manifest = {
+    described = {
         'schema': 1,
-        'package': PACKAGE,
+        'package': manifest['package'],
         'version': collection_version,
         'source_commit': source_commit,
         'products': [{'product': product['product_name'], 'version': product['version'], 'tag': product['tag'],
@@ -207,19 +243,19 @@ def assemble(collection_version, source_commit, products, readme, license_text, 
                       'archive_sha256': product['archive_sha256']} for product in products],
         'files': [{'path': name, 'sha256': sha256(members[name])} for name in sorted(members)],
     }
-    Path(f'{target}.manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    Path(f'{target}.manifest.json').write_text(json.dumps(described, indent=2) + '\n', encoding='utf-8')
     return target
 
 
-def release_notes(collection_version, products, changelogs):
+def release_notes(manifest, collection_version, products, changelogs):
     lines = ['### Changes', '',
-             f'UE4SS Lua Extensions {collection_version} packages these extensions together for Nexus. '
+             f'{manifest["package"]} {collection_version} packages these extensions together for Nexus. '
              'Each is released separately on GitHub.', '']
     for product in products:
         name, version = product['product_name'], product['version']
         lines += [f'#### {name} {version}', '',
-                  f'[GitHub release](https://github.com/{REPOSITORY}/releases/tag/{product["tag"]})', '',
-                  extract_notes(changelogs[product['product_name']], f'v{version}').strip(), '']
+                  f'[GitHub release](https://github.com/{manifest["repository"]}/releases/tag/{product["tag"]})', '',
+                  extract_notes(changelogs[name], f'v{version}').strip(), '']
     return '\n'.join(lines).rstrip() + '\n'
 
 
@@ -230,67 +266,71 @@ def git(*args, binary=False):
     return result.stdout if binary else result.stdout.decode('utf-8').strip()
 
 
-def gh_download(tag, pattern, directory):
-    subprocess.run(['gh', 'release', 'download', tag, '--repo', REPOSITORY, '--pattern', pattern,
-                    '--dir', str(directory), '--clobber'], check=True)
-
-
-def load_product(tag, folder_in_repo, product_name, work):
-    """Download and verify one product release, and read its docs from the tag."""
-    match = re.fullmatch(rf'{re.escape(folder_in_repo)}/v({VERSION.pattern})', tag)
+def load_product(manifest, extension, tag, work):
+    """Download and verify one extension release, and read its documents from the tag."""
+    folder, name = extension['folder'], extension['name']
+    match = re.fullmatch(rf'{re.escape(folder)}/v({VERSION.pattern})', tag)
     if not match:
-        raise ValueError(f'Expected a tag like {folder_in_repo}/v1.0.0, got {tag}')
+        raise ValueError(f'Expected a tag like {folder}/v1.0.0, got {tag}')
     version = match.group(1)
     commit = git('rev-parse', f'refs/tags/{tag}^{{commit}}')
     if not commit:
         raise ValueError(f'Tag {tag} is not in this checkout; fetch tags first')
-    archive_name = f'{product_name}-v{version}.zip'
-    directory = Path(work) / folder_in_repo
+    archive_name = f'{name}-v{version}.zip'
+    directory = Path(work) / folder
     directory.mkdir(parents=True, exist_ok=True)
-    gh_download(tag, f'{archive_name}*', directory)
-    product = {'product_name': product_name, 'version': version, 'tag': tag, 'commit': commit,
-               'archive': archive_name, 'folder_in_repo': folder_in_repo}
+    subprocess.run(['gh', 'release', 'download', tag, '--repo', manifest['repository'],
+                    '--pattern', f'{archive_name}*', '--dir', str(directory), '--clobber'], check=True)
+    product = {'product_name': name, 'version': version, 'tag': tag, 'commit': commit,
+               'archive': archive_name, 'mod_folder': extension['mod_folder']}
     entries, digest = verify_product(
         product, (directory / archive_name).read_bytes(),
         (directory / f'{archive_name}.sha256').read_text(encoding='utf-8'),
-        (directory / f'{archive_name}.manifest.json').read_bytes(), commit)
+        (directory / f'{archive_name}.manifest.json').read_bytes(), commit, manifest)
 
     def read_file(path):
         return git('show', f'{tag}:{path}', binary=True)
 
-    def list_docs(path):
-        listing = git('ls-tree', '-r', '--name-only', tag, f'{path}/')
-        prefix = f'{folder_in_repo}/'
-        return [line[len(prefix):] for line in (listing or '').splitlines()]
+    def list_files(path):
+        """Files under a folder of the tag; with no folder, the files at the repository root."""
+        listing = git('ls-tree', '-r', '--name-only', tag, f'{path}/') if path else git('ls-tree', '--name-only', tag)
+        return (listing or '').splitlines()
 
-    product.update(entries=entries, archive_sha256=digest, docs=product_docs(product, read_file, list_docs),
-                   changelog=read_file(f'{folder_in_repo}/CHANGELOG.md').decode('utf-8'))
+    product.update(entries=entries, archive_sha256=digest,
+                   docs=product_documents(extension, tag, manifest, read_file, list_files),
+                   changelog=read_file(f'{folder}/CHANGELOG.md').decode('utf-8'))
     return product
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', required=True)
-    parser.add_argument('--events-tag', required=True)
-    parser.add_argument('--files-tag', required=True)
+    parser.add_argument('--tag', action='append', required=True,
+                        help='release tag of one extension, such as bridge-events/v1.0.13; give one per extension')
     parser.add_argument('--output', type=Path, default=Path('collection-dist'))
     parser.add_argument('--output-file', type=Path, help='append key=value lines for GitHub Actions')
     args = parser.parse_args()
+    manifest = load_manifest()
+    by_folder = {extension['folder']: extension for extension in manifest['extensions']}
+    chosen = {}
+    for tag in args.tag:
+        folder = tag.split('/')[0]
+        if folder not in by_folder or folder in chosen:
+            parser.error(f'Unexpected or repeated extension tag: {tag}')
+        chosen[folder] = tag
+    if set(chosen) != set(by_folder):
+        parser.error(f'Give one tag for each of: {", ".join(by_folder)}')
     source_commit = git('rev-parse', 'HEAD')
-    stamp = int(git('log', '-1', '--format=%ct', 'HEAD'))
-    date_time = time.gmtime(stamp)[:6]
+    date_time = time.gmtime(int(git('log', '-1', '--format=%ct', 'HEAD')))[:6]
     with tempfile.TemporaryDirectory() as work:
-        products = [load_product(args.events_tag, 'bridge-events', 'UE4SSLuaEventBridge', work),
-                    load_product(args.files_tag, 'bridge-files', 'UE4SSLuaFileBridge', work)]
-        root = Path(__file__).resolve().parent.parent
-        target = assemble(args.version, source_commit, products,
-                          (root / 'README.md').read_text(encoding='utf-8'),
-                          (root / 'LICENSE').read_text(encoding='utf-8'), args.output, date_time)
-        notes = release_notes(args.version, products, {p['product_name']: p['changelog'] for p in products})
+        products = [load_product(manifest, extension, chosen[extension['folder']], work)
+                    for extension in manifest['extensions']]
+        target = assemble(manifest, args.version, source_commit, products, args.output, date_time)
+        notes = release_notes(manifest, args.version, products, {p['product_name']: p['changelog'] for p in products})
         (args.output / 'release-notes.md').write_text(notes, encoding='utf-8')
     if args.output_file:
         with args.output_file.open('a', encoding='utf-8') as handle:
-            handle.write(f'archive={target}\ntag=extensions/v{args.version}\n')
+            handle.write(f'archive={target}\ntag={manifest["release_tag"].format(version=args.version)}\n')
     print(f'{target} {sha256(target.read_bytes())}')
 
 
