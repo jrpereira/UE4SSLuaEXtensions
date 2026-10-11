@@ -10,12 +10,17 @@ local function exists(path)
     return false
 end
 
-local function readVersion()
-    local file = io.open(root .. '/mod.json', 'rb')
+local function read(path)
+    local file = io.open(path, 'rb')
     if not file then return nil end
     local text = file:read('a')
     file:close()
-    return text:match('"version"%s*:%s*"([^"]+)"')
+    return text
+end
+
+local function readVersion()
+    local text = read(root .. '/mod.json')
+    return text and text:match('"version"%s*:%s*"([^"]+)"')
 end
 
 local function ensureCache(cache)
@@ -37,13 +42,17 @@ end
 local ok, why = pcall(function()
     local menu = require('extensions_menu')
     local found = menu.installed(modsDirectory, exists)
+    local absorbing = menu.absorbing(read(root .. '/settings.ini'))
     local cache = root .. '/cache'
     ensureCache(cache)
     local contributions = require('menu_contributions')
-    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion())) do
+    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion(), absorbing)) do
+        local directory = menu.directory(cache, entry.id)
+        ensureCache(directory)
         contributions.publisher(assert(rawget(_G, 'ModRef'), 'ModRef unavailable'),
-            {id = entry.id, directory = cache}):publish(entry.contribution)
+            {id = entry.id, directory = directory}):publish(entry.contribution)
     end
-    print(string.format('[UE4SSLuaEXtensions] menu published for %d extension(s)\n', menu.count(found)))
+    print(string.format('[UE4SSLuaEXtensions] menu published for %d extension(s), %s\n', menu.count(found),
+        absorbing and 'absorbed' or 'listed separately'))
 end)
 if not ok then print('[UE4SSLuaEXtensions] menu unavailable: ' .. tostring(why) .. '\n') end

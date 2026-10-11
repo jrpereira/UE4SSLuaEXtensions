@@ -15,13 +15,20 @@ local M = {}
 M.id = 'UE4SSLuaEXtensions'
 M.name = 'UE4SS Lua Extensions'
 
--- Order here is the order of the rows on the page.
+-- Order here is the order of the rows on the page. contributor publishes the hidden page that
+-- holds the extension's toggle; it must differ from the extension's own id, which its
+-- mod_settings.ini already puts in the menu.
 M.extensions = {
     {id = 'UE4SSLuaEventBridge', folder = '0_ModCore_UE4SSLuaEventBridge', label = 'Events Extension',
-        title = 'UE4SS Lua Event Bridge', slot = 'events', setting = 'EventsLoadTimeVerifications'},
+        title = 'UE4SS Lua Event Bridge', slot = 'events', setting = 'EventsLoadTimeVerifications',
+        contributor = 'UE4SSLuaEXtensions.Events'},
     {id = 'UE4SSLuaFileBridge', folder = '0_ModCore_UE4SSLuaFileBridge', label = 'Files Extension',
-        title = 'UE4SS Lua File Bridge', slot = 'files', setting = 'FilesLoadTimeVerifications'},
+        title = 'UE4SS Lua File Bridge', slot = 'files', setting = 'FilesLoadTimeVerifications',
+        contributor = 'UE4SSLuaEXtensions.Files'},
 }
+
+-- The page's own option, stored in this folder's settings.ini. On by default.
+M.absorb = {section = 'Extensions', key = 'Absorb', default = true}
 
 local HEADING = 'Enable startup library verifications'
 local DESCRIPTION = "Runs the extension's in-game checks when the game loads and writes PASS and FAIL "
@@ -40,6 +47,24 @@ end
 -- The submodule counter shown on the page.
 function M.count(found) return #found end
 
+-- Whether to absorb the extensions, from the text of this folder's settings.ini (nil when
+-- absent). A missing or unreadable value keeps the default.
+function M.absorbing(text)
+    if type(text) ~= 'string' then return M.absorb.default end
+    local section, value
+    for line in text:gmatch('[^\r\n]+') do
+        line = line:match('^%s*(.-)%s*$')
+        local name = line:match('^%[(.-)%]$')
+        if name then section = name:lower()
+        elseif section == M.absorb.section:lower() then
+            local key, raw = line:match('^([^=]-)%s*=%s*(.*)$')
+            if key and key:lower() == M.absorb.key:lower() then value = tonumber(raw) end
+        end
+    end
+    if value == 0 then return false elseif value == 1 then return true end
+    return M.absorb.default
+end
+
 local function block(lines, name, fields)
     lines[#lines + 1] = '[' .. name .. ']'
     for _, pair in ipairs(fields) do lines[#lines + 1] = pair[1] .. '=' .. pair[2] end
@@ -54,16 +79,25 @@ local function display(lines, id, group, label, value, extra)
     block(lines, 'Setting.' .. id, fields)
 end
 
--- The page's own manifest: the counter, then a slot for each installed extension.
-function M.hostManifest(found)
+-- The page's own manifest: the absorb option, the counter, then a slot for each installed
+-- extension while absorbing.
+function M.hostManifest(found, absorbing)
     local lines = {}
     block(lines, 'Mod', {{'Id', M.id}, {'Name', M.name}})
     block(lines, 'Category.Summary', {{'mcHeading', '0'}})
+    block(lines, 'Setting.LEX_Absorb', {{'Id', 'LEX_Absorb'}, {'Type', 'toggle'},
+        {'Label', 'Absorb ModCore Native Extensions into this'},
+        {'Description', 'Lists the installed extensions and their options on this page instead of as '
+            .. 'separate mods. Takes effect on the next launch.'},
+        {'Group', 'Summary'}, {'PresetValues', '0|1'}, {'PresetLabels', 'Off|On'},
+        {'Default', M.absorb.default and '1' or '0'}, {'ConfigFile', 'settings.ini'},
+        {'ConfigSection', M.absorb.section}, {'ConfigKey', M.absorb.key}})
     display(lines, 'LEX_Installed', 'Summary', 'Installed extensions', tostring(M.count(found)))
     if #found == 0 then
         display(lines, 'LEX_None', 'Summary', 'Extensions', 'None installed')
         return table.concat(lines, '\n')
     end
+    if absorbing == false then return table.concat(lines, '\n') end
     block(lines, 'Category.Verifications', {{'mcLabel', HEADING}})
     for _, extension in ipairs(found) do
         display(lines, 'LEX_Pending_' .. extension.slot, 'Verifications', extension.label, 'Not available',
@@ -85,23 +119,29 @@ function M.sourceManifest(extension)
 end
 
 -- What to publish: a list of {id=, contribution=} in publishing order. Slots must belong to a
--- different contributor than the pages that fill them, so each extension publishes as its own
--- contributor and this folder's page as another.
+-- different contributor than the pages that fill them, so each extension's toggle is published
+-- by a contributor of its own and this folder's page by another. Each contributor needs its own
+-- directory: publishers name their files by generation only.
 -- root: this mod's folder. modsDirectory: the folder holding all mods.
-function M.contributions(found, root, modsDirectory, version)
+function M.contributions(found, root, modsDirectory, version, absorbing)
     local out = {{id = M.id, contribution = {pages = {{
-        id = M.id, name = M.name, version = version, manifest = M.hostManifest(found),
+        id = M.id, name = M.name, version = version, manifest = M.hostManifest(found, absorbing),
         configDirectory = root, attach = root:match('([^/\\]+)$'),
     }}}}}
+    if absorbing == false then return out end
     for _, extension in ipairs(found) do
-        out[#out + 1] = {id = extension.id, contribution = {
-            pages = {{id = extension.id, name = extension.title, manifest = M.sourceManifest(extension),
-                configDirectory = modsDirectory .. '/' .. extension.folder, attach = extension.folder,
+        out[#out + 1] = {id = extension.contributor, contribution = {
+            pages = {{id = extension.contributor, name = extension.title, manifest = M.sourceManifest(extension),
+                -- An extension with a mod_settings.ini is listed under its Mod Id, not its folder.
+                configDirectory = modsDirectory .. '/' .. extension.folder, attach = extension.id,
                 visible = false}},
-            rows = {{page = extension.id, slot = M.id .. ':' .. extension.slot, settings = {extension.setting}}},
+            rows = {{page = extension.contributor, slot = M.id .. ':' .. extension.slot, settings = {extension.setting}}},
         }}
     end
     return out
 end
+
+-- The publishing directory of one contributor, inside this folder's cache.
+function M.directory(cache, id) return cache .. '/' .. id end
 
 return M
