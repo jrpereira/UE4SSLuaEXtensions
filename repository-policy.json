@@ -1,6 +1,6 @@
 {
   "allowed_paths": [],
   "vendored": {
-    "tests/support/lifetimes.lua": "UE4SSLuaExtensionBridges"
+    "tests/support/lifetimes.lua": "UE4SSLuaEXtensions"
   }
 }

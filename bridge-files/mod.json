@@ -8,6 +8,6 @@
   ],
   "description": "File and folder access for UE4SS Lua mods through a native C++ bridge, checked against per-mod access environments: atomic writes, append-only logs, streams and file sockets (Tail).",
   "links": {
-    "source": "https://github.com/jrpereira/UE4SSLuaExtensionBridges"
+    "source": "https://github.com/jrpereira/UE4SSLuaEXtensions"
   }
 }

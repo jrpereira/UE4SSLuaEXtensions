@@ -25,7 +25,7 @@ print(files.ReadText("mod/state.json"))[/code]
 
 The bridge prevents mistakes; it isn't a security boundary. Lua mods can still use the standard library directly.
 
-Documentation, examples and source: [url=https://github.com/jrpereira/UE4SSLuaExtensionBridges]GitHub[/url] (folder [font=Courier New]bridge-files/[/font]).
+Documentation, examples and source: [url=https://github.com/jrpereira/UE4SSLuaEXtensions]GitHub[/url] (folder [font=Courier New]bridge-files/[/font]).
 
 [size=4][b]Compatibility[/b][/size]
 Windows x64, Unreal Engine 5.5, UE4SS 3.0.1 Beta #0 at 97b7e501. Works alongside UE4SS Lua Event Bridge.

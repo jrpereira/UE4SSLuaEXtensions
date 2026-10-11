@@ -1,4 +1,4 @@
--- Vendored from UE4SSLuaExtensionBridges (owner). Do not edit copies; change the source and re-vendor.
+-- Vendored from UE4SSLuaEXtensions (owner). Do not edit copies; change the source and re-vendor.
 -- Test double for UE4SSLuaEventBridge object lifetimes (API 6 weak handles). The bridge's
 -- tests/LifecycleIntegrationTests.lua runs the same checks on it and on bridge_api.lua.
 -- alive(object) is the native lifetime; by default the object's IsValid. As in the bridge:

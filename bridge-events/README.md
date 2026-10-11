@@ -25,7 +25,7 @@ them from the product version.
 ## Installation layout
 
 Download the versioned ZIP and checksum from
-[GitHub Releases](https://github.com/jrpereira/UE4SSLuaExtensionBridges/releases).
+[GitHub Releases](https://github.com/jrpereira/UE4SSLuaEXtensions/releases).
 Extract the ZIP into the UE4SS `Mods` directory to produce:
 
 ```text
