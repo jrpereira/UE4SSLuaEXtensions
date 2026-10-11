@@ -97,17 +97,19 @@ class AssembleTests(unittest.TestCase):
         return build.assemble(version, 'c' * 40, [self.events, self.files], readme or self.readme,
                               'MIT\n', directory, STAMP)
 
-    def test_package_holds_both_folders_and_documentation_outside_them(self):
+    def test_package_holds_both_folders_and_shared_documentation_beside_them(self):
         with tempfile.TemporaryDirectory() as directory:
             target = self.build(directory)
             self.assertEqual(target.name, 'UE4SSLuaEXtensions-v1.1.0.zip')
             with zipfile.ZipFile(target) as z:
                 names = z.namelist()
-                self.assertEqual(z.read('README.md').decode(), '# 1.1.0 1.0.13 1.0.1\n')
-                self.assertEqual(z.read('docs/UE4SSLuaFileBridge/README.md'), b'files')
-            folders = {name.split('/')[0] for name in names if '/' in name}
-            self.assertEqual(folders, {'docs', '0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge'})
-            self.assertEqual([n for n in names if '/' not in n], ['LICENSE', 'README.md'])
+                shared = '0_ModCore_UE4SSLuaEXtensions/'
+                self.assertEqual(z.read(shared + 'README.md').decode(), '# 1.1.0 1.0.13 1.0.1\n')
+                self.assertEqual(z.read(shared + 'docs/UE4SSLuaFileBridge/README.md'), b'files')
+            folders = {name.split('/')[0] for name in names}
+            self.assertEqual(folders, {'0_ModCore_UE4SSLuaEXtensions', '0_ModCore_UE4SSLuaEventBridge',
+                                       '0_ModCore_UE4SSLuaFileBridge'})
+            self.assertEqual([n for n in names if '/' not in n], [], 'no files at the ZIP root')
             for folder in ('0_ModCore_UE4SSLuaEventBridge/', '0_ModCore_UE4SSLuaFileBridge/'):
                 self.assertFalse([n for n in names if n.startswith(folder) and n.lower().endswith(('.md', '.bb'))])
 
@@ -129,6 +131,7 @@ class AssembleTests(unittest.TestCase):
             self.assertEqual(manifest['version'], '1.1.0')
             with zipfile.ZipFile(target) as z:
                 self.assertEqual({f['path'] for f in manifest['files']}, set(z.namelist()))
+                self.assertTrue(all(n.startswith('0_') for n in z.namelist()))
 
     def test_output_is_deterministic(self):
         with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:

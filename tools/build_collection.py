@@ -2,8 +2,9 @@
 
 The package holds the mod folders of UE4SSLuaEventBridge and UE4SSLuaFileBridge,
 copied byte for byte from their release ZIPs after each ZIP, checksum and payload
-manifest has been verified, plus documentation outside those folders: a top-level
-README, the LICENSE, and each extension's documentation under docs/<ProductName>/.
+manifest has been verified, plus the shared documentation in a folder of its own beside
+them: a top-level README, the LICENSE, and each extension's documentation under
+docs/<ProductName>/. The ZIP has no files at its root, only folders starting with 0_.
 Nothing is built here. It runs in CI so the result has a public hash record.
 """
 import argparse
@@ -24,6 +25,7 @@ from release_notes import extract_notes
 
 PACKAGE = 'UE4SSLuaEXtensions'
 REPOSITORY = 'jrpereira/UE4SSLuaEXtensions'
+SHARED_FOLDER = '0_ModCore_UE4SSLuaEXtensions'
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
 # Documentation shipped for each extension, relative to its folder in the repository.
 DOC_FILES = ('README.md', 'CHANGELOG.md')
@@ -128,12 +130,13 @@ def assemble(collection_version, source_commit, products, readme, license_text, 
         if path.exists():
             raise FileExistsError(f'Refusing to overwrite {path}')
     versions = {product['product_name']: product['version'] for product in products}
-    members = {'README.md': render_readme(readme, collection_version, versions).encode('utf-8'),
-               'LICENSE': license_text.encode('utf-8')}
+    members = {f'{SHARED_FOLDER}/README.md': render_readme(readme, collection_version, versions).encode('utf-8'),
+               f'{SHARED_FOLDER}/LICENSE': license_text.encode('utf-8')}
     dated = {name: date_time for name in members}
     for product in products:
-        members.update(product['docs'])
-        dated.update({name: date_time for name in product['docs']})
+        for name, data in product['docs'].items():
+            members[f'{SHARED_FOLDER}/{name}'] = data
+            dated[f'{SHARED_FOLDER}/{name}'] = date_time
     for product in products:
         for name, (stamp, data) in product['entries'].items():
             if name in members:
@@ -141,9 +144,11 @@ def assemble(collection_version, source_commit, products, readme, license_text, 
             members[name] = data
             dated[name] = stamp
     for name in members:
+        if not name.startswith('0_') or '/' not in name:
+            raise ValueError(f'Every package entry must sit in a folder starting with 0_: {name}')
         if set(part.lower() for part in name.split('/')[:-1]) & EXCLUDED_FOLDERS:
             raise ValueError(f'The package must not contain tools or tests: {name}')
-    ordered = sorted(members, key=lambda name: (name.startswith('0_ModCore_'), name))
+    ordered = sorted(members, key=lambda name: (not name.startswith(SHARED_FOLDER + '/'), name))
     with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as z:
         for name in ordered:
             info = zipfile.ZipInfo(name, dated[name])

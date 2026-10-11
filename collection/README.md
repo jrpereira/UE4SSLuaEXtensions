@@ -28,7 +28,7 @@ tell that an object has been freed instead of reading it, plus session-owned
 handles, explicit cleanup, binding inspection, dispatch statistics and
 configurable queue budgets.
 
-Documentation: `docs/UE4SSLuaEventBridge/README.md`
+Documentation: `docs/UE4SSLuaEventBridge/README.md`, beside this file
 
 ## UE4SS Lua File Bridge
 
@@ -42,16 +42,18 @@ Documentation: `docs/UE4SSLuaFileBridge/README.md`
 
 ## Installation
 
-Extract this ZIP into the UE4SS `Mods` directory. It adds both mod folders:
+Extract this ZIP into the UE4SS `Mods` directory. It adds both mod folders and a
+third folder of shared documentation:
 
 ```text
 Mods/
+├── 0_ModCore_UE4SSLuaEXtensions/   this README, the LICENSE and docs/
 ├── 0_ModCore_UE4SSLuaEventBridge/
 └── 0_ModCore_UE4SSLuaFileBridge/
 ```
 
-The `README.md`, `LICENSE` and `docs/` beside them are documentation only; you may
-delete them after reading. For deterministic startup before the Lua mods that use
+`0_ModCore_UE4SSLuaEXtensions` is documentation only and is not a mod; you may
+delete it after reading. For deterministic startup before the Lua mods that use
 the extensions, list them first in `Mods/mods.txt`:
 
 ```text
