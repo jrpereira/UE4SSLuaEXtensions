@@ -26,12 +26,7 @@ The Nexus download is one ZIP holding both extensions. Extract it into the UE4SS
 
 Each extension folder's [font=Courier New]docs[/font] subfolder holds the README, developer guide, examples and license for mod authors.
 
-For deterministic startup before the Lua mods that use the extensions, list them first in [font=Courier New]Mods/mods.txt[/font]:
-
-[code]0_ModCore_UE4SSLuaEventBridge : 1
-0_ModCore_UE4SSLuaFileBridge : 1[/code]
-
-Each extension also ships an [font=Courier New]enabled.txt[/font] marker. Keep only one active installation of each extension. Each extension is also released separately on [url=https://github.com/jrpereira/UE4SSLuaEXtensions/releases]GitHub[/url].
+Each extension ships an [font=Courier New]enabled.txt[/font] marker, so it loads without any [font=Courier New]mods.txt[/font] entry. The extensions are native DLL mods, which UE4SS loads before Lua mods, and their [font=Courier New]0_[/font] folder names sort ahead of the mods that use them. Keep only one active installation of each extension. Each extension is also released separately on [url=https://github.com/jrpereira/UE4SSLuaEXtensions/releases]GitHub[/url].
 
 [size=4][b]Compatibility[/b][/size]
 Windows x64, Unreal Engine 5.5, and UE4SS 3.0.1 Beta #0 at commit [font=Courier New]97b7e501[/font]. Native layouts are pinned to that build; nearby engine or UE4SS builds are not assumed compatible. Check [font=Courier New]GetCapabilities()[/font] in each extension's Lua API for available features rather than inferring them from a version number.

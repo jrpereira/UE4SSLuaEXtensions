@@ -33,14 +33,7 @@ Mods/
 
 Each extension folder's `docs` subfolder holds the README, developer guide, examples and license for mod authors.
 
-For deterministic startup before the Lua mods that use the extensions, list them first in `Mods/mods.txt`:
-
-```text
-0_ModCore_UE4SSLuaEventBridge : 1
-0_ModCore_UE4SSLuaFileBridge : 1
-```
-
-Each extension also ships an `enabled.txt` marker. Keep only one active installation of each extension. Each extension is also released separately on [GitHub](https://github.com/jrpereira/UE4SSLuaEXtensions/releases).
+Each extension ships an `enabled.txt` marker, so it loads without any `mods.txt` entry. The extensions are native DLL mods, which UE4SS loads before Lua mods, and their `0_` folder names sort ahead of the mods that use them. Keep only one active installation of each extension. Each extension is also released separately on [GitHub](https://github.com/jrpereira/UE4SSLuaEXtensions/releases).
 
 ## Compatibility
 
