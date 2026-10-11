@@ -29,6 +29,8 @@ VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
 DOC_FILES = ('README.md', 'CHANGELOG.md')
 DOC_FOLDER = 'docs'
 DOC_EXCLUDED = ('SPEC-REVIEW.md',)
+# Development folders never ship in a package, at any depth.
+EXCLUDED_FOLDERS = {'tools', 'tests'}
 LINK = re.compile(r'(\]\()([^)\s]+)(\))')
 
 
@@ -59,8 +61,8 @@ def verify_product(product, archive, checksum, manifest, commit):
                 continue
             if not info.filename.startswith(folder) or '..' in info.filename.split('/'):
                 raise ValueError(f'{expected}: unexpected entry {info.filename}')
-            if 'tools' in [part.lower() for part in info.filename.split('/')[:-1]]:
-                raise ValueError(f'{expected}: contains a tools folder')
+            if set(part.lower() for part in info.filename.split('/')[:-1]) & EXCLUDED_FOLDERS:
+                raise ValueError(f'{expected}: contains a tools or tests folder')
             entries[info.filename] = (info.date_time, z.read(info))
     files = {item['path']: item['sha256'] for item in described['files']}
     if set(files) != set(entries):
@@ -138,6 +140,9 @@ def assemble(collection_version, source_commit, products, readme, license_text, 
                 raise ValueError(f'Duplicate package entry: {name}')
             members[name] = data
             dated[name] = stamp
+    for name in members:
+        if set(part.lower() for part in name.split('/')[:-1]) & EXCLUDED_FOLDERS:
+            raise ValueError(f'The package must not contain tools or tests: {name}')
     ordered = sorted(members, key=lambda name: (name.startswith('0_ModCore_'), name))
     with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as z:
         for name in ordered:

@@ -61,7 +61,7 @@ class VerifyProductTests(unittest.TestCase):
 
     def test_rejects_a_tools_folder(self):
         product, archive, checksum, manifest = product_release('UE4SSLuaFileBridge', '1.0.1', 'bridge-files', tamper='extra')
-        with self.assertRaisesRegex(ValueError, 'tools'):
+        with self.assertRaisesRegex(ValueError, 'tools or tests'):
             build.verify_product(product, archive, checksum, manifest, COMMIT)
 
 
@@ -141,6 +141,17 @@ class AssembleTests(unittest.TestCase):
                 self.build(directory)
             with self.assertRaises(ValueError):
                 self.build(directory, version='1.1')
+
+    def test_no_tools_or_tests_folder_anywhere_in_the_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = self.build(directory)
+            with zipfile.ZipFile(target) as z:
+                for name in z.namelist():
+                    self.assertFalse({p.lower() for p in name.split('/')[:-1]} & {'tools', 'tests'}, name)
+        self.events['docs']['docs/UE4SSLuaEventBridge/tests/notes.md'] = b'x'
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, 'tools or tests'):
+                self.build(directory)
 
     def test_unfilled_placeholders_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
