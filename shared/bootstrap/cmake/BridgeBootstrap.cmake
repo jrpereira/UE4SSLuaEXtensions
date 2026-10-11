@@ -17,6 +17,7 @@
 #       ENABLED_FILE  <path>        enabled.txt copied to the mod folder
 #       [SCRIPT_FILE   <path>]      Lua copied to Scripts/main.lua in the mod folder
 #       [SETTINGS_FILE <path>]      mod_settings.ini copied to the mod folder
+#       [SCRIPT_MODULES <path>...]  Lua modules copied to Scripts/ under their own names
 #       [TARGET       <name>]       CMake target and InternalName; default <PRODUCT>Bootstrap
 #       [CLAIM_NAME   <name>])      per-process mutex Local\<claim>-<pid>-97b7e501;
 #                                   default UE4SSXB-<PRODUCT>
@@ -45,7 +46,7 @@ endfunction()
 function(add_bridge_bootstrap)
     set(one_value PRODUCT MAGIC VERSION_FILE DIST_FOLDER DISPLAY_NAME SELECTOR_FILE ENABLED_FILE
         SCRIPT_FILE SETTINGS_FILE TARGET CLAIM_NAME)
-    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "${one_value}" "")
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "${one_value}" "SCRIPT_MODULES")
     get_filename_component(source_dir "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." ABSOLUTE)
     if(ARG_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "add_bridge_bootstrap: unexpected arguments ${ARG_UNPARSED_ARGUMENTS}")
@@ -138,6 +139,13 @@ function(add_bridge_bootstrap)
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${ARG_SCRIPT_FILE}" "${dist}/Scripts/main.lua"
         )
     endif()
+    foreach(module IN LISTS ARG_SCRIPT_MODULES)
+        get_filename_component(module_name "${module}" NAME)
+        add_custom_command(TARGET ${ARG_TARGET} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${dist}/Scripts"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${module}" "${dist}/Scripts/${module_name}"
+        )
+    endforeach()
     if(ARG_SETTINGS_FILE)
         add_custom_command(TARGET ${ARG_TARGET} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${ARG_SETTINGS_FILE}" "${dist}/mod_settings.ini"

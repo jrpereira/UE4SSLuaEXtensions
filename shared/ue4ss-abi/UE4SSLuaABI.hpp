@@ -1,10 +1,9 @@
 #pragma once
 
-// The part of the pinned UE4SS 97b7e501 ABI the file bridge uses. Imports
-// come from bridge-files/abi/UE4SS-97b7e501.def: the event bridge's set plus
-// Lua::get_stack_size, Lua::is_string and Lua::is_integer (contract R2).
-// CppUserModBase must match UE4SS's virtual table exactly; it is copied from
-// bridge-events/include/UE4SSABI.hpp.
+// The part of the pinned UE4SS 97b7e501 ABI every extension uses: Lua access,
+// UE4SS.log output and CppUserModBase, whose virtual table must match UE4SS's
+// exactly. Imports resolve through UE4SS-97b7e501.def in this folder, which
+// lists every UE4SS symbol any extension imports.
 
 #ifdef _WIN32
 
@@ -32,6 +31,7 @@ class GUITab;
 
 namespace Output
 {
+// Writes to UE4SS's default output devices, including UE4SS.log.
 UE4SS_IMPORT void send(StringViewType content);
 }
 
@@ -54,13 +54,14 @@ public:
     UE4SS_IMPORT void register_function(const std::string& name, const LuaFunction& function) const;
     UE4SS_IMPORT void execute_string(std::string_view source) const;
     UE4SS_IMPORT int32_t get_stack_size() const;
+    UE4SS_IMPORT bool is_function(int32_t index = 1) const;
     UE4SS_IMPORT bool is_string(int32_t index = 1) const;
     UE4SS_IMPORT bool is_integer(int32_t index = 1) const;
-    UE4SS_IMPORT bool is_function(int32_t index = 1) const;
     UE4SS_IMPORT std::string_view get_string(int32_t index = 1) const;
     UE4SS_IMPORT int64_t get_integer(int32_t index = 1) const;
     UE4SS_IMPORT void set_nil() const;
     UE4SS_IMPORT void set_bool(bool value) const;
+    UE4SS_IMPORT void set_float(float value) const;
     UE4SS_IMPORT void set_integer(int64_t value) const;
     UE4SS_IMPORT void set_number(double value) const;
     UE4SS_IMPORT void set_string(std::string_view value) const;

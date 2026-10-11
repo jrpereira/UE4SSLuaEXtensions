@@ -1,34 +1,14 @@
 -- Lua-layer tests for UE4SSLuaFileBridge (bridge-files/lua/files_api.lua),
 -- against a fake native table that follows the frozen native contract.
 -- Run from the repository root with lua5.4.
-package.path = "bridge-files/tests/support/?.lua;" .. package.path
+package.path = "bridge-files/tests/support/?.lua;shared/tests/?.lua;" .. package.path
 local Fake = require("FakeFileNatives")
 
 local API_PATH = "bridge-files/lua/files_api.lua"
 local THIS_FILE = "FilesApiTests.lua"
 
-local function expect(condition, message)
-    if not condition then error(message or "expectation failed", 2) end
-end
-
-local function expectFailure(code, ...)
-    local value, actual, message = ...
-    if value ~= nil or actual ~= code or type(message) ~= "string" then
-        error(string.format("expected nil, %q, message; got %s, %s, %s",
-            code, tostring(value), tostring(actual), tostring(message)), 2)
-    end
-    return message
-end
-
-local function expectRaise(prefix, fn, ...)
-    local ok, message = pcall(fn, ...)
-    if ok then error("expected an error starting " .. prefix, 2) end
-    message = tostring(message)
-    if not message:find(prefix, 1, true) then
-        error("expected an error containing " .. prefix .. ", got " .. message, 2)
-    end
-    return message
-end
+local Kit = require("TestKit")
+local expect, expectFailure, expectRaise = Kit.expect, Kit.expectFailure, Kit.expectRaise
 
 -- Loads a fresh Lua layer over a fresh fake; returns the fake, the global and
 -- the dispatcher.
@@ -40,19 +20,15 @@ local function fresh()
     return fake, UE4SSLuaFileBridge, dispatch
 end
 
-local passed, total = 0, 0
+local suite = Kit.suite("UE4SSLuaFileBridge Lua tests")
 local function test(name, fn)
-    total = total + 1
-    local fake, bridge, dispatch = fresh()
-    local ok, failure = xpcall(fn, debug.traceback, fake, bridge, dispatch)
-    if ok and #fake.violations > 0 then
-        ok, failure = false, "native contract violations: " .. table.concat(fake.violations, ", ")
-    end
-    if ok then
-        passed = passed + 1
-    else
-        print("FAIL " .. name .. "\n" .. tostring(failure))
-    end
+    suite.run(name, function()
+        local fake, bridge, dispatch = fresh()
+        fn(fake, bridge, dispatch)
+        if #fake.violations > 0 then
+            error("native contract violations: " .. table.concat(fake.violations, ", "))
+        end
+    end)
 end
 
 -- Creates environments that are unreachable once this function returns (a
@@ -597,5 +573,4 @@ test("operations after the session stops return invalid", function(fake, bridge)
     expectFailure("invalid", env.ReadText("mod/a"))
 end)
 
-print(string.format("UE4SSLuaFileBridge Lua tests: %d of %d passed", passed, total))
-if passed ~= total then os.exit(1) end
+suite.finish()

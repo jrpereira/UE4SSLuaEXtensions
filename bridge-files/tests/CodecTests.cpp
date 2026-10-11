@@ -1,6 +1,6 @@
 // Text, escape, record, error-mapping and contract-table checks.
 
-#include "TestSupport.hpp"
+#include <TestSupport.hpp>
 
 #include <FileBridgeNativeContract.hpp>
 #include <FileBridgeOutcome.hpp>
@@ -151,5 +151,5 @@ int main()
     records();
     errors();
     contract();
-    return FileBridgeTests::finish("CodecTests");
+    return LexTests::finish("CodecTests");
 }

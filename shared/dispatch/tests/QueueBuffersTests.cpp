@@ -2,7 +2,7 @@
 #include <dispatch/DispatchBacklog.hpp>
 #include <dispatch/DispatchBudget.hpp>
 #include <barrier>
-#include <cassert>
+#include <TestSupport.hpp>
 #include <memory>
 #include <thread>
 #include <mutex>
@@ -43,18 +43,18 @@ void pending_count_lifecycle() {
      phase.arrive_and_wait(); phase.arrive_and_wait();
      const auto now=DispatchBudget::Clock::now();
      DispatchBudget budget(now,1,std::chrono::microseconds(0));
-     assert(dispatch_budgeted(backlog,budget,[&](auto event) {
+     CHECK(dispatch_budgeted(backlog,budget,[&](auto event) {
        pending.remaining(backlog.size());
        std::scoped_lock held(lock);
-       assert(*event==i && pending.total(queue.size())==3);
+       CHECK(*event==i && pending.total(queue.size())==3);
        return true;
      },[&] { return now; })==1);
      phase.arrive_and_wait(); phase.arrive_and_wait();
      // Discard canceled entries: no callback count, but queued must reach zero.
-     assert(dispatch_budgeted(backlog,budget,[&](auto event) {
-       pending.remaining(backlog.size()); assert(*event==i); return false;
+     CHECK(dispatch_budgeted(backlog,budget,[&](auto event) {
+       pending.remaining(backlog.size()); CHECK(*event==i); return false;
      },[&] { return now; })==0);
-     assert(old.expired()); // Moved-out backlog entries retain no ownership.
+     CHECK(old.expired()); // Moved-out backlog entries retain no ownership.
      auto buffer=backlog.release_buffer(); buffer.clear();
      { std::scoped_lock held(lock); retain_empty_buffer(spare,buffer); }
      phase.arrive_and_wait(); phase.arrive_and_wait();
@@ -63,14 +63,14 @@ void pending_count_lifecycle() {
  });
  for (int i=0; i<cycles; ++i) {
    phase.arrive_and_wait();
-   { std::scoped_lock held(lock); assert(pending.total(queue.size())==3); }
+   { std::scoped_lock held(lock); CHECK(pending.total(queue.size())==3); }
    phase.arrive_and_wait(); phase.arrive_and_wait(); phase.arrive_and_wait();
    phase.arrive_and_wait();
-   { std::scoped_lock held(lock); assert(pending.total(queue.size())==3 && !old.expired()); }
+   { std::scoped_lock held(lock); CHECK(pending.total(queue.size())==3 && !old.expired()); }
    phase.arrive_and_wait(); phase.arrive_and_wait();
-   { std::scoped_lock held(lock); assert(pending.total(queue.size())==1 && old.expired()); }
+   { std::scoped_lock held(lock); CHECK(pending.total(queue.size())==1 && old.expired()); }
    phase.arrive_and_wait(); phase.arrive_and_wait();
-   { std::scoped_lock held(lock); assert(pending.total(queue.size())==0); }
+   { std::scoped_lock held(lock); CHECK(pending.total(queue.size())==0); }
    phase.arrive_and_wait();
  }
  producer.join(); consumer.join();
@@ -78,7 +78,7 @@ void pending_count_lifecycle() {
 int main() {
  pending_count_lifecycle();
  QueueReadiness ready;
- assert(!ready.pending());
+ CHECK(!ready.pending());
  std::mutex mutex;
  std::vector<int> concurrent, concurrentSpare;
  constexpr int count = 10000;
@@ -98,33 +98,34 @@ int main() {
          current=drain_queue(concurrent,concurrentSpare);
          ready.drained();
      }
-     for (int value : current) { assert(value == received); ++received; }
+     for (int value : current) { CHECK(value == received); ++received; }
      current.clear();
      { std::scoped_lock lock(mutex); retain_empty_buffer(concurrentSpare,current); }
  }
  producer.join();
- assert(!ready.pending() && concurrent.empty());
+ CHECK(!ready.pending() && concurrent.empty());
  // Enqueue immediately after a drain cannot be cleared by recycling.
  { std::scoped_lock lock(mutex); concurrent.push_back(count); ready.publish(); }
- assert(ready.pending());
- { std::scoped_lock lock(mutex); auto last=drain_queue(concurrent,concurrentSpare); ready.drained(); assert(last[0]==count); }
+ CHECK(ready.pending());
+ { std::scoped_lock lock(mutex); auto last=drain_queue(concurrent,concurrentSpare); ready.drained(); CHECK(last[0]==count); }
 
  std::vector<int> queue{1,2,3}, spare;
  auto batch=drain_queue(queue,spare);
- assert((batch==std::vector<int>{1,2,3}) && queue.empty());
+ CHECK((batch==std::vector<int>{1,2,3}) && queue.empty());
  queue.push_back(4); // Producer adds data while consumer owns old batch.
  retain_empty_buffer(spare,batch);
- assert(spare.empty() && (batch==std::vector<int>{1,2,3})); // Cannot recycle live data.
+ CHECK(spare.empty() && (batch==std::vector<int>{1,2,3})); // Cannot recycle live data.
  auto oldCapacity=batch.capacity(); batch.clear(); retain_empty_buffer(spare,batch);
- assert(queue.size()==1 && queue[0]==4 && spare.capacity()==oldCapacity);
+ CHECK(queue.size()==1 && queue[0]==4 && spare.capacity()==oldCapacity);
  auto next=drain_queue(queue,spare);
- assert(next.size()==1 && next[0]==4 && queue.empty() && queue.capacity()==oldCapacity);
+ CHECK(next.size()==1 && next[0]==4 && queue.empty() && queue.capacity()==oldCapacity);
  std::vector<int> oversized; oversized.reserve(8192);
- retain_empty_buffer(spare,oversized); assert(spare.capacity()==0);
+ retain_empty_buffer(spare,oversized); CHECK(spare.capacity()==0);
  std::vector<std::shared_ptr<int>> owned, reusable;
  auto owner=std::make_shared<int>(7); std::weak_ptr<int> weak=owner;
  owned.push_back(owner); owner.reset();
  auto ownedBatch=drain_queue(owned,reusable);
- assert(!weak.expired()); ownedBatch.clear(); assert(weak.expired());
- retain_empty_buffer(reusable,ownedBatch); assert(weak.expired());
+ CHECK(!weak.expired()); ownedBatch.clear(); CHECK(weak.expired());
+ retain_empty_buffer(reusable,ownedBatch); CHECK(weak.expired());
+    return LexTests::finish("QueueBuffersTests");
 }

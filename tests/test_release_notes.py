@@ -1,4 +1,5 @@
-"""Ensure release notes cannot accidentally include another version's history."""
+"""Ensure release notes cannot accidentally include another version's history.
+Each extension's CHANGELOG.md is checked by shared/tests/product_checks.py."""
 import importlib.util
 from pathlib import Path
 import unittest
@@ -32,12 +33,6 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_historical_prerelease_and_crlf(self):
         self.assertEqual(extract_notes('## v0.3.4-rc.3\r\n\r\nHistorical.\r\n', 'v0.3.4-rc.3'), 'Historical.\n')
-
-    def test_repository_sections_are_extractable(self):
-        text = (ROOT / 'bridge-events/CHANGELOG.md').read_text(encoding='utf-8')
-        for tag in ['v1.0.1', 'v1.0.0', 'v0.3.4-rc.3', 'v0.3.4-rc.2', 'v0.3.3', 'v0.3.2']:
-            with self.subTest(tag=tag):
-                self.assertTrue(extract_notes(text, tag).strip())
 
 
 if __name__ == '__main__':

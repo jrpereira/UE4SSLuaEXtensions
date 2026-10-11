@@ -561,8 +561,10 @@ the consumer's responsibility.
 ### Load-time verifications
 
 The bridge's mod folder carries `Scripts/main.lua`, a set of in-game checks
-of this API (source: [`lua/main_events.lua`](../lua/main_events.lua)). They
-run only when **Enable load-time verifications** is on in the bridge's ModCore
+of this API (source: [`lua/main_events.lua`](../lua/main_events.lua)), and
+`Scripts/lex_verify.lua`, the harness all extensions share
+([`shared/lua/lex_verify.lua`](../../shared/lua/lex_verify.lua)). They run
+only when **Enable load-time verifications** is on in the bridge's ModCore
 Settings page (`settings.ini`: `[Verifications] LoadTime=1`). It is off by
 default and takes effect on the next launch. Results are `PASS`, `FAIL`,
 `SKIP` and `NOTE` lines tagged `[UE4SSLuaEventBridge verify]` in UE4SS.log,

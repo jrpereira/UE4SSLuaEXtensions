@@ -24,8 +24,8 @@
 // * Tail delivery builds against E's shared dispatch code: INTERFACE target
 //   UE4SSXBDispatch, namespace UE4SSXB, includes <dispatch/...>; portable tests
 //   add -I<repo>/shared.
-// * Import library: bridge-files/abi/UE4SS-97b7e501.def is the event bridge's
-//   list plus three LuaMadeSimple exports verified in UE4SS 97b7e501 (K1):
+// * Import library: shared/ue4ss-abi/UE4SS-97b7e501.def, which includes three
+//   LuaMadeSimple exports verified in UE4SS 97b7e501 (K1):
 //       ?get_stack_size@Lua@LuaMadeSimple@RC@@QEBAHXZ
 //       ?is_string@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
 //       ?is_integer@Lua@LuaMadeSimple@RC@@QEBA_NH@Z

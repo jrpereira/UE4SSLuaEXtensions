@@ -1,13 +1,38 @@
--- Offline checks for each product's load-time verification script
--- (bridge-*/lua/main_*.lua, shipped as Scripts/main.lua): the MCS setting gates
--- it, it is off unless settings.ini says LoadTime=1, and a failure inside it
--- never escapes main.lua. The in-game checks themselves need the game.
--- Run from the repository root with lua5.4.
+-- Offline checks of an extension's load-time verifications (lua/main_*.lua,
+-- shipped as Scripts/main.lua with the shared Scripts/lex_verify.lua): the
+-- MCS setting gates them, they are off unless settings.ini says LoadTime=1, and
+-- a failure inside them never escapes main.lua. The in-game checks themselves
+-- need the game. Run from the repository root:
+--
+--   lua5.4 shared/tests/verify_gate.lua bridge-files
 
-local SCRIPTS = {
-    { source = "bridge-events/lua/main_events.lua", global = "UE4SSLuaEventBridge" },
-    { source = "bridge-files/lua/main_files.lua", global = "UE4SSLuaFileBridge" },
+local extension = assert(arg[1], "usage: verify_gate.lua <extension-folder>")
+
+local function read(path)
+    local file = assert(io.open(path, "rb"))
+    local text = file:read("a")
+    file:close()
+    return text
+end
+
+local function scriptOf(folder)
+    local listing = assert(io.popen("ls '" .. folder .. "/lua'"))
+    local found
+    for name in listing:lines() do
+        if name:match("^main_.+%.lua$") then
+            assert(found == nil, folder .. "/lua has more than one main_*.lua")
+            found = folder .. "/lua/" .. name
+        end
+    end
+    listing:close()
+    return assert(found, folder .. "/lua has no main_*.lua")
+end
+
+local script = {
+    source = scriptOf(extension),
+    global = assert(read(extension .. "/mod.json"):match('"id"%s*:%s*"([^"]+)"'), "mod.json has no id"),
 }
+local HARNESS = "shared/lua/lex_verify.lua"
 
 local base = assert(os.getenv("TMPDIR") or "/tmp") .. "/lex-verify-" .. tostring(os.time()) .. "-"
     .. tostring(math.random(1, 1 << 30))
@@ -22,13 +47,6 @@ local function write(path, text)
     file:close()
 end
 
-local function read(path)
-    local file = assert(io.open(path, "rb"))
-    local text = file:read("a")
-    file:close()
-    return text
-end
-
 -- Installs the script as <mod>/Scripts/main.lua with the given settings.ini
 -- (nil for none) and runs it with a bridge global that records any access and
 -- then raises. Returns whether the bridge was touched, whether main.lua raised,
@@ -37,6 +55,7 @@ local function run(script, settings)
     local mod = base .. "/" .. script.global
     shell("rm -rf '" .. mod .. "' && mkdir -p '" .. mod .. "/Scripts'")
     write(mod .. "/Scripts/main.lua", read(script.source))
+    write(mod .. "/Scripts/lex_verify.lua", read(HARNESS))
     if settings then write(mod .. "/settings.ini", settings) end
 
     local touched, printed = false, {}
@@ -44,13 +63,17 @@ local function run(script, settings)
         __index = function() touched = true; error("stub bridge") end,
         __call = function() touched = true; error("stub bridge") end,
     })
-    local saved = { print = print, global = _G[script.global], LoopAsync = LoopAsync }
+    local saved = { print = print, global = _G[script.global], LoopAsync = LoopAsync, path = package.path }
+    -- UE4SS puts the mod's Scripts folder on the module path.
+    package.path = mod .. "/Scripts/?.lua;" .. package.path
+    package.loaded.lex_verify = nil
     _G[script.global] = stub
     print = function(text) printed[#printed + 1] = text end
     LoopAsync = function() end
     local chunk = assert(loadfile(mod .. "/Scripts/main.lua"))
     local ok = pcall(chunk)
     print, _G[script.global], LoopAsync = saved.print, saved.global, saved.LoopAsync
+    package.path = saved.path
     return touched, ok, table.concat(printed)
 end
 
@@ -61,7 +84,7 @@ local function test(name, fn)
     if ok then passed = passed + 1 else print("FAIL " .. name .. "\n" .. tostring(err)) end
 end
 
-for _, script in ipairs(SCRIPTS) do
+do
     local label = script.source .. ": "
     local function off(settings)
         local touched, ok, printed = run(script, settings)
@@ -91,5 +114,5 @@ for _, script in ipairs(SCRIPTS) do
 end
 
 shell("rm -rf '" .. base .. "'")
-print(string.format("Load-time verification gate tests: %d/%d passed", passed, total))
+print(string.format("%s: load-time verification gate tests: %d of %d passed", extension, passed, total))
 if passed ~= total then os.exit(1) end

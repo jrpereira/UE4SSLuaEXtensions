@@ -1,7 +1,7 @@
 // UE4SSLuaFileBridge: the UE4SS C++ mod. Owns one Session per Lua mod, the
 // 26 natives of FileBridgeNativeContract.hpp, Tail dispatch and lifetimes.
 
-#include <FileBridgeUE4SSABI.hpp>
+#include <UE4SSLuaABI.hpp>
 
 #include <EmbeddedLuaAPI.hpp>
 #include <FileBridgeAtomicWrite.hpp>
@@ -10,7 +10,8 @@
 #include <FileBridgePolicy.hpp>
 #include <FileBridgeRecords.hpp>
 #include <FileBridgeText.hpp>
-#include <ImplementationABI.h>
+#include <LexImplementation.hpp>
+#include <LexReport.hpp>
 #include <Version.hpp>
 #include <Win32Files.hpp>
 
@@ -51,18 +52,7 @@ namespace Win32 = UE4SSLuaFileBridge::Win32;
 
 void report(std::string_view message)
 {
-    std::string line{"[UE4SSLuaFileBridge] "};
-    line.append(message);
-    line.push_back('\n');
-    Win32::debug_output(line);
-    try
-    {
-        const auto wide = Core::utf8_to_utf16(line);
-        if (wide) RC::Output::send(std::wstring(wide->begin(), wide->end()));
-    }
-    catch (...)
-    {
-    }
+    Lex::report("UE4SSLuaFileBridge", message);
 }
 
 // --- Results ---------------------------------------------------------------
@@ -1325,21 +1315,7 @@ UE4SSLEB_UninstallResult uninstall_implementation(UE4SSLEB_ModHandle mod)
 
 static_assert(UE4SSLEB_IMPLEMENTATION_MAGIC == Contract::implementation_magic,
     "UE4SSLEB_IMPLEMENTATION_MAGIC must be the file bridge's LFB1");
-
-const UE4SSLEB_ImplementationV1 implementation_api{
-    sizeof(UE4SSLEB_ImplementationV1),
-    UE4SSLEB_IMPLEMENTATION_MAGIC,
-    UE4SSLEB_IMPLEMENTATION_ABI,
-    UE4SSLEB_TARGET_UE4SS_COMMIT,
-    UE4SSLFB_VERSION_MAJOR,
-    UE4SSLFB_VERSION_MINOR,
-    UE4SSLFB_VERSION_PATCH,
-    &start_implementation,
-    &uninstall_implementation,
-};
 }
 
-extern "C" __declspec(dllexport) const UE4SSLEB_ImplementationV1* UE4SSLEB_GetImplementationV1()
-{
-    return &implementation_api;
-}
+LEX_EXPORT_IMPLEMENTATION(UE4SSLFB_VERSION_MAJOR, UE4SSLFB_VERSION_MINOR, UE4SSLFB_VERSION_PATCH,
+    &start_implementation, &uninstall_implementation)

@@ -1,6 +1,5 @@
-local function expect(condition, message)
-    if not condition then error(message or "expectation failed", 2) end
-end
+package.path = "shared/tests/?.lua;" .. package.path
+local expect = require("TestKit").expect
 
 local counters = {
     targets_opened = 0,

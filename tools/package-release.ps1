@@ -57,6 +57,7 @@ try {
         'mod.json'=$moduleFile
         'mod_settings.ini'=Join-Path $root 'mod_settings.ini'
         'Scripts/main.lua'=Join-Path $root 'Scripts/main.lua'
+        'Scripts/lex_verify.lua'=Join-Path $root 'Scripts/lex_verify.lua'
         'dlls/main.dll'=$bootstrap
         'dlls/main.json'=$configuration
         "dlls/versions/$implementationName"=$implementation

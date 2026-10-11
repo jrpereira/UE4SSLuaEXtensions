@@ -1,6 +1,6 @@
 #include <LifecycleRegistry.hpp>
 
-#include <cassert>
+#include <TestSupport.hpp>
 #include <thread>
 #include <vector>
 
@@ -12,41 +12,41 @@ static void reported_losses_and_faults()
     LifecycleRegistry registry(2, 1);
     registry.start_session(1);
     registry.start_session(2);
-    assert(registry.report_losses(1) && registry.report_losses(2));
-    assert(!registry.report_losses(9));
+    CHECK(registry.report_losses(1) && registry.report_losses(2));
+    CHECK(!registry.report_losses(9));
     const ObjectLifetimeIdentity first{0x1000, 7, 40};
     const ObjectLifetimeIdentity second{0x2000, 8, 50};
     const ObjectLifetimeIdentity replacement{0x1000, 7, 41};
 
     const auto one = registry.capture(1, first);
-    assert(one.token > 0 && registry.capture(1, first).token == one.token);
+    CHECK(one.token > 0 && registry.capture(1, first).token == one.token);
     const auto other_session = registry.capture(2, first);
-    assert(other_session.token > one.token);
-    assert(registry.valid(1, one.token, first));
-    assert(!registry.valid(2, one.token, first));
+    CHECK(other_session.token > one.token);
+    CHECK(registry.valid(1, one.token, first));
+    CHECK(!registry.valid(2, one.token, first));
 
     registry.invalidate(first.address, first.index);
-    assert(!registry.valid(1, one.token, first));
-    assert(registry.take_lost(1).token == one.token);
-    assert(registry.take_lost(2).token == other_session.token);
+    CHECK(!registry.valid(1, one.token, first));
+    CHECK(registry.take_lost(1).token == one.token);
+    CHECK(registry.take_lost(2).token == other_session.token);
     const auto replacement_token = registry.capture(1, replacement);
-    assert(replacement_token.token > other_session.token);
+    CHECK(replacement_token.token > other_session.token);
 
     const auto two = registry.capture(1, second);
-    assert(two.token > 0);
+    CHECK(two.token > 0);
     const auto over_capacity = registry.capture(1, {0x3000, 9, 60});
-    assert(over_capacity.failure == LifecycleRegistry::CaptureFailure::capacity);
+    CHECK(over_capacity.failure == LifecycleRegistry::CaptureFailure::capacity);
 
     registry.invalidate(replacement.address, replacement.index);
     registry.invalidate(second.address, second.index);
     const auto overflow = registry.take_lost(1);
-    assert(overflow.overflow && !registry.valid(1, two.token, second));
-    assert(registry.capture(1, first).failure == LifecycleRegistry::CaptureFailure::faulted);
+    CHECK(overflow.overflow && !registry.valid(1, two.token, second));
+    CHECK(registry.capture(1, first).failure == LifecycleRegistry::CaptureFailure::faulted);
 
     registry.stop_session(1);
-    assert(registry.take_lost(1).unknown_session);
+    CHECK(registry.take_lost(1).unknown_session);
     registry.start_session(1);
-    assert(registry.capture(1, first).token > two.token);
+    CHECK(registry.capture(1, first).token > two.token);
 }
 
 static void unreported_losses_never_fault()
@@ -60,14 +60,14 @@ static void unreported_losses_never_fault()
     for (int32_t index = 0; index < 100; ++index)
     {
         const ObjectLifetimeIdentity dying{0x6000 + static_cast<std::uintptr_t>(index), 30 + index, 1};
-        assert(registry.capture(1, dying).token > 0);
+        CHECK(registry.capture(1, dying).token > 0);
         registry.invalidate(dying.address, dying.index);
     }
-    assert(registry.valid(1, kept_token, kept) && registry.observed() == 1);
+    CHECK(registry.valid(1, kept_token, kept) && registry.observed() == 1);
     // take_lost opts in: later losses are reported, earlier ones were never queued.
-    assert(!registry.take_lost(1).token && !registry.take_lost(1).overflow);
+    CHECK(!registry.take_lost(1).token && !registry.take_lost(1).overflow);
     registry.invalidate(kept.address, kept.index);
-    assert(registry.take_lost(1).token == kept_token);
+    CHECK(registry.take_lost(1).token == kept_token);
 }
 
 static void indexed_invalidation()
@@ -75,7 +75,7 @@ static void indexed_invalidation()
     LifecycleRegistry registry;
     registry.start_session(1);
     registry.start_session(2);
-    assert(registry.observed() == 0);
+    CHECK(registry.observed() == 0);
     registry.invalidate(0x1, 1); // Fast path with nothing observed.
 
     const ObjectLifetimeIdentity a{0x7000, 40, 3};
@@ -83,47 +83,47 @@ static void indexed_invalidation()
     const auto a1 = registry.capture(1, a).token;
     const auto a2 = registry.capture(2, a).token;
     const auto b1 = registry.capture(1, b).token;
-    assert(registry.observed() == 3);
+    CHECK(registry.observed() == 3);
 
     // Matching by address alone or by index alone invalidates the observation.
     registry.invalidate(a.address, 999);
-    assert(!registry.valid(1, a1, a) && !registry.valid(2, a2, a) && registry.valid(1, b1, b));
+    CHECK(!registry.valid(1, a1, a) && !registry.valid(2, a2, a) && registry.valid(1, b1, b));
     registry.invalidate(0x9999, b.index);
-    assert(!registry.valid(1, b1, b) && registry.observed() == 0);
+    CHECK(!registry.valid(1, b1, b) && registry.observed() == 0);
 
     // A reused slot gets a new token, and the dead one stays dead.
     const ObjectLifetimeIdentity reused{0x7000, 40, 4};
     const auto r1 = registry.capture(1, reused).token;
-    assert(r1 > b1 && registry.valid(1, r1, reused) && !registry.valid(1, a1, a));
+    CHECK(r1 > b1 && registry.valid(1, r1, reused) && !registry.valid(1, a1, a));
 
     // Stopping a session drops its watches; another session's survive.
     const auto r2 = registry.capture(2, reused).token;
     registry.stop_session(1);
-    assert(registry.observed() == 1 && registry.valid(2, r2, reused));
+    CHECK(registry.observed() == 1 && registry.valid(2, r2, reused));
     registry.invalidate(reused.address, reused.index);
-    assert(!registry.valid(2, r2, reused) && registry.observed() == 0);
+    CHECK(!registry.valid(2, r2, reused) && registry.observed() == 0);
 
     registry.capture(2, a);
     registry.shutdown();
-    assert(registry.observed() == 0);
+    CHECK(registry.observed() == 0);
 }
 
 static void reference_counted_release()
 {
     LifecycleRegistry registry;
     registry.start_session(1);
-    assert(registry.report_losses(1));
+    CHECK(registry.report_losses(1));
     const ObjectLifetimeIdentity object{0xA000, 60, 2};
     const auto token = registry.capture(1, object).token;
-    assert(registry.capture(1, object).token == token); // Second reference.
-    assert(registry.release(1, token) && registry.valid(1, token, object));
-    assert(registry.release(1, token) && !registry.valid(1, token, object));
-    assert(registry.observed() == 0 && !registry.release(1, token));
+    CHECK(registry.capture(1, object).token == token); // Second reference.
+    CHECK(registry.release(1, token) && registry.valid(1, token, object));
+    CHECK(registry.release(1, token) && !registry.valid(1, token, object));
+    CHECK(registry.observed() == 0 && !registry.release(1, token));
     registry.invalidate(object.address, object.index);
-    assert(!registry.take_lost(1).token && "a released observation reports no loss");
+    CHECK(!registry.take_lost(1).token && "a released observation reports no loss");
     const auto again = registry.capture(1, object).token;
-    assert(again > token && registry.valid(1, again, object));
-    assert(!registry.release(2, again) && !registry.release(1, 0));
+    CHECK(again > token && registry.valid(1, again, object));
+    CHECK(!registry.release(2, again) && !registry.release(1, 0));
 }
 
 static void concurrent_capture_and_invalidation()
@@ -146,10 +146,10 @@ static void concurrent_capture_and_invalidation()
     engine.join();
     for (int32_t index = 0; index < count; ++index)
         registry.invalidate(0x100000 + static_cast<std::uintptr_t>(index), index);
-    assert(registry.observed() == 0);
+    CHECK(registry.observed() == 0);
     std::size_t lost{};
     while (registry.take_lost(1).token) ++lost;
-    assert(lost == static_cast<std::size_t>(count) && "every observation ends exactly once");
+    CHECK(lost == static_cast<std::size_t>(count) && "every observation ends exactly once");
 }
 
 int main()
@@ -159,4 +159,5 @@ int main()
     indexed_invalidation();
     reference_counted_release();
     concurrent_capture_and_invalidation();
+    return LexTests::finish("LifecycleRegistryTests");
 }

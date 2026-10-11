@@ -2,119 +2,23 @@
 -- bridge's own mod folder and runs only when the MCS setting "Enable load-time
 -- verifications" is on (settings.ini: [Verifications] LoadTime=1); it is off by
 -- default. Results go to UE4SS.log as PASS, FAIL and SKIP lines, followed by a
--- SUMMARY line once the asynchronous Tail checks finish.
+-- SUMMARY line once the asynchronous Tail checks finish. The harness (settings
+-- gate, logging, groups) is the shared Scripts/lex_verify.lua.
 --
 -- Everything it writes stays in temp/lexverify, moddata/lexverify and
 -- mod/lexverify and is removed again. Saves are only read, except for one
 -- refused write that must not create a file.
 
-local TAG = "[UE4SSLuaFileBridge verify] "
+local Verify = require("lex_verify")
+if not Verify.enabled() then return end
 
-local function log(text)
-    print(TAG .. text .. "\n")
-end
-
--- Settings ------------------------------------------------------------------------
-
-local function modFolder()
-    local source = debug.getinfo(1, "S").source
-    local scripts = source:gsub("^@", ""):match("^(.*)[/\\]")
-    return scripts and scripts:match("^(.*)[/\\][^/\\]+$")
-end
-
--- Reads [Verifications] LoadTime from the mod's settings.ini. A missing file or
--- an unreadable value means off: configuration never blocks the bridge.
-local function verificationsEnabled()
-    local folder = modFolder()
-    local file = folder and io.open(folder .. "/settings.ini", "r")
-    if not file then return false end
-    local section, value
-    for line in file:lines() do
-        line = line:match("^%s*(.-)%s*$")
-        local name = line:match("^%[(.-)%]$")
-        if name then
-            section = name:lower()
-        elseif section == "verifications" then
-            local key, raw = line:match("^([^=]-)%s*=%s*(.*)$")
-            if key and key:lower() == "loadtime" then value = raw end
-        end
-    end
-    file:close()
-    return tonumber(value) == 1
-end
-
-if not verificationsEnabled() then return end
-
--- Harness -------------------------------------------------------------------------
-
-local passed, failed, skipped = 0, 0, 0
-
-local function pass(name)
-    passed = passed + 1
-    log("PASS " .. name)
-end
-
-local function fail(name, detail)
-    failed = failed + 1
-    log("FAIL " .. name .. (detail and (": " .. tostring(detail)) or ""))
-end
-
-local function skip(name, why)
-    skipped = skipped + 1
-    log("SKIP " .. name .. ": " .. why)
-end
-
-local function check(name, condition, detail)
-    if condition then pass(name) else fail(name, detail) end
-    return condition
-end
-
--- Runs one group; an error inside it is a failure of that group only.
-local function group(name, fn)
-    local ok, err = xpcall(fn, debug.traceback)
-    if not ok then fail(name .. " (aborted)", err) end
-end
-
--- An operation that must succeed: returns its value, or nil after a FAIL.
-local function ok(name, value, code, message)
-    if value == nil then
-        fail(name, tostring(code) .. " " .. tostring(message))
-        return nil
-    end
-    pass(name)
-    return value
-end
-
--- An operation that must be refused with `expected`.
-local function refused(name, expected, value, code, message)
-    if value == nil and code == expected and type(message) == "string" then
-        pass(name .. " -> " .. expected)
-    else
-        fail(name, "expected nil, " .. expected .. "; got " .. tostring(value) .. ", "
-            .. tostring(code) .. ", " .. tostring(message))
-    end
-end
-
--- A call that must raise an error whose message contains `prefix`.
-local function raises(name, prefix, fn, ...)
-    local done, err = pcall(fn, ...)
-    if done then
-        fail(name, "expected an error starting " .. prefix)
-    elseif not tostring(err):find(prefix, 1, true) then
-        fail(name, "expected " .. prefix .. ", got " .. tostring(err))
-    else
-        pass(name .. " raises " .. prefix)
-    end
-end
-
-local function summary()
-    log(string.format("SUMMARY passed=%d failed=%d skipped=%d", passed, failed, skipped))
-end
+local V = Verify.new("[UE4SSLuaFileBridge verify] ")
+local log, pass, fail, skip, check, group = V.log, V.pass, V.fail, V.skip, V.check, V.group
+local ok, refused, raises, summary = V.ok, V.refused, V.raises, V.summary
+local modFolder = Verify.modFolder
 
 -- Checks ---------------------------------------------------------------------------
 
--- Everything below runs inside one protected call: a failure the groups
--- don't catch is reported, never raised out of main.lua.
 local function main()
     local Bridge = UE4SSLuaFileBridge
     if type(Bridge) ~= "table" then
@@ -156,7 +60,7 @@ local function main()
         check("GetDispatchStats fields", type(stats) == "table" and math.type(stats.subscriptions) == "integer"
             and math.type(stats.delivered) == "integer" and math.type(stats.budget_exhausted_passes) == "integer")
         check("env:Exists colon form", safe:Exists("temp") == safe.Exists("temp"))
-        raises("assigning an environment field", "", function() safe.Exists = nil end)
+        raises("assigning an environment field", nil, function() safe.Exists = nil end)
     end)
 
     group("locations", function()
@@ -458,7 +362,7 @@ local function main()
         check("Close again", stream:Close() == true)
         refused("Write after Close", "invalid", stream:Write("x"))
         refused("Flush after Close", "invalid", stream:Flush())
-        raises("assigning stream.path", "", function() stream.path = "x" end)
+        raises("assigning stream.path", nil, function() stream.path = "x" end)
 
         local again = ok("Open appends by default", safe.Open(path))
         if again then again:Write("b\n"); again:Close() end
@@ -597,8 +501,4 @@ local function main()
 
 end
 
-local finished, err = xpcall(main, debug.traceback)
-if not finished then
-    fail("verifications (aborted)", err)
-    summary()
-end
+V.run(main)

@@ -1,0 +1,38 @@
+#include <windows.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @LEX_VERSION_MAJOR@,@LEX_VERSION_MINOR@,@LEX_VERSION_PATCH@,0
+ PRODUCTVERSION @LEX_VERSION_MAJOR@,@LEX_VERSION_MINOR@,@LEX_VERSION_PATCH@,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "@LEX_DISPLAY_NAME@ contributors\0"
+            VALUE "FileDescription", "@LEX_DISPLAY_NAME@ implementation\0"
+            VALUE "FileVersion", "@LEX_VERSION_MAJOR@.@LEX_VERSION_MINOR@.@LEX_VERSION_PATCH@.0\0"
+            VALUE "InternalName", "@LEX_PRODUCT@\0"
+            VALUE "OriginalFilename", "@LEX_PRODUCT@-@LEX_VERSION@.dll\0"
+            VALUE "ProductName", "@LEX_PRODUCT@\0"
+            VALUE "ProductVersion", "@LEX_VERSION@\0"
+            VALUE "Comments", "For UE4SS commit 97b7e501; Unreal Engine 5.5; Windows x64\0"
+            VALUE "BridgeRole", "Implementation\0"
+            VALUE "ImplementationABI", "1\0"
+            VALUE "UE4SSCommit", "97b7e501\0"
+            VALUE "UnrealVersion", "5.5\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

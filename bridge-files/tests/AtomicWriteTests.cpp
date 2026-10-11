@@ -1,6 +1,6 @@
 // Order of steps in an atomic replace, against a fake file system.
 
-#include "TestSupport.hpp"
+#include <TestSupport.hpp>
 
 #include <FileBridgeAtomicWrite.hpp>
 
@@ -252,5 +252,5 @@ int main()
     replace_existing_with_backup();
     refuse_existing_without_overwrite();
     failures_leave_target_unchanged();
-    return FileBridgeTests::finish("AtomicWriteTests");
+    return LexTests::finish("AtomicWriteTests");
 }

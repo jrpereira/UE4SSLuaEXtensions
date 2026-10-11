@@ -1,6 +1,6 @@
 // Tail line splitting, held partial lines, long-line pieces and resets.
 
-#include "TestSupport.hpp"
+#include <TestSupport.hpp>
 
 #include <FileBridgeTail.hpp>
 
@@ -100,5 +100,5 @@ int main()
     chunks();
     long_lines();
     truncation_and_rotation();
-    return FileBridgeTests::finish("TailTests");
+    return LexTests::finish("TailTests");
 }

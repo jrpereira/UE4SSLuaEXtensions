@@ -1,6 +1,6 @@
 // Path normalization, escapes, Unicode names and the location table.
 
-#include "TestSupport.hpp"
+#include <TestSupport.hpp>
 
 #include <FileBridgePaths.hpp>
 
@@ -171,5 +171,5 @@ int main()
     malformed();
     unicode_names();
     helpers();
-    return FileBridgeTests::finish("PathTests");
+    return LexTests::finish("PathTests");
 }

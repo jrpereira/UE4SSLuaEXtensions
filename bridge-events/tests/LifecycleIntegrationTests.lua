@@ -1,9 +1,8 @@
 -- Offline integration: real bridge_api.lua, simulated UE objects/native boundary.
 -- No claim of C++ shutdown, real concurrency, Unreal GC, or ABI validation.
-local function check(value, message)
-    if not value then error(message or "expectation failed", 2) end
-    return value
-end
+package.path = "shared/tests/?.lua;" .. package.path
+local Kit = require("TestKit")
+local check = Kit.expect
 local function count(t)
     local n = 0
     for _ in pairs(t) do n = n + 1 end
@@ -692,8 +691,6 @@ end
 local names = {}
 for name in pairs(cases) do names[#names + 1] = name end
 table.sort(names)
-for _, name in ipairs(names) do
-    cases[name]()
-    print("PASS: " .. name)
-end
-print("Lifecycle helper integration tests passed (" .. #names .. " cases; simulated engine/native boundary)")
+local suite = Kit.suite("Lifecycle helper integration tests (simulated engine/native boundary)")
+for _, name in ipairs(names) do suite.run(name, cases[name]) end
+suite.finish()

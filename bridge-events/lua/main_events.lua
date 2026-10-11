@@ -1,7 +1,8 @@
 -- UE4SSLuaEventBridge load-time verifications. Ships as Scripts/main.lua in the
 -- bridge's own mod folder and runs only when the MCS setting "Enable load-time
 -- verifications" is on (settings.ini: [Verifications] LoadTime=1); it is off by
--- default. Results go to UE4SS.log as PASS, FAIL, SKIP and NOTE lines.
+-- default. Results go to UE4SS.log as PASS, FAIL, SKIP and NOTE lines. The
+-- harness (settings gate, logging, groups) is the shared Scripts/lex_verify.lua.
 --
 -- Three stages, each with its own SUMMARY line:
 --   load    API surface and argument checks, while the mod loads
@@ -10,94 +11,18 @@
 --           with a pawn exists (load a save). Tap or hold NumPad 9 during the
 --           listening window to also check delivery; that part is optional.
 
-local TAG = "[UE4SSLuaEventBridge verify] "
 local PLAYER_WAIT_SECONDS = 900
 local LISTEN_SECONDS = 20
 local LISTEN_KEY = "NumPadNine"
 
-local function log(text)
-    print(TAG .. text .. "\n")
-end
+local Verify = require("lex_verify")
+if not Verify.enabled() then return end
 
--- Settings ------------------------------------------------------------------------
+local V = Verify.new("[UE4SSLuaEventBridge verify] ")
+local log, pass, fail, skip, check, group = V.log, V.pass, V.fail, V.skip, V.check, V.group
+local rejects, raises, summary = V.rejects, V.raises, V.summary
 
-local function modFolder()
-    local source = debug.getinfo(1, "S").source
-    local scripts = source:gsub("^@", ""):match("^(.*)[/\\]")
-    return scripts and scripts:match("^(.*)[/\\][^/\\]+$")
-end
-
--- Reads [Verifications] LoadTime from the mod's settings.ini. A missing file or
--- an unreadable value means off: configuration never blocks the bridge.
-local function verificationsEnabled()
-    local folder = modFolder()
-    local file = folder and io.open(folder .. "/settings.ini", "r")
-    if not file then return false end
-    local section, value
-    for line in file:lines() do
-        line = line:match("^%s*(.-)%s*$")
-        local name = line:match("^%[(.-)%]$")
-        if name then
-            section = name:lower()
-        elseif section == "verifications" then
-            local key, raw = line:match("^([^=]-)%s*=%s*(.*)$")
-            if key and key:lower() == "loadtime" then value = raw end
-        end
-    end
-    file:close()
-    return tonumber(value) == 1
-end
-
-if not verificationsEnabled() then return end
-
--- Harness -------------------------------------------------------------------------
-
-local counts = { passed = 0, failed = 0, skipped = 0 }
-
-local function pass(name)
-    counts.passed = counts.passed + 1
-    log("PASS " .. name)
-end
-
-local function fail(name, detail)
-    counts.failed = counts.failed + 1
-    log("FAIL " .. name .. (detail ~= nil and (": " .. tostring(detail)) or ""))
-end
-
-local function skip(name, why)
-    counts.skipped = counts.skipped + 1
-    log("SKIP " .. name .. ": " .. why)
-end
-
-local function check(name, condition, detail)
-    if condition then pass(name) else fail(name, detail) end
-    return condition
-end
-
-local function group(name, fn)
-    local ok, err = xpcall(fn, debug.traceback)
-    if not ok then fail(name .. " (aborted)", err) end
-end
-
--- A call that must fail with nil or false and an error message.
-local function rejects(name, value, message)
-    if (value == nil or value == false) and type(message) == "string" then
-        pass(name .. " rejected")
-    else
-        fail(name, "expected nil/false and a message; got " .. tostring(value) .. ", " .. tostring(message))
-    end
-end
-
-local function raises(name, fn, ...)
-    local done, err = pcall(fn, ...)
-    check(name .. " raises", not done, "no error")
-    return err
-end
-
-local function summary(stage)
-    log(string.format("SUMMARY %s passed=%d failed=%d skipped=%d",
-        stage, counts.passed, counts.failed, counts.skipped))
-end
+-- Object helpers --------------------------------------------------------------------
 
 local function isValid(object)
     if object == nil then return false end
@@ -175,11 +100,11 @@ local function main()
         local Trigger = Helpers.Trigger
         check("Trigger.Tap and Trigger.Hold are distinct", Trigger.Tap ~= nil and Trigger.Hold ~= nil
             and Trigger.Tap ~= Trigger.Hold)
-        raises("assigning Helpers.Trigger", function() Trigger.Press = {} end)
+        raises("assigning Helpers.Trigger", nil, function() Trigger.Press = {} end)
         local listed = 0
         for _ in pairs(Trigger) do listed = listed + 1 end
         check("pairs(Trigger) lists two triggers", listed == 2, listed)
-        raises("Helpers.OpenInput without options", Helpers.OpenInput)
+        raises("Helpers.OpenInput without options", nil, Helpers.OpenInput)
     end)
 
     group("argument validation", function()
@@ -200,7 +125,7 @@ local function main()
         rejects("lifetimes.captureObject(nil)", Bridge.lifetimes.captureObject(nil))
         check("lifetimes.valid with a bad token is false", Bridge.lifetimes.valid(1, "abc") == false)
         check("lifetimes.release with a bad token is false", Bridge.lifetimes.release("0") == false)
-        raises("onLoopStart(non-function)", Bridge.onLoopStart, 5)
+        raises("onLoopStart(non-function)", nil, Bridge.onLoopStart, 5)
     end)
 
     -- Engine stage ---------------------------------------------------------------------
@@ -397,11 +322,11 @@ local function main()
                 debug_label = "LEB verify",
             })
             if not check("Helpers.OpenInput", input ~= nil, why) then return end
-            raises("Bind with an unsupported option", input.Bind, input, LISTEN_KEY, Trigger.Tap, function() end,
+            raises("Bind with an unsupported option", nil, input.Bind, input, LISTEN_KEY, Trigger.Tap, function() end,
                 { bogus = true })
-            raises("Tap with one_shot", input.Bind, input, LISTEN_KEY, Trigger.Tap, function() end, { one_shot = true })
-            raises("Bind with an unknown trigger", input.Bind, input, LISTEN_KEY, {}, function() end)
-            raises("assigning a scope field", function() input.extra = true end)
+            raises("Tap with one_shot", nil, input.Bind, input, LISTEN_KEY, Trigger.Tap, function() end, { one_shot = true })
+            raises("Bind with an unknown trigger", nil, input.Bind, input, LISTEN_KEY, {}, function() end)
+            raises("assigning a scope field", nil, function() input.extra = true end)
 
             local tap, tapError = input:Bind(LISTEN_KEY, Trigger.Tap, function(event)
                 listening.tap = listening.tap + 1
@@ -489,8 +414,4 @@ local function main()
 
 end
 
-local finished, err = xpcall(main, debug.traceback)
-if not finished then
-    fail("verifications (aborted)", err)
-    summary("load")
-end
+V.run(main, "load")

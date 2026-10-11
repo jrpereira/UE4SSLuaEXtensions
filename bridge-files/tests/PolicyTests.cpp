@@ -1,7 +1,7 @@
 // Access environments: safe set, grants, inheritance, coverage, delete floor,
 // .owner and savegames rules, and link resolution through a fake resolver.
 
-#include "TestSupport.hpp"
+#include <TestSupport.hpp>
 
 #include <FileBridgePolicy.hpp>
 
@@ -316,5 +316,5 @@ int main()
     owner_and_savegames();
     links();
     memoization();
-    return FileBridgeTests::finish("PolicyTests");
+    return LexTests::finish("PolicyTests");
 }

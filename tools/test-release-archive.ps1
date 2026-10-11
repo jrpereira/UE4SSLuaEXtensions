@@ -11,6 +11,7 @@ try {
         "$folder/mod.json",
         "$folder/mod_settings.ini",
         "$folder/Scripts/main.lua",
+        "$folder/Scripts/lex_verify.lua",
         "$folder/dlls/main.dll",
         "$folder/dlls/main.json",
         "$folder/dlls/versions/$($metadata.product_name)-$($metadata.version).dll"

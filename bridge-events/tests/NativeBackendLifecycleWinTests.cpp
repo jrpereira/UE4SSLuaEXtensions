@@ -5,7 +5,7 @@
 #include <array>
 #include <barrier>
 #include <SharedDispatch.hpp>
-#include <cassert>
+#include <TestSupport.hpp>
 #include <cstdlib>
 #include <thread>
 
@@ -82,12 +82,12 @@ struct Fixture {
         FMemory::Free(a.data); a={};
         objects[0]={}; // Invalidate object-array identity before backend cleanup.
     }
-    ~Fixture() { destroy_component(); assert(allocations==0); }
+    ~Fixture() { destroy_component(); CHECK(allocations==0); }
 };
 uint64_t bind(EnhancedInputBackend& backend, LuaSession& session) {
-    auto target=backend.open_target(session,"Component"); assert(target.first && target.second.empty());
+    auto target=backend.open_target(session,"Component"); CHECK(target.first && target.second.empty());
     auto subscription=backend.subscribe(session,target.first,1,"Action","Triggered",ABI::TriggerEvent::Triggered);
-    assert(subscription.first && subscription.second.empty()); return subscription.first;
+    CHECK(subscription.first && subscription.second.empty()); return subscription.first;
 }
 int main() {
     ABI::InputActionInstanceView event{};
@@ -96,69 +96,69 @@ int main() {
     // requires neither queue capacity nor further input.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s, stranger;
-        auto target=backend.open_target(s,"Component").first; assert(target);
-        assert(!backend.target_delivery_valid(s,target).first);
-        assert(!backend.enable_delivery_faults(stranger,target).empty());
-        game_thread=false; assert(!backend.enable_delivery_faults(s,target).empty()); game_thread=true;
-        assert(backend.enable_delivery_faults(s,target).empty());
-        assert(!backend.enable_delivery_faults(s,target).empty());
-        assert(backend.target_delivery_valid(s,target).first);
-        assert(!backend.target_delivery_valid(stranger,target).first);
+        auto target=backend.open_target(s,"Component").first; CHECK(target);
+        CHECK(!backend.target_delivery_valid(s,target).first);
+        CHECK(!backend.enable_delivery_faults(stranger,target).empty());
+        game_thread=false; CHECK(!backend.enable_delivery_faults(s,target).empty()); game_thread=true;
+        CHECK(backend.enable_delivery_faults(s,target).empty());
+        CHECK(!backend.enable_delivery_faults(s,target).empty());
+        CHECK(backend.target_delivery_valid(s,target).first);
+        CHECK(!backend.target_delivery_valid(stranger,target).first);
         for (auto phase : {ABI::TriggerEvent::Started,ABI::TriggerEvent::Completed,ABI::TriggerEvent::Canceled}) {
-            auto result=backend.subscribe(s,target,1,"Action","phase",phase); assert(result.first);
+            auto result=backend.subscribe(s,target,1,"Action","phase",phase); CHECK(result.first);
         }
         auto* started=f.bindings().data[0]; auto* release=f.bindings().data[1];
         backend.set_queue_limit(1);
-        started->Execute(event); auto stale=backend.take_events(); assert(stale.size()==1);
+        started->Execute(event); auto stale=backend.take_events(); CHECK(stale.size()==1);
         started->Execute(event); release->Execute(event);
-        assert(backend.queue_stats().rejected==1);
-        assert(!backend.target_delivery_valid(s,target).first && !stale[0].owner->delivery_valid());
-        assert(std::string_view(backend.target_delivery_valid(s,target).second)=="queue_capacity_exceeded");
+        CHECK(backend.queue_stats().rejected==1);
+        CHECK(!backend.target_delivery_valid(s,target).first && !stale[0].owner->delivery_valid());
+        CHECK(std::string_view(backend.target_delivery_valid(s,target).second)=="queue_capacity_exceeded");
         auto fault=backend.take_delivery_fault();
-        assert(fault && fault->target==target && fault->session==&s && fault->reason==DeliveryFault::QueueCapacity);
-        assert(!backend.take_delivery_fault());
-        release->Execute(event); assert(backend.queue_stats().rejected==1);
-        auto denied=backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started); assert(!denied.first);
-        backend.consumer_events_remaining(0); auto queued=backend.take_events(); assert(queued.size()==1);
-        assert(!queued[0].owner->delivery_valid()); backend.consumer_events_remaining(0);
+        CHECK(fault && fault->target==target && fault->session==&s && fault->reason==DeliveryFault::QueueCapacity);
+        CHECK(!backend.take_delivery_fault());
+        release->Execute(event); CHECK(backend.queue_stats().rejected==1);
+        auto denied=backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started); CHECK(!denied.first);
+        backend.consumer_events_remaining(0); auto queued=backend.take_events(); CHECK(queued.size()==1);
+        CHECK(!queued[0].owner->delivery_valid()); backend.consumer_events_remaining(0);
         DispatchBacklog<EnhancedInputEvent> backlog; backlog.load(std::move(stale));
         const auto now=DispatchBudget::Clock::now();
         DispatchBudget budget(now,1,std::chrono::microseconds(0));
         int delivered=0;
-        assert(dispatch_budgeted(backlog,budget,[&](auto item) {
+        CHECK(dispatch_budgeted(backlog,budget,[&](auto item) {
             if (!item.owner->active.load() || !item.owner->delivery_valid()) return false;
             ++delivered; return true;
         },[&] { return now; })==0);
-        assert(backlog.empty() && delivered==0);
-        assert(backend.close_target(s,target)); assert(!backend.target_delivery_valid(s,target).first);
-        auto fresh=backend.open_target(s,"Component").first; assert(fresh && fresh!=target);
-        assert(backend.enable_delivery_faults(s,fresh).empty() && backend.target_delivery_valid(s,fresh).first);
-        assert(backend.subscribe(s,fresh,1,"Action","Started",ABI::TriggerEvent::Started).first);
-        f.bindings().data[0]->Execute(event); auto live=backend.take_events(); assert(live.size()==1 && live[0].owner->delivery_valid());
-        backend.consumer_events_remaining(0); assert(backend.shutdown());
+        CHECK(backlog.empty() && delivered==0);
+        CHECK(backend.close_target(s,target)); CHECK(!backend.target_delivery_valid(s,target).first);
+        auto fresh=backend.open_target(s,"Component").first; CHECK(fresh && fresh!=target);
+        CHECK(backend.enable_delivery_faults(s,fresh).empty() && backend.target_delivery_valid(s,fresh).first);
+        CHECK(backend.subscribe(s,fresh,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        f.bindings().data[0]->Execute(event); auto live=backend.take_events(); CHECK(live.size()==1 && live[0].owner->delivery_valid());
+        backend.consumer_events_remaining(0); CHECK(backend.shutdown());
     }
     // Legacy targets keep overflow behavior and cannot opt in retroactively.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
         auto target=backend.open_target(s,"Component").first;
-        auto id=backend.subscribe(s,target,1,"Action","Triggered",ABI::TriggerEvent::Triggered).first; assert(id);
-        assert(!backend.enable_delivery_faults(s,target).empty());
+        auto id=backend.subscribe(s,target,1,"Action","Triggered",ABI::TriggerEvent::Triggered).first; CHECK(id);
+        CHECK(!backend.enable_delivery_faults(s,target).empty());
         backend.set_queue_limit(1); f.bindings().data[0]->Execute(event); f.bindings().data[0]->Execute(event);
-        assert(backend.queue_stats().rejected==1 && !backend.take_delivery_fault());
-        auto accepted=backend.take_events(); assert(accepted.size()==1 && accepted[0].owner->delivery_valid());
-        backend.consumer_events_remaining(0); assert(backend.unsubscribe(s,id));
-        assert(!backend.enable_delivery_faults(s,target).empty()); assert(backend.shutdown());
+        CHECK(backend.queue_stats().rejected==1 && !backend.take_delivery_fault());
+        auto accepted=backend.take_events(); CHECK(accepted.size()==1 && accepted[0].owner->delivery_valid());
+        backend.consumer_events_remaining(0); CHECK(backend.unsubscribe(s,id));
+        CHECK(!backend.enable_delivery_faults(s,target).empty()); CHECK(backend.shutdown());
     }
     // Actual queue allocation exception latches independently of the trace queue.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
         auto target=backend.open_target(s,"Component").first;
-        assert(backend.enable_delivery_faults(s,target).empty());
-        assert(backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        CHECK(backend.enable_delivery_faults(s,target).empty());
+        CHECK(backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started).first);
         fail_next_cpp_allocation=true; f.bindings().data[0]->Execute(event);
-        assert(!fail_next_cpp_allocation && !backend.target_delivery_valid(s,target).first);
-        auto fault=backend.take_delivery_fault(); assert(fault && fault->reason==DeliveryFault::QueueException);
-        assert(backend.take_events().empty()); assert(backend.shutdown());
+        CHECK(!fail_next_cpp_allocation && !backend.target_delivery_valid(s,target).first);
+        auto fault=backend.take_delivery_fault(); CHECK(fault && fault->reason==DeliveryFault::QueueException);
+        CHECK(backend.take_events().empty()); CHECK(backend.shutdown());
     }
     // Callback faults coalesce; unrelated targets remain valid. Closing/stopping
     // before notification prevents a callback into a released consumer.
@@ -166,18 +166,18 @@ int main() {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
         auto target=backend.open_target(s,"Component").first;
         auto other=backend.open_target(s,"Component").first;
-        assert(backend.enable_delivery_faults(s,target).empty()); assert(backend.enable_delivery_faults(s,other).empty());
-        assert(backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started).first);
-        f.bindings().data[0]->Execute(event); auto batch=backend.take_events(); assert(batch.size()==1);
+        CHECK(backend.enable_delivery_faults(s,target).empty()); CHECK(backend.enable_delivery_faults(s,other).empty());
+        CHECK(backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        f.bindings().data[0]->Execute(event); auto batch=backend.take_events(); CHECK(batch.size()==1);
         backend.consumer_events_remaining(0);
         backend.report_delivery_fault(*batch[0].owner,DeliveryFault::CallbackError);
         backend.report_delivery_fault(*batch[0].owner,DeliveryFault::QueueCapacity);
-        assert(!batch[0].owner->delivery_valid() && backend.target_delivery_valid(s,other).first);
-        assert(backend.close_target(s,target)); assert(!backend.take_delivery_fault());
-        assert(backend.subscribe(s,other,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        CHECK(!batch[0].owner->delivery_valid() && backend.target_delivery_valid(s,other).first);
+        CHECK(backend.close_target(s,target)); CHECK(!backend.take_delivery_fault());
+        CHECK(backend.subscribe(s,other,1,"Action","Started",ABI::TriggerEvent::Started).first);
         f.bindings().data[0]->Execute(event); batch=backend.take_events(); backend.consumer_events_remaining(0);
         backend.report_delivery_fault(*batch[0].owner,DeliveryFault::CallbackError);
-        backend.deactivate_all(s); assert(!backend.take_delivery_fault()); assert(backend.shutdown());
+        backend.deactivate_all(s); CHECK(!backend.take_delivery_fault()); CHECK(backend.shutdown());
     }
     // Actual attachment, ownership, queue production, removal and reload cycles.
     {
@@ -185,25 +185,25 @@ int main() {
         std::array<LuaSession,100> sessions;
         uint64_t previous{};
         for(auto& session:sessions) {
-            const auto id=bind(backend,session); assert(id>previous); previous=id;
+            const auto id=bind(backend,session); CHECK(id>previous); previous=id;
             f.bindings().data[0]->Execute(event);
-            auto batch=backend.take_events(); assert(batch.size()==1 && batch[0].subscription==id);
-            assert(backend.queue_stats().queued==1);
-            assert(backend.unsubscribe_all(session)==1 && f.bindings().size==0);
-            assert(!batch[0].owner->active.load()); // Captured native ownership is inert.
+            auto batch=backend.take_events(); CHECK(batch.size()==1 && batch[0].subscription==id);
+            CHECK(backend.queue_stats().queued==1);
+            CHECK(backend.unsubscribe_all(session)==1 && f.bindings().size==0);
+            CHECK(!batch[0].owner->active.load()); // Captured native ownership is inert.
             backend.consumer_events_remaining(0); batch.clear(); backend.recycle_events(std::move(batch));
-            assert(backend.queue_stats().queued==0);
+            CHECK(backend.queue_stats().queued==0);
         }
-        assert(backend.shutdown());
+        CHECK(backend.shutdown());
     }
     // Unreal-owned clone survives original removal and backend destruction.
     {
         Fixture f; auto backend=std::make_unique<EnhancedInputBackend>(); backend->initialize(); LuaSession s;
         bind(*backend,s);
-        auto clone=f.bindings().data[0]->Clone(); auto* late=clone.release(); assert(late);
-        assert(backend->unsubscribe_all(s)==1);
-        late->Execute(event); assert(backend->take_events().empty());
-        assert(!backend->shutdown()); backend.reset();
+        auto clone=f.bindings().data[0]->Clone(); auto* late=clone.release(); CHECK(late);
+        CHECK(backend->unsubscribe_all(s)==1);
+        late->Execute(event); CHECK(backend->take_events().empty());
+        CHECK(!backend->shutdown()); backend.reset();
         late->Execute(event); delete late; // ASan covers shared-state lifetime.
     }
     // Stop off-thread while another thread executes the real native delegate.
@@ -213,25 +213,26 @@ int main() {
         std::barrier start(2);
         std::thread producer([&] { game_thread=false; start.arrive_and_wait();
             for(int i=0;i<10000;++i) delegate->Execute(event); });
-        std::thread stop([&] { game_thread=false; start.arrive_and_wait(); assert(!backend.shutdown()); });
+        std::thread stop([&] { game_thread=false; start.arrive_and_wait(); CHECK(!backend.shutdown()); });
         producer.join(); stop.join();
-        assert(f.bindings().size==1); // No off-thread mutation of engine ownership.
-        delegate->Execute(event); assert(backend.take_events().empty());
-        f.destroy_component(); assert(backend.shutdown());
+        CHECK(f.bindings().size==1); // No off-thread mutation of engine ownership.
+        delegate->Execute(event); CHECK(backend.take_events().empty());
+        f.destroy_component(); CHECK(backend.shutdown());
     }
     // Native dead-component path must not dereference an already-freed binding.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
         const auto id=bind(backend,s); f.destroy_component();
-        assert(backend.unsubscribe(s,id)); assert(backend.shutdown());
+        CHECK(backend.unsubscribe(s,id)); CHECK(backend.shutdown());
     }
     // A failed native allocation is recoverable and publishes no binding.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
-        auto target=backend.open_target(s,"Component"); assert(target.first);
+        auto target=backend.open_target(s,"Component"); CHECK(target.first);
         fail_allocation=true;
         auto failed=backend.subscribe(s,target.first,1,"Action","Triggered",ABI::TriggerEvent::Triggered);
-        fail_allocation=false; assert(!failed.first && !failed.second.empty() && f.bindings().size==0);
-        bind(backend,s); assert(backend.unsubscribe_all(s)==1); assert(backend.shutdown());
+        fail_allocation=false; CHECK(!failed.first && !failed.second.empty() && f.bindings().size==0);
+        bind(backend,s); CHECK(backend.unsubscribe_all(s)==1); CHECK(backend.shutdown());
     }
+    return LexTests::finish("NativeBackendLifecycleTests");
 }

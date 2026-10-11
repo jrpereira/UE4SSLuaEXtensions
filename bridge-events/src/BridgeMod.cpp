@@ -6,7 +6,8 @@
 #include <Version.hpp>
 #include <LifecycleRegistry.hpp>
 #include <LifetimeProbe.hpp>
-#include <ImplementationABI.h>
+#include <LexImplementation.hpp>
+#include <LexReport.hpp>
 
 #include <array>
 #include <atomic>
@@ -72,21 +73,9 @@ UE4SSLuaEventBridgeMod* active_mod{};
 // Reports one diagnostic line to UE4SS.log and to an attached debugger.
 void report(std::string_view message, std::string_view detail = {})
 {
-    std::string line{"[UE4SSLuaEventBridge] "};
-    line.append(message);
-    line.append(detail);
-    line.push_back('\n');
-    OutputDebugStringA(line.c_str());
-    try
-    {
-        std::wstring wide;
-        wide.reserve(line.size());
-        for (const char c : line) wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
-        RC::Output::send(wide);
-    }
-    catch (...)
-    {
-    }
+    std::string text(message);
+    text.append(detail);
+    Lex::report("UE4SSLuaEventBridge", text);
 }
 
 uint32_t configured_queue_check_rate()
@@ -1331,21 +1320,7 @@ UE4SSLEB_UninstallResult uninstall_implementation(UE4SSLEB_ModHandle mod)
     delete bridge;
     return retain_module ? UE4SSLEB_UNINSTALL_RETAIN_MODULE : UE4SSLEB_UNINSTALL_CAN_UNLOAD;
 }
-
-const UE4SSLEB_ImplementationV1 implementation_api{
-    sizeof(UE4SSLEB_ImplementationV1),
-    UE4SSLEB_IMPLEMENTATION_MAGIC,
-    UE4SSLEB_IMPLEMENTATION_ABI,
-    UE4SSLEB_TARGET_UE4SS_COMMIT,
-    UE4SSLEB_VERSION_MAJOR,
-    UE4SSLEB_VERSION_MINOR,
-    UE4SSLEB_VERSION_PATCH,
-    &start_implementation,
-    &uninstall_implementation,
-};
 }
 
-extern "C" __declspec(dllexport) const UE4SSLEB_ImplementationV1* UE4SSLEB_GetImplementationV1()
-{
-    return &implementation_api;
-}
+LEX_EXPORT_IMPLEMENTATION(UE4SSLEB_VERSION_MAJOR, UE4SSLEB_VERSION_MINOR, UE4SSLEB_VERSION_PATCH,
+    &start_implementation, &uninstall_implementation)

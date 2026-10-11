@@ -77,12 +77,16 @@ A different UE4SS revision requires ABI validation against `97b7e501`.
 ## Portable checks
 
 On Linux, the behavioral tests and ABI-facing syntax audit can be run without
-the Windows SDK:
+the Windows SDK, through the repository's test runner:
 
 ```sh
-bash tests/run-portable-tests.sh
-bash tests/run-abi-syntax-test.sh
+bash tests/run.sh bridge-events
 ```
+
+It runs the shared code's tests, the checks every extension shares
+(`shared/tests`: versions and identity, the ABI syntax audit, the load-time
+verification gate), then this extension's own C++, Lua and Python suites.
+`--only cpp|lua|python|checks` narrows a run.
 
 ## Native architecture
 
@@ -223,10 +227,10 @@ lifecycle. Helper-created actions default to non-consuming input.
 Run from the repository root with Lua 5.4:
 
 ```sh
-bash tests/run-lua-tests.sh
+bash tests/run.sh --only lua bridge-events
 ```
 
-Without Bash, run both files directly:
+Without Bash, run both files directly from the repository root:
 
 ```sh
 lua bridge-events/tests/LuaHelperTests.lua
