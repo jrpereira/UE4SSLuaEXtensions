@@ -27,10 +27,19 @@ PACKAGE = 'UE4SSLuaEXtensions'
 REPOSITORY = 'jrpereira/UE4SSLuaEXtensions'
 SHARED_FOLDER = '0_ModCore_UE4SSLuaEXtensions'
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
-# Documentation shipped for each extension, relative to its folder in the repository.
-DOC_FILES = ('README.md', 'CHANGELOG.md')
+# Documentation shipped for each extension, relative to its folder in the repository. Only
+# what a mod developer needs to use the extension: the README, the developer guide and API
+# reference, and the examples. Build instructions, maintainer guides, reviews and changelogs
+# (which record development) stay in the repository.
+DOC_FILES = ('README.md',)
 DOC_FOLDER = 'docs'
-DOC_EXCLUDED = ('SPEC-REVIEW.md',)
+DOC_EXCLUDED = ('BUILD.md', 'SPEC-REVIEW.md')
+EXAMPLES_FOLDER = 'examples'
+# Lines pointing at documents that do not ship are dropped from the shipped text.
+DROPPED_REFERENCES = ('BUILD.md', 'SPEC-REVIEW.md', '(#internal-native-contract)', '(#open-points-for-review)')
+# Sections and opening paragraphs that describe the extension's development, not its use.
+DROPPED_SECTIONS = ('Internal native contract', 'Open points for review')
+DROPPED_PARAGRAPHS = ('Status: **',)
 # Development folders never ship in a package, at any depth.
 EXCLUDED_FOLDERS = {'tools', 'tests'}
 LINK = re.compile(r'(\]\()([^)\s]+)(\))')
@@ -75,6 +84,32 @@ def verify_product(product, archive, checksum, manifest, commit):
     return entries, digest
 
 
+def drop_references(text):
+    """Remove what concerns the extension's development from a shipped document."""
+    lines = text.splitlines(keepends=True)
+    kept = []
+    skipping = None  # 'section' until the next ## heading, 'paragraph' until a blank line
+    for line in lines:
+        heading = re.match(r'^## (.+?)\s*$', line)
+        if skipping == 'section' and not heading:
+            continue
+        if skipping == 'paragraph':
+            if line.strip():
+                continue
+            skipping = None
+        if heading:
+            skipping = 'section' if heading.group(1) in DROPPED_SECTIONS else None
+            if skipping:
+                continue
+        if line.startswith(DROPPED_PARAGRAPHS):
+            skipping = 'paragraph'
+            continue
+        if any(name in line for name in DROPPED_REFERENCES):
+            continue
+        kept.append(line)
+    return ''.join(kept)
+
+
 def rewrite_links(text, source_path, shipped, repository, tag, product_folder):
     """Point relative links at shipped documents, or at the tagged source when not shipped."""
     base = posixpath.dirname(source_path)
@@ -99,13 +134,17 @@ def product_docs(product, read_file, list_docs):
     wanted = [path for path in DOC_FILES if read_file(f'{folder}/{path}') is not None]
     wanted += [path for path in list_docs(f'{folder}/{DOC_FOLDER}')
                if path.endswith('.md') and posixpath.basename(path) not in DOC_EXCLUDED]
+    wanted += [path for path in list_docs(f'{folder}/{EXAMPLES_FOLDER}') if path.endswith('.lua')]
     wanted = sorted(set(wanted))
     shipped = set(wanted)
     docs = {}
     for path in wanted:
-        text = read_file(f'{folder}/{path}').decode('utf-8')
-        text = rewrite_links(text, path, shipped, REPOSITORY, product['tag'], folder)
-        docs[f'docs/{product["product_name"]}/{path}'] = text.encode('utf-8')
+        data = read_file(f'{folder}/{path}')
+        if path.endswith('.md'):
+            text = rewrite_links(drop_references(data.decode('utf-8')), path, shipped,
+                                 REPOSITORY, product['tag'], folder)
+            data = text.encode('utf-8')
+        docs[f'docs/{product["product_name"]}/{path}'] = data
     return docs
 
 

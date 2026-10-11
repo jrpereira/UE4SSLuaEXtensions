@@ -85,6 +85,47 @@ class RewriteLinksTests(unittest.TestCase):
         self.assertIn('(https://github.com/o/r/blob/t/v1.0.0/t/src/a.cpp)', out)
 
 
+class DocsTests(unittest.TestCase):
+    FILES = {
+        'bridge-x/README.md': b'# X\n- [Guide](docs/DEVELOPERS.md)\n- [Maintainer guide](docs/BUILD.md): build instructions.\n'
+                              b'- [Sample](examples/A/Scripts/main.lua)\n- [Changes](CHANGELOG.md)\n',
+        'bridge-x/CHANGELOG.md': b'# Changelog\n',
+        'bridge-x/docs/DEVELOPERS.md': b'# Dev\nSee the [maintainer guide](BUILD.md#t).\nKept.\n',
+        'bridge-x/docs/BUILD.md': b'# Build\n',
+        'bridge-x/docs/SPEC-REVIEW.md': b'# Review\n',
+        'bridge-x/docs/API.md': b'# API\n\nStatus: **frozen.** Process note\nacross two lines.\n\nIntro stays.\n\n'
+                                b'- [Used](#used)\n- [Internal native contract](#internal-native-contract)\n\n'
+                                b'## Used\n\nUsage.\n\n## Internal native contract\n\nSecret.\n\n## Open points for review\n\n- p\n',
+        'bridge-x/examples/A/Scripts/main.lua': b'print(1)\n',
+        'bridge-x/examples/A/enabled.txt': b'1',
+    }
+
+    def docs(self):
+        product = {'folder_in_repo': 'bridge-x', 'product_name': 'X', 'tag': 'bridge-x/v1.0.0'}
+
+        def list_docs(path):
+            return [name[len('bridge-x/'):] for name in self.FILES if name.startswith(path + '/')]
+
+        return build.product_docs(product, self.FILES.get, list_docs)
+
+    def test_only_usage_documentation_and_examples_ship(self):
+        self.assertEqual(sorted(self.docs()), ['docs/X/README.md', 'docs/X/docs/API.md', 'docs/X/docs/DEVELOPERS.md',
+                                               'docs/X/examples/A/Scripts/main.lua'])
+
+    def test_development_sections_and_status_paragraph_are_dropped(self):
+        api = self.docs()['docs/X/docs/API.md'].decode()
+        self.assertIn('Intro stays.', api)
+        self.assertIn('Usage.', api)
+        for dropped in ('Status:', 'Process note', 'Secret', 'Internal native', 'Open points', 'across two lines'):
+            self.assertNotIn(dropped, api)
+
+    def test_no_shipped_text_mentions_build_or_review_documents(self):
+        for name, data in self.docs().items():
+            for dropped in ('BUILD.md', 'SPEC-REVIEW.md', 'Maintainer'):
+                self.assertNotIn(dropped, data.decode(), name)
+        self.assertIn('Kept.', self.docs()['docs/X/docs/DEVELOPERS.md'].decode())
+
+
 class AssembleTests(unittest.TestCase):
     def setUp(self):
         self.events = verified('UE4SSLuaEventBridge', '1.0.13', 'bridge-events',

@@ -73,6 +73,6 @@ available features rather than inferring them from a version number.
 
 ## Documentation
 
-- `docs/UE4SSLuaEventBridge/`: README, changelog, developer guide and maintainer guide.
-- `docs/UE4SSLuaFileBridge/`: README, changelog, developer guide and API reference.
+- `docs/UE4SSLuaEventBridge/`: README, developer guide and examples.
+- `docs/UE4SSLuaFileBridge/`: README, developer guide, API reference and examples.
 - Source, issues and releases: https://github.com/jrpereira/UE4SSLuaEXtensions
