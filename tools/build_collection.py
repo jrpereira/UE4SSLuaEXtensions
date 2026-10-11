@@ -27,6 +27,8 @@ PACKAGE = 'UE4SSLuaEXtensions'
 REPOSITORY = 'jrpereira/UE4SSLuaEXtensions'
 SHARED_FOLDER = '0_ModCore_UE4SSLuaEXtensions'
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
+PRODUCT_FOLDERS = ({'folder_in_repo': 'bridge-events', 'product_name': 'UE4SSLuaEventBridge'},
+                  {'folder_in_repo': 'bridge-files', 'product_name': 'UE4SSLuaFileBridge'})
 # Documentation shipped for each extension, relative to its folder in the repository. Only
 # what a mod developer needs to use the extension: the README, the developer guide and API
 # reference, and the examples. Build instructions, maintainer guides, reviews and changelogs
@@ -122,7 +124,7 @@ def rewrite_links(text, source_path, shipped, repository, tag, product_folder):
         resolved = posixpath.normpath(posixpath.join(base, path))
         if resolved in shipped:
             return match.group(0)
-        url = f'https://github.com/{repository}/blob/{tag}/{product_folder}/{resolved}'
+        url = f'https://github.com/{repository}/blob/{tag}/{posixpath.join(product_folder, resolved)}'
         return f'{match.group(1)}{url}{"#" + anchor if anchor else ""}{match.group(3)}'
 
     return LINK.sub(replace, text)
@@ -148,13 +150,12 @@ def product_docs(product, read_file, list_docs):
     return docs
 
 
-def render_readme(template, collection_version, versions):
-    text = template.replace('{{COLLECTION_VERSION}}', collection_version)
-    text = text.replace('{{EVENT_BRIDGE_VERSION}}', versions['UE4SSLuaEventBridge'])
-    text = text.replace('{{FILE_BRIDGE_VERSION}}', versions['UE4SSLuaFileBridge'])
-    if '{{' in text:
-        raise ValueError('The collection README has an unfilled placeholder')
-    return text
+def collection_readme(text, shipped, repository, commit):
+    """The repository README as the shared folder's README: its links to an extension's
+    documentation point at the copy beside it, and any other relative link at the source."""
+    for product in PRODUCT_FOLDERS:
+        text = text.replace(f']({product["folder_in_repo"]}/', f'](docs/{product["product_name"]}/')
+    return rewrite_links(text, 'README.md', shipped, repository, commit, '')
 
 
 def assemble(collection_version, source_commit, products, readme, license_text, output, date_time):
@@ -168,8 +169,8 @@ def assemble(collection_version, source_commit, products, readme, license_text, 
     for path in (target, Path(f'{target}.sha256'), Path(f'{target}.manifest.json')):
         if path.exists():
             raise FileExistsError(f'Refusing to overwrite {path}')
-    versions = {product['product_name']: product['version'] for product in products}
-    members = {f'{SHARED_FOLDER}/README.md': render_readme(readme, collection_version, versions).encode('utf-8'),
+    shipped = {name for product in products for name in product['docs']}
+    members = {f'{SHARED_FOLDER}/README.md': collection_readme(readme, shipped, REPOSITORY, source_commit).encode('utf-8'),
                f'{SHARED_FOLDER}/LICENSE': license_text.encode('utf-8')}
     dated = {name: date_time for name in members}
     for product in products:
@@ -283,7 +284,7 @@ def main():
                     load_product(args.files_tag, 'bridge-files', 'UE4SSLuaFileBridge', work)]
         root = Path(__file__).resolve().parent.parent
         target = assemble(args.version, source_commit, products,
-                          (root / 'collection/README.md').read_text(encoding='utf-8'),
+                          (root / 'README.md').read_text(encoding='utf-8'),
                           (root / 'LICENSE').read_text(encoding='utf-8'), args.output, date_time)
         notes = release_notes(args.version, products, {p['product_name']: p['changelog'] for p in products})
         (args.output / 'release-notes.md').write_text(notes, encoding='utf-8')

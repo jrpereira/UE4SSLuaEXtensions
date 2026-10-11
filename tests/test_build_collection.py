@@ -132,7 +132,8 @@ class AssembleTests(unittest.TestCase):
                                {'docs/UE4SSLuaEventBridge/README.md': b'events'})
         self.files = verified('UE4SSLuaFileBridge', '1.0.1', 'bridge-files',
                               {'docs/UE4SSLuaFileBridge/README.md': b'files'})
-        self.readme = '# {{COLLECTION_VERSION}} {{EVENT_BRIDGE_VERSION}} {{FILE_BRIDGE_VERSION}}\n'
+        self.readme = ('# Title\n[E](bridge-events/README.md) [D](bridge-files/docs/API.md#x) '
+                       '[G](DEVELOPMENT.md)\n')
 
     def build(self, directory, version='1.1.0', readme=None):
         return build.assemble(version, 'c' * 40, [self.events, self.files], readme or self.readme,
@@ -145,7 +146,9 @@ class AssembleTests(unittest.TestCase):
             with zipfile.ZipFile(target) as z:
                 names = z.namelist()
                 shared = '0_ModCore_UE4SSLuaEXtensions/'
-                self.assertEqual(z.read(shared + 'README.md').decode(), '# 1.1.0 1.0.13 1.0.1\n')
+                readme = z.read(shared + 'README.md').decode()
+                self.assertIn('[E](docs/UE4SSLuaEventBridge/README.md)', readme)
+                self.assertIn('(https://github.com/jrpereira/UE4SSLuaEXtensions/blob/' + 'c' * 40 + '/DEVELOPMENT.md)', readme)
                 self.assertEqual(z.read(shared + 'docs/UE4SSLuaFileBridge/README.md'), b'files')
             folders = {name.split('/')[0] for name in names}
             self.assertEqual(folders, {'0_ModCore_UE4SSLuaEXtensions', '0_ModCore_UE4SSLuaEventBridge',
@@ -196,17 +199,6 @@ class AssembleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, 'tools or tests'):
                 self.build(directory)
-
-    def test_unfilled_placeholders_are_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, 'placeholder'):
-                self.build(directory, readme='{{NOPE}} {{COLLECTION_VERSION}}')
-
-    def test_repository_readme_template_fills_completely(self):
-        text = (ROOT / 'collection/README.md').read_text(encoding='utf-8')
-        out = build.render_readme(text, '1.1.0', {'UE4SSLuaEventBridge': '1.0.13', 'UE4SSLuaFileBridge': '1.0.1'})
-        self.assertIn('0_ModCore_UE4SSLuaEventBridge', out)
-        self.assertIn('0_ModCore_UE4SSLuaFileBridge', out)
 
 
 if __name__ == '__main__':
