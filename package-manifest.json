@@ -9,7 +9,6 @@
     "output": "NEXUS.bb"
   },
   "not_deployed": [
-    "README.md",
     "NEXUS.bb",
     "DEVELOPMENT.md"
   ],
@@ -43,6 +42,12 @@
         "Scripts/main.lua",
         "Scripts/extensions_menu.lua",
         "Scripts/vendor/menu_contributions.lua"
+      ],
+      "documents": [
+        {
+          "from": "/README.md",
+          "to": "docs/README.md"
+        }
       ]
     }
   ],

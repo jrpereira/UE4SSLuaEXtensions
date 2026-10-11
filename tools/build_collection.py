@@ -177,12 +177,18 @@ def rewrite_links(text, source, plan_by_source, repository, tag, folder):
     return LINK.sub(replace, text)
 
 
-def product_documents(extension, tag, manifest, read_file, list_files):
-    """The documents shipped for one extension, as {path inside its mod folder: bytes}."""
+def document_plan(extension, list_files):
+    """{destination in the mod folder: source} for one extension at a tag."""
     folder = extension['folder']
     files = {'extension': [path[len(folder) + 1:] for path in list_files(folder)],
              'root': set(list_files(''))}
-    plan = plan_documents(extension, files)
+    return plan_documents(extension, files)
+
+
+def product_documents(extension, tag, manifest, read_file, list_files):
+    """The documents shipped for one extension, as {path inside its mod folder: bytes}."""
+    folder = extension['folder']
+    plan = document_plan(extension, list_files)
     by_source = {source: destination for destination, source in plan.items()}
     documents = {}
     for destination, source in sorted(plan.items()):
@@ -198,12 +204,46 @@ def product_documents(extension, tag, manifest, read_file, list_files):
     return documents
 
 
-def package_folders(manifest, collection_version, read_file):
+def link_targets(extensions, plans):
+    """Where each extension document lands in the ZIP, by its repository path."""
+    targets = {}
+    for extension, plan in zip(extensions, plans):
+        for destination, source in plan.items():
+            if not source.startswith('/'):
+                targets[f'{extension["folder"]}/{source}'] = f'{extension["mod_folder"]}/{destination}'
+    return targets
+
+
+def package_folders(manifest, collection_version, read_file, targets=None, commit=''):
     """The package's own mod folders (no DLL, versioned with the package), as
-    [{'name', 'mod_folder', 'source', 'files': {path in the folder: bytes}}]."""
+    [{'name', 'mod_folder', 'source', 'files': {path in the folder: bytes}}].
+
+    A folder's documents come from the repository root (a rule's source starts with /); their
+    relative links point at the documents' places in the ZIP, or at the source at commit."""
     folders = []
     for folder in manifest.get('folders', []):
         files = {}
+        for rule in folder.get('documents', []):
+            source = rule['from'].lstrip('/')
+            data = read_file(source)
+            if data is None:
+                raise ValueError(f'{folder["name"]}: {source} is missing')
+            here = f'{folder["mod_folder"]}/{rule["to"]}'
+            text = drop_development_text(data.decode('utf-8'), manifest['filters'])
+
+            def replace(match, source=source, here=here):
+                target = match.group(2)
+                if re.match(r'^([a-z][a-z0-9+.-]*:|#|/)', target, re.I):
+                    return match.group(0)
+                path, _, anchor = target.partition('#')
+                resolved = posixpath.normpath(posixpath.join(posixpath.dirname(source), path))
+                if resolved in (targets or {}):
+                    new = posixpath.relpath(targets[resolved], posixpath.dirname(here))
+                else:
+                    new = f'https://github.com/{manifest["repository"]}/blob/{commit}/{resolved}'
+                return f'{match.group(1)}{new}{"#" + anchor if anchor else ""}{match.group(3)}'
+
+            files[rule['to']] = LINK.sub(replace, text).encode('utf-8')
         for path in folder['files']:
             data = read_file(f'{folder["source"]}/{path}')
             if data is None:
@@ -330,7 +370,7 @@ def load_product(manifest, extension, tag, work):
         listing = git('ls-tree', '-r', '--name-only', tag, f'{path}/') if path else git('ls-tree', '--name-only', tag)
         return (listing or '').splitlines()
 
-    product.update(entries=entries, archive_sha256=digest,
+    product.update(entries=entries, archive_sha256=digest, plan=document_plan(extension, list_files),
                    docs=product_documents(extension, tag, manifest, read_file, list_files),
                    changelog=read_file(f'{folder}/CHANGELOG.md').decode('utf-8'))
     return product
@@ -359,7 +399,9 @@ def main():
     with tempfile.TemporaryDirectory() as work:
         products = [load_product(manifest, extension, chosen[extension['folder']], work)
                     for extension in manifest['extensions']]
-        folders = package_folders(manifest, args.version, lambda path: (ROOT / path).read_bytes())
+        targets = link_targets(manifest['extensions'], [product['plan'] for product in products])
+        folders = package_folders(manifest, args.version, lambda path: (ROOT / path).read_bytes() if (ROOT / path).is_file() else None,
+                                  targets, source_commit)
         target = assemble(manifest, args.version, source_commit, products, args.output, date_time, folders)
         notes = release_notes(manifest, args.version, products, {p['product_name']: p['changelog'] for p in products})
         (args.output / 'release-notes.md').write_text(notes, encoding='utf-8')

@@ -72,7 +72,7 @@ class ManifestTests(unittest.TestCase):
     def test_the_manifest_describes_both_extensions_and_what_is_not_deployed(self):
         self.assertEqual([e['mod_folder'] for e in MANIFEST['extensions']],
                          ['0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge'])
-        self.assertIn('README.md', MANIFEST['not_deployed'])
+        self.assertEqual(MANIFEST['not_deployed'], ['NEXUS.bb', 'DEVELOPMENT.md'])
         self.assertEqual(MANIFEST['nexus_description'], {'source': 'README.md', 'output': 'NEXUS.bb'})
 
     def test_the_menu_folder_lists_files_that_exist_and_no_development_folders(self):
@@ -150,6 +150,17 @@ class PackageFolderTests(unittest.TestCase):
         self.assertNotIn('version_source', described)
         self.assertIn('Scripts/main.lua', folders[0]['files'])
 
+    def test_the_root_readme_lands_in_the_menu_folders_docs_with_links_to_the_extensions(self):
+        targets = {'bridge-events/README.md': '0_ModCore_UE4SSLuaEventBridge/docs/README.md',
+                   'bridge-events/docs/DEVELOPERS.md': '0_ModCore_UE4SSLuaEventBridge/docs/DEVELOPERS.md',
+                   'bridge-files/docs/API.md': '0_ModCore_UE4SSLuaFileBridge/docs/API.md'}
+        folders = build.package_folders(MANIFEST, '1.1.0', lambda path: (ROOT / path).read_bytes(), targets, 'd' * 40)
+        readme = folders[0]['files']['docs/README.md'].decode()
+        self.assertIn('(../../0_ModCore_UE4SSLuaEventBridge/docs/README.md)', readme)
+        self.assertIn('(../../0_ModCore_UE4SSLuaFileBridge/docs/API.md)', readme)
+        self.assertIn('(https://github.com/jrpereira/UE4SSLuaEXtensions/blob/' + 'd' * 40 + '/bridge-files/README.md)', readme)
+        self.assertIn('(https://github.com/jrpereira/UE4SSLuaEXtensions/releases)', readme)
+
     def test_a_missing_file_is_an_error(self):
         with self.assertRaisesRegex(ValueError, 'missing'):
             build.package_folders(MANIFEST, '1.1.0', lambda path: None)
@@ -180,6 +191,7 @@ class AssembleTests(unittest.TestCase):
                                  {'0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge',
                                   '0_ModCore_UE4SSLuaEXtensions'})
                 self.assertIn('0_ModCore_UE4SSLuaEXtensions/Scripts/extensions_menu.lua', names)
+                self.assertIn('0_ModCore_UE4SSLuaEXtensions/docs/README.md', names)
                 self.assertEqual([n for n in names if '/' not in n], [])
                 self.assertIn('0_ModCore_UE4SSLuaFileBridge/docs/LICENSE', names)
                 self.assertFalse([n for n in names if n.endswith('NEXUS.bb') or n == 'README.md'])
