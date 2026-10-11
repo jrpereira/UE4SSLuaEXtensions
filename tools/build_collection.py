@@ -39,7 +39,7 @@ def load_manifest(path=ROOT / 'package-manifest.json'):
     for key in ('package', 'repository', 'archive', 'release_tag', 'forbidden_folders', 'filters', 'extensions'):
         if key not in manifest:
             raise ValueError(f'The package manifest lacks "{key}"')
-    for extension in manifest['extensions']:
+    for extension in manifest['extensions'] + manifest.get('folders', []):
         if extension['mod_folder'] != f'0_ModCore_{extension["name"]}':
             raise ValueError(f'{extension["name"]}: the mod folder must be 0_ModCore_<name>')
     return manifest
@@ -198,7 +198,33 @@ def product_documents(extension, tag, manifest, read_file, list_files):
     return documents
 
 
-def assemble(manifest, collection_version, source_commit, products, output, date_time):
+def package_folders(manifest, collection_version, read_file):
+    """The package's own mod folders (no DLL, versioned with the package), as
+    [{'name', 'mod_folder', 'source', 'files': {path in the folder: bytes}}]."""
+    folders = []
+    for folder in manifest.get('folders', []):
+        files = {}
+        for path in folder['files']:
+            data = read_file(f'{folder["source"]}/{path}')
+            if data is None:
+                raise ValueError(f'{folder["name"]}: {folder["source"]}/{path} is missing')
+            if path == 'mod.json':
+                described = json.loads(data.decode('utf-8'))
+                packaged = {}
+                for key, value in described.items():
+                    if key in ('version', 'version_source'):
+                        continue
+                    packaged[key] = value
+                    if key == 'name':
+                        packaged['version'] = collection_version
+                data = (json.dumps(packaged, indent=2) + '\n').encode('utf-8')
+            files[path] = data
+        folders.append({'name': folder['name'], 'mod_folder': folder['mod_folder'],
+                        'source': folder['source'], 'files': files})
+    return folders
+
+
+def assemble(manifest, collection_version, source_commit, products, output, date_time, folders=()):
     """Write the package ZIP, its .sha256 and .manifest.json; return the ZIP's path."""
     if not VERSION.fullmatch(collection_version):
         raise ValueError('The collection version must look like 1.1.0')
@@ -216,6 +242,13 @@ def assemble(manifest, collection_version, source_commit, products, output, date
             dated[name] = stamp
         for destination, data in product['docs'].items():
             name = f'{product["mod_folder"]}/{destination}'
+            if name in members:
+                raise ValueError(f'Duplicate package entry: {name}')
+            members[name] = data
+            dated[name] = date_time
+    for folder in folders:
+        for path, data in folder['files'].items():
+            name = f'{folder["mod_folder"]}/{path}'
             if name in members:
                 raise ValueError(f'Duplicate package entry: {name}')
             members[name] = data
@@ -241,6 +274,7 @@ def assemble(manifest, collection_version, source_commit, products, output, date
         'products': [{'product': product['product_name'], 'version': product['version'], 'tag': product['tag'],
                       'source_commit': product['commit'], 'archive': product['archive'],
                       'archive_sha256': product['archive_sha256']} for product in products],
+        'folders': [{'folder': folder['mod_folder'], 'source': folder['source']} for folder in folders],
         'files': [{'path': name, 'sha256': sha256(members[name])} for name in sorted(members)],
     }
     Path(f'{target}.manifest.json').write_text(json.dumps(described, indent=2) + '\n', encoding='utf-8')
@@ -325,7 +359,8 @@ def main():
     with tempfile.TemporaryDirectory() as work:
         products = [load_product(manifest, extension, chosen[extension['folder']], work)
                     for extension in manifest['extensions']]
-        target = assemble(manifest, args.version, source_commit, products, args.output, date_time)
+        folders = package_folders(manifest, args.version, lambda path: (ROOT / path).read_bytes())
+        target = assemble(manifest, args.version, source_commit, products, args.output, date_time, folders)
         notes = release_notes(manifest, args.version, products, {p['product_name']: p['changelog'] for p in products})
         (args.output / 'release-notes.md').write_text(notes, encoding='utf-8')
     if args.output_file:

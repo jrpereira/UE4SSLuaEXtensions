@@ -1,6 +1,7 @@
 {
   "allowed_paths": [],
   "vendored": {
-    "tests/support/lifetimes.lua": "UE4SSLuaEXtensions"
+    "tests/support/lifetimes.lua": "UE4SSLuaEXtensions",
+    "extensions-menu/Scripts/vendor/menu_contributions.lua": "ModCoreSettings"
   }
 }

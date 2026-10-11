@@ -75,6 +75,13 @@ class ManifestTests(unittest.TestCase):
         self.assertIn('README.md', MANIFEST['not_deployed'])
         self.assertEqual(MANIFEST['nexus_description'], {'source': 'README.md', 'output': 'NEXUS.bb'})
 
+    def test_the_menu_folder_lists_files_that_exist_and_no_development_folders(self):
+        for folder in MANIFEST['folders']:
+            self.assertEqual(folder['mod_folder'], f'0_ModCore_{folder["name"]}')
+            for path in folder['files']:
+                self.assertTrue((ROOT / folder['source'] / path).is_file(), path)
+                self.assertFalse({p.lower() for p in path.split('/')[:-1]} & {'tools', 'tests'}, path)
+
     def test_every_extension_ships_a_license_inside_its_docs(self):
         for extension in MANIFEST['extensions']:
             self.assertIn({'from': '/LICENSE', 'to': 'docs/LICENSE'}, extension['documents'])
@@ -133,6 +140,21 @@ class DocumentTests(unittest.TestCase):
             documents(broken)
 
 
+class PackageFolderTests(unittest.TestCase):
+    def test_the_menu_folder_takes_the_package_version_in_its_mod_json(self):
+        folders = build.package_folders(MANIFEST, '1.1.0', lambda path: (ROOT / path).read_bytes())
+        self.assertEqual([f['mod_folder'] for f in folders], ['0_ModCore_UE4SSLuaEXtensions'])
+        described = json.loads(folders[0]['files']['mod.json'])
+        self.assertEqual(described['version'], '1.1.0')
+        self.assertEqual(list(described)[:3], ['manifest_version', 'id', 'name'])
+        self.assertNotIn('version_source', described)
+        self.assertIn('Scripts/main.lua', folders[0]['files'])
+
+    def test_a_missing_file_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            build.package_folders(MANIFEST, '1.1.0', lambda path: None)
+
+
 class AssembleTests(unittest.TestCase):
     def setUp(self):
         self.products = []
@@ -144,16 +166,20 @@ class AssembleTests(unittest.TestCase):
             self.products.append(product)
 
     def build(self, directory, version='1.1.0'):
-        return build.assemble(MANIFEST, version, 'c' * 40, self.products, directory, STAMP)
+        folders = build.package_folders(MANIFEST, version, lambda path: (ROOT / path).read_bytes()) \
+            if build.VERSION.fullmatch(version) else []
+        return build.assemble(MANIFEST, version, 'c' * 40, self.products, directory, STAMP, folders)
 
-    def test_the_package_has_only_the_two_mod_folders_and_no_root_files(self):
+    def test_the_package_has_only_the_mod_folders_and_no_root_files(self):
         with tempfile.TemporaryDirectory() as directory:
             target = self.build(directory)
             self.assertEqual(target.name, 'UE4SSLuaEXtensions-v1.1.0.zip')
             with zipfile.ZipFile(target) as z:
                 names = z.namelist()
                 self.assertEqual({n.split('/')[0] for n in names},
-                                 {'0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge'})
+                                 {'0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge',
+                                  '0_ModCore_UE4SSLuaEXtensions'})
+                self.assertIn('0_ModCore_UE4SSLuaEXtensions/Scripts/extensions_menu.lua', names)
                 self.assertEqual([n for n in names if '/' not in n], [])
                 self.assertIn('0_ModCore_UE4SSLuaFileBridge/docs/LICENSE', names)
                 self.assertFalse([n for n in names if n.endswith('NEXUS.bb') or n == 'README.md'])

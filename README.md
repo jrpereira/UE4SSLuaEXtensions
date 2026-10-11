@@ -20,15 +20,18 @@ Mod folder: `0_ModCore_UE4SSLuaFileBridge`. Documentation: [File Bridge README](
 
 ## Installation
 
-The Nexus download is one ZIP holding both extensions. Extract it into the UE4SS `Mods` directory, or install it with your mod manager. It adds one folder for each extension:
+The Nexus download is one ZIP holding both extensions. Extract it into the UE4SS `Mods` directory, or install it with your mod manager. It adds a folder for each extension and a third, Lua-only folder for the menu:
 
 ```text
 Mods/
+├── 0_ModCore_UE4SSLuaEXtensions/
 ├── 0_ModCore_UE4SSLuaEventBridge/
 └── 0_ModCore_UE4SSLuaFileBridge/
 ```
 
-Each folder's `docs` subfolder holds the README, developer guide, examples and license for mod authors.
+`0_ModCore_UE4SSLuaEXtensions` makes ModCore Settings list both extensions as one entry, "UE4SS Lua Extensions". The page shows how many extensions are installed and one switch for each, under "Enable startup library verifications". Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
+
+Each extension folder's `docs` subfolder holds the README, developer guide, examples and license for mod authors.
 
 For deterministic startup before the Lua mods that use the extensions, list them first in `Mods/mods.txt`:
 

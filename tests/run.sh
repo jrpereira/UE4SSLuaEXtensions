@@ -89,3 +89,8 @@ for extension in "${extensions[@]}"; do
         python3 -m unittest discover -s "${extension}/tests" -p 'test_*.py'
     fi
 done
+
+# The package's own menu folder (Lua only, no DLL): its suites run from the repository root.
+if wants lua; then
+    for suite in extensions-menu/tests/*Tests.lua; do lua5.4 "${suite}"; done
+fi

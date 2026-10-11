@@ -32,16 +32,46 @@
       "(#open-points-for-review)"
     ]
   },
+  "folders": [
+    {
+      "name": "UE4SSLuaEXtensions",
+      "source": "extensions-menu",
+      "mod_folder": "0_ModCore_UE4SSLuaEXtensions",
+      "files": [
+        "mod.json",
+        "enabled.txt",
+        "Scripts/main.lua",
+        "Scripts/extensions_menu.lua",
+        "Scripts/vendor/menu_contributions.lua"
+      ]
+    }
+  ],
   "extensions": [
     {
       "name": "UE4SSLuaEventBridge",
       "folder": "bridge-events",
       "mod_folder": "0_ModCore_UE4SSLuaEventBridge",
       "documents": [
-        {"from": "README.md", "to": "docs/README.md"},
-        {"from": "docs/*.md", "to": "docs/", "except": ["BUILD.md", "SPEC-REVIEW.md"]},
-        {"from": "examples/**/*.lua", "to": "docs/examples/"},
-        {"from": "/LICENSE", "to": "docs/LICENSE"}
+        {
+          "from": "README.md",
+          "to": "docs/README.md"
+        },
+        {
+          "from": "docs/*.md",
+          "to": "docs/",
+          "except": [
+            "BUILD.md",
+            "SPEC-REVIEW.md"
+          ]
+        },
+        {
+          "from": "examples/**/*.lua",
+          "to": "docs/examples/"
+        },
+        {
+          "from": "/LICENSE",
+          "to": "docs/LICENSE"
+        }
       ]
     },
     {
@@ -49,10 +79,26 @@
       "folder": "bridge-files",
       "mod_folder": "0_ModCore_UE4SSLuaFileBridge",
       "documents": [
-        {"from": "README.md", "to": "docs/README.md"},
-        {"from": "docs/*.md", "to": "docs/", "except": ["BUILD.md", "SPEC-REVIEW.md"]},
-        {"from": "examples/**/*.lua", "to": "docs/examples/"},
-        {"from": "/LICENSE", "to": "docs/LICENSE"}
+        {
+          "from": "README.md",
+          "to": "docs/README.md"
+        },
+        {
+          "from": "docs/*.md",
+          "to": "docs/",
+          "except": [
+            "BUILD.md",
+            "SPEC-REVIEW.md"
+          ]
+        },
+        {
+          "from": "examples/**/*.lua",
+          "to": "docs/examples/"
+        },
+        {
+          "from": "/LICENSE",
+          "to": "docs/LICENSE"
+        }
       ]
     }
   ]
