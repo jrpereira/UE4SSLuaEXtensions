@@ -345,6 +345,18 @@ Windows failures include the Windows error number. Subscription closures and
 callback errors are written to UE4SS.log. `Locations()` shows where each
 location points and whether it exists.
 
+### Load-time verifications
+
+The bridge's mod folder carries `Scripts/main.lua`, a set of in-game checks
+of this API (source: [`lua/main_files.lua`](../lua/main_files.lua)). They run
+only when **Enable load-time verifications** is on in the bridge's ModCore
+Settings page (`settings.ini`: `[Verifications] LoadTime=1`). It is off by
+default and takes effect on the next launch. Results are `PASS`, `FAIL` and
+`SKIP` lines tagged `[UE4SSLuaFileBridge verify]` in UE4SS.log, ending with a
+`SUMMARY` line once the `Tail` checks finish (at most 10 seconds). They write
+only under `temp/lexverify`, `moddata/lexverify` and `mod/lexverify`, and
+remove what they write; saves are only read.
+
 ## Limits and tuning
 
 | Limit | Value |

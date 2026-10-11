@@ -9,6 +9,9 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 function New-Distribution([string]$Path, [string]$ProductName, [string]$Version) {
     New-Item -ItemType Directory -Force (Join-Path $Path 'dlls/versions')|Out-Null
     'enabled'|Set-Content (Join-Path $Path 'enabled.txt')
+    New-Item -ItemType Directory -Force (Join-Path $Path 'Scripts')|Out-Null
+    '-- verifications'|Set-Content (Join-Path $Path 'Scripts/main.lua')
+    '[Mod]'|Set-Content (Join-Path $Path 'mod_settings.ini')
     [IO.File]::WriteAllBytes((Join-Path $Path 'dlls/main.dll'),[byte[]](1,2,3,4))
     "{`"schema`":1,`"version`":`"$Version`"}"|Set-Content (Join-Path $Path 'dlls/main.json')
     [IO.File]::WriteAllBytes((Join-Path $Path "dlls/versions/$ProductName-$Version.dll"),[byte[]](5,6,7,8))
@@ -24,8 +27,8 @@ function Assert-Package($Result, [string]$Folder, [string]$Version, [string]$Id)
     $manifest=Get-Content -LiteralPath $Result.manifest -Raw|ConvertFrom-Json
     $zip=[IO.Compression.ZipFile]::OpenRead($Result.archive)
     try {
-        if($zip.Entries.Count -ne 5){throw 'Unexpected payload count'}
-        if(@($manifest.files).Count -ne 5){throw 'Unexpected manifest file count'}
+        if($zip.Entries.Count -ne 7){throw 'Unexpected payload count'}
+        if(@($manifest.files).Count -ne 7){throw 'Unexpected manifest file count'}
         foreach($file in $manifest.files){
             $entry=$zip.GetEntry($file.path)
             if(-not $entry){throw "Manifest entry missing: $($file.path)"}

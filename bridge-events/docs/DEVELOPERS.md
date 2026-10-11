@@ -558,6 +558,24 @@ the consumer's responsibility.
 
 ## Inspection and debugging
 
+### Load-time verifications
+
+The bridge's mod folder carries `Scripts/main.lua`, a set of in-game checks
+of this API (source: [`lua/main_events.lua`](../lua/main_events.lua)). They
+run only when **Enable load-time verifications** is on in the bridge's ModCore
+Settings page (`settings.ini`: `[Verifications] LoadTime=1`). It is off by
+default and takes effect on the next launch. Results are `PASS`, `FAIL`,
+`SKIP` and `NOTE` lines tagged `[UE4SSLuaEventBridge verify]` in UE4SS.log,
+with a `SUMMARY` line per stage:
+
+- `load`: the API surface and argument checks, while the mod loads.
+- `engine`: loop start, unknown handles and object lifetimes, on the game
+  thread after the first update.
+- `player`: input targets, bindings, snapshots and helper scopes, once a
+  player controller with a pawn exists. For 20 seconds after it starts, a tap
+  or hold of NumPad 9 also checks delivery; without one those checks are
+  skipped, not failed. Every binding is removed afterwards.
+
 ### Optional debug tracing
 
 Enable tracing on one helper scope when an Enhanced Input callback appears to

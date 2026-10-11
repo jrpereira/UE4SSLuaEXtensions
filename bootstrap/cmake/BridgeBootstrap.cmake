@@ -15,6 +15,8 @@
 #                                   FileDescription "<text> bootstrap"
 #       SELECTOR_FILE <path>        configured main.json copied next to main.dll
 #       ENABLED_FILE  <path>        enabled.txt copied to the mod folder
+#       [SCRIPT_FILE   <path>]      Lua copied to Scripts/main.lua in the mod folder
+#       [SETTINGS_FILE <path>]      mod_settings.ini copied to the mod folder
 #       [TARGET       <name>]       CMake target and InternalName; default <PRODUCT>Bootstrap
 #       [CLAIM_NAME   <name>])      per-process mutex Local\<claim>-<pid>-97b7e501;
 #                                   default UE4SSXB-<PRODUCT>
@@ -41,7 +43,8 @@ function(_bridge_bootstrap_claim kind value)
 endfunction()
 
 function(add_bridge_bootstrap)
-    set(one_value PRODUCT MAGIC VERSION_FILE DIST_FOLDER DISPLAY_NAME SELECTOR_FILE ENABLED_FILE TARGET CLAIM_NAME)
+    set(one_value PRODUCT MAGIC VERSION_FILE DIST_FOLDER DISPLAY_NAME SELECTOR_FILE ENABLED_FILE
+        SCRIPT_FILE SETTINGS_FILE TARGET CLAIM_NAME)
     cmake_parse_arguments(PARSE_ARGV 0 ARG "" "${one_value}" "")
     get_filename_component(source_dir "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." ABSOLUTE)
     if(ARG_UNPARSED_ARGUMENTS)
@@ -129,4 +132,15 @@ function(add_bridge_bootstrap)
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${ARG_SELECTOR_FILE}" "${dist}/dlls/main.json"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${ARG_ENABLED_FILE}" "${dist}/enabled.txt"
     )
+    if(ARG_SCRIPT_FILE)
+        add_custom_command(TARGET ${ARG_TARGET} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${dist}/Scripts"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${ARG_SCRIPT_FILE}" "${dist}/Scripts/main.lua"
+        )
+    endif()
+    if(ARG_SETTINGS_FILE)
+        add_custom_command(TARGET ${ARG_TARGET} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${ARG_SETTINGS_FILE}" "${dist}/mod_settings.ini"
+        )
+    endif()
 endfunction()

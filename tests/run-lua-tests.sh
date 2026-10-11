@@ -17,3 +17,4 @@ fi
 
 "${lua_bin}" bridge-events/tests/LuaHelperTests.lua
 "${lua_bin}" bridge-events/tests/LifecycleIntegrationTests.lua
+"${lua_bin}" tests/LoadTimeVerificationTests.lua

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Load-time verifications: in-game checks of the bridge API shipped as
+  `Scripts/main.lua` in the mod folder, with a ModCore Settings page whose
+  **Enable load-time verifications** toggle turns them on (off by default).
+  Results go to UE4SS.log.
+
 ## v1.0.12
 
 ### Changes

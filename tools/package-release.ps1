@@ -55,6 +55,8 @@ try {
     $sources=[ordered]@{
         'enabled.txt'=Join-Path $root 'enabled.txt'
         'mod.json'=$moduleFile
+        'mod_settings.ini'=Join-Path $root 'mod_settings.ini'
+        'Scripts/main.lua'=Join-Path $root 'Scripts/main.lua'
         'dlls/main.dll'=$bootstrap
         'dlls/main.json'=$configuration
         "dlls/versions/$implementationName"=$implementation

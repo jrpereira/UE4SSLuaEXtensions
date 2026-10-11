@@ -28,6 +28,8 @@ add_bridge_bootstrap(
     DIST_FOLDER 0_ModCore_UE4SSLuaFileBridge
     SELECTOR_FILE "${CMAKE_CURRENT_BINARY_DIR}/main.json"
     ENABLED_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/enabled.txt"
+    SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/lua/main_files.lua"
+    SETTINGS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/mod_settings.ini"
 )
 
 # The Lua layer is embedded as fixed-size raw-string chunks: MSVC limits one

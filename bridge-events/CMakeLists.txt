@@ -31,6 +31,8 @@ add_bridge_bootstrap(
     DIST_FOLDER 0_ModCore_UE4SSLuaEventBridge
     SELECTOR_FILE "${CMAKE_CURRENT_BINARY_DIR}/main.json"
     ENABLED_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/enabled.txt"
+    SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/lua/main_events.lua"
+    SETTINGS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/mod_settings.ini"
 )
 
 set(UE4SSLEB_LUA_API_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/lua/bridge_api.lua")
