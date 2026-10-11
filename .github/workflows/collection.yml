@@ -1,0 +1,68 @@
+name: collection
+
+# The combined Nexus package. Run it by hand with one release tag per extension:
+# it verifies both published releases (checksum and payload manifest), assembles the
+# package and publishes it as GitHub release extensions/v<version>. It builds no DLLs.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version, for example 1.1.0
+        required: true
+      events_tag:
+        description: Event Bridge release tag, for example bridge-events/v1.0.13
+        required: true
+      files_tag:
+        description: File Bridge release tag, for example bridge-files/v1.0.1
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collection-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  repository-hygiene:
+    uses: ./.github/workflows/repository-hygiene.yml
+  package:
+    needs: repository-hygiene
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PACKAGE_VERSION: ${{ inputs.version }}
+      EVENTS_TAG: ${{ inputs.events_tag }}
+      FILES_TAG: ${{ inputs.files_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify the releases and assemble the package
+        run: |
+          git fetch --tags --force
+          python tools/build_collection.py --version "$PACKAGE_VERSION" \
+            --events-tag "$EVENTS_TAG" --files-tag "$FILES_TAG" \
+            --output collection-dist --output-file "$GITHUB_ENV"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ env.archive }}
+      - name: Publish GitHub release
+        run: |
+          tag="extensions/v$PACKAGE_VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Release tag $tag already exists; refusing to publish" >&2
+            exit 1
+          fi
+          # Releases of different packages share one repository, so none is marked Latest.
+          gh release create "$tag" "$archive" "$archive.sha256" "$archive.manifest.json" \
+            --target "$GITHUB_SHA" --title "UE4SS Lua Extensions v$PACKAGE_VERSION" --latest=false \
+            --notes-file collection-dist/release-notes.md
