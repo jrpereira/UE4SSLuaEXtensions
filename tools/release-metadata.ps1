@@ -2,7 +2,7 @@ param([Parameter(Mandatory)][string]$Product, [string]$ReleaseRef, [string]$Outp
 $ErrorActionPreference='Stop'
 # Each product folder releases on its own: release/<product>/v<version> publishes tag <product>/v<version>.
 $products=@{
-    'bridge-events'=[ordered]@{name='UE4SSLuaEventBridge';api=5}
+    'bridge-events'=[ordered]@{name='UE4SSLuaEventBridge';api=6}
     'bridge-files'=[ordered]@{name='UE4SSLuaFileBridge';api=$null}
 }
 if(-not $products.Contains($Product)){throw "Unknown product: $Product"}

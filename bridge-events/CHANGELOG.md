@@ -1,13 +1,21 @@
 # Changelog
 
-## Unreleased
+## v1.0.13
 
-### Added
+### Changes
 
-- Load-time verifications: in-game checks of the bridge API shipped as
-  `Scripts/main.lua` in the mod folder, with a ModCore Settings page whose
-  **Enable load-time verifications** toggle turns them on (off by default).
-  Results go to UE4SS.log.
+- Write non-ASCII text in UE4SS.log lines correctly. Mod and path names were
+  copied byte by byte into the log and came out garbled.
+- Ship `mod.json`, with its version filled in at build time, and
+  `mod_settings.ini` in the package. ModCore Settings now shows the bridge's
+  name, category and version instead of guessing them.
+- Add load-time verifications: in-game checks of this API, shipped as
+  `Scripts/main.lua` with the shared `Scripts/lex_verify.lua` harness, and a
+  ModCore Settings toggle, **Enable load-time verifications**, that turns them
+  on (off by default). Results go to UE4SS.log.
+- Build from the UE4SSLuaEXtensions repository, which also holds
+  UE4SSLuaFileBridge. The Lua global, the mod folder, the DLL names and the API
+  are unchanged.
 
 ## v1.0.12
 

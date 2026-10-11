@@ -35,7 +35,7 @@ Mods/
     │   ├── main.dll
     │   ├── main.json
     │   └── versions/
-    │       └── UE4SSLuaEventBridge-1.0.12.dll
+    │       └── UE4SSLuaEventBridge-1.0.13.dll
     ├── enabled.txt
     └── mod.json
 ```

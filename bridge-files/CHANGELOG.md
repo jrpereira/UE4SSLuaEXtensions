@@ -1,14 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- Load-time verifications: in-game checks of the bridge API shipped as
-  `Scripts/main.lua` in the mod folder, with a ModCore Settings page whose
-  **Enable load-time verifications** toggle turns them on (off by default).
-  Results go to UE4SS.log.
-
 ## v1.0.1
 
 First release of UE4SSLuaFileBridge, file and folder access for UE4SS Lua mods
@@ -33,3 +24,9 @@ through a native bridge.
 - `GetCapabilities`, `GetVersion` and `GetDispatchStats`.
 - Path policy: `..` escapes, absolute paths outside both roots, device and UNC
   paths, and links that leave the roots are refused.
+- Load-time verifications: in-game checks of this API, shipped as
+  `Scripts/main.lua` with the shared `Scripts/lex_verify.lua` harness, and a
+  ModCore Settings page whose **Enable load-time verifications** toggle turns
+  them on (off by default). Results go to UE4SS.log.
+- The package ships `mod.json` (with its version) and `mod_settings.ini`, so
+  ModCore Settings lists the bridge with its name, category and version.

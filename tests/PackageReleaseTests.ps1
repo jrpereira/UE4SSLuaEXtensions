@@ -66,7 +66,7 @@ try {
     $packager=Join-Path $repo 'tools/package-release.ps1'
     $result=& $packager -Product bridge-events -Distribution $distribution -OutputDirectory (Join-Path $fixture 'out') -SourceCommit ('a'*40) -AllowNonPeTestFixture
     $manifest=Assert-Package $result '0_ModCore_UE4SSLuaEventBridge' $version 'UE4SSLuaEventBridge'
-    if($manifest.api -ne 5){throw 'Package API version mismatch'}
+    if($manifest.api -ne 6){throw 'Package API version mismatch'}
     if($manifest.product -cne 'UE4SSLuaEventBridge'){throw 'Package product mismatch'}
     $source=Get-Content -LiteralPath (Join-Path $repo 'bridge-events/mod.json') -Raw|ConvertFrom-Json
     $zip=[IO.Compression.ZipFile]::OpenRead($result.archive)

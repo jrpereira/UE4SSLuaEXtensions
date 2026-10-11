@@ -16,7 +16,7 @@ if($actual.folder -cne '0_ModCore_UE4SSLuaEventBridge'){throw 'Event bridge fold
 if($actual.archive -cne "UE4SSLuaEventBridge-v$($actual.version).zip"){throw 'Archive version mismatch'}
 if($actual.artifact -cne "UE4SSLuaEventBridge-v$($actual.version)"){throw 'Artifact name mismatch'}
 if($actual.tag -cne "bridge-events/v$($actual.version)"){throw 'Tag must carry the product prefix'}
-if($actual.api -ne 5){throw 'Event bridge package API changed'}
+if($actual.api -ne 6){throw 'Event bridge package API changed'}
 if($actual.prerelease -ne $actual.version.Contains('-')){throw 'Prerelease mismatch'}
 $released=& $script -Product bridge-events -ReleaseRef "release/bridge-events/v$($actual.version)"
 if($released.tag -cne "bridge-events/v$($actual.version)"){throw 'Release tag mismatch'}
