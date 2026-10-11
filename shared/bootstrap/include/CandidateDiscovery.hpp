@@ -62,7 +62,7 @@ struct CandidateMetadata
 };
 
 // The identity of the product a bootstrap loads. Each product's build supplies
-// its own (see bootstrap/cmake/BridgeBootstrap.cmake); the logic below is shared.
+// its own (see shared/bootstrap/cmake/BridgeBootstrap.cmake); the logic below is shared.
 struct BridgeProduct
 {
     // ProductName of the implementation DLLs and their file name prefix

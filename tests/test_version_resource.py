@@ -41,7 +41,7 @@ class VersionResourceTests(unittest.TestCase):
         self.assertIn(f'VALUE "OriginalFilename", "UE4SSLuaEventBridge-{version}.dll\\0"', rendered)
 
         bridge_cmake = (ROOT / 'bridge-events/CMakeLists.txt').read_text()
-        bootstrap_cmake = (ROOT / 'bootstrap/cmake/BridgeBootstrap.cmake').read_text()
+        bootstrap_cmake = (ROOT / 'shared/bootstrap/cmake/BridgeBootstrap.cmake').read_text()
         self.assertIn('resources/Version.rc.in', bridge_cmake)
         self.assertIn('UE4SSLuaEventBridge-${UE4SSLEB_PRODUCT_VERSION}', bridge_cmake)
         self.assertIn('resources/Version.rc.in', bootstrap_cmake)
@@ -74,7 +74,7 @@ class VersionResourceTests(unittest.TestCase):
         self.assertEqual(arguments['CLAIM_NAME'], 'UE4SSLEB')
         self.assertEqual(arguments['DIST_FOLDER'], '0_ModCore_UE4SSLuaEventBridge')
 
-        template = (ROOT / 'bootstrap/resources/Version.rc.in').read_text()
+        template = (ROOT / 'shared/bootstrap/resources/Version.rc.in').read_text()
         rendered = (template
             .replace('@BRIDGE_BOOTSTRAP_VERSION_MAJOR@', '1')
             .replace('@BRIDGE_BOOTSTRAP_VERSION_MINOR@', '0')

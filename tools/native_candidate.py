@@ -11,7 +11,7 @@ from deployment_preflight import digest
 
 def sources(root):
     paths = [root/'CMakeLists.txt']
-    for directory in ['bootstrap', 'bridge-events', 'contract', 'shared', 'tests']:
+    for directory in ['bridge-events', 'shared', 'tests']:
         paths.extend(p for p in (root/directory).rglob('*') if p.is_file()
                      and '__pycache__' not in p.parts and p.suffix not in {'.pyc','.pyo'})
     result = {}

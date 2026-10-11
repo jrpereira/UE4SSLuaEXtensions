@@ -18,7 +18,7 @@
 // * bridge-files/CMakeLists.txt calls
 //       add_bridge_bootstrap(PRODUCT UE4SSLuaFileBridge MAGIC 0x4C464231 ...)
 //   ('LFB1'), and the implementation target defines
-//   UE4SSLEB_IMPLEMENTATION_MAGIC to the same value (contract/ImplementationABI.h
+//   UE4SSLEB_IMPLEMENTATION_MAGIC to the same value (shared/contract/ImplementationABI.h
 //   defaults to the event bridge's 'LEB1' otherwise). `implementation_magic`
 //   below must equal both.
 // * Tail delivery builds against E's shared dispatch code: INTERFACE target

@@ -59,7 +59,7 @@ int main()
     assert(candidate_order({}, std::nullopt).empty());
     assert(version_text({1, 0, 8}) == "1.0.8");
 
-    // The event bridge's identity, as bootstrap/CMakeLists.txt passes it.
+    // The event bridge's identity, as bridge-events/CMakeLists.txt passes it.
     constexpr BridgeProduct events{L"UE4SSLuaEventBridge", L"UE4SSLEB", UINT32_C(0x4C454231)};
     // A second product with the default claim (UE4SSXB-<product>).
     constexpr BridgeProduct files{L"UE4SSLuaFileBridge", L"UE4SSXB-UE4SSLuaFileBridge", UINT32_C(0x4C464231)};

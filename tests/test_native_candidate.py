@@ -14,7 +14,7 @@ class NativeCandidateTests(unittest.TestCase):
     def fixture(self, root):
         (root/'bridge-events/contract').mkdir(parents=True)
         (root/'bridge-events/contract/Version.hpp').write_text('#define UE4SSLEB_VERSION "1.2.3"')
-        for directory in ['bootstrap', 'contract', 'shared', 'tests']:
+        for directory in ['shared', 'tests']:
             (root/directory).mkdir()
         (root/'CMakeLists.txt').write_text('fixture')
         lua = root/'build/tools/lua-5.4.8/src/lua.exe'

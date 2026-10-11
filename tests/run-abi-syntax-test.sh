@@ -33,7 +33,7 @@ g++ \
     -I"${build_dir}/generated" \
     -I"${repo_root}/bridge-events/include" \
     -I"${repo_root}/bridge-events/contract" \
-    -I"${repo_root}/contract" \
+    -I"${repo_root}/shared/contract" \
     -I"${repo_root}/shared" \
     -Wall \
     -Wextra \

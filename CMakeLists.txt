@@ -15,7 +15,7 @@ if(UE4SSLEB_BUILD_TESTS)
     enable_testing()
 endif()
 
-add_subdirectory(bootstrap)
+add_subdirectory(shared/bootstrap)
 add_subdirectory(shared/dispatch)
 add_subdirectory(bridge-events)
 add_subdirectory(bridge-files)

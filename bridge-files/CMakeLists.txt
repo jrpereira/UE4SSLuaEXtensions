@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 get_filename_component(UE4SSLFB_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-include("${UE4SSLFB_REPO_ROOT}/bootstrap/cmake/BridgeBootstrap.cmake")
+include("${UE4SSLFB_REPO_ROOT}/shared/bootstrap/cmake/BridgeBootstrap.cmake")
 bridge_read_product_version(UE4SSLFB_PRODUCT_VERSION "${CMAKE_CURRENT_LIST_DIR}/contract/Version.hpp")
 project(UE4SSLuaFileBridgeImplementation VERSION ${UE4SSLFB_PRODUCT_VERSION} LANGUAGES CXX)
 
@@ -78,7 +78,7 @@ if(WIN32)
     target_compile_definitions(UE4SSLuaFileBridgeImplementation PRIVATE
         UE4SSLEB_IMPLEMENTATION_MAGIC=${UE4SSLFB_MAGIC} UNICODE _UNICODE)
     target_include_directories(UE4SSLuaFileBridgeImplementation PRIVATE
-        "${UE4SSLFB_GENERATED_INCLUDE_DIR}" include contract "${UE4SSLFB_REPO_ROOT}/contract")
+        "${UE4SSLFB_GENERATED_INCLUDE_DIR}" include contract "${UE4SSLFB_REPO_ROOT}/shared/contract")
     target_link_libraries(UE4SSLuaFileBridgeImplementation PRIVATE
         "${UE4SSLFB_IMPORT_LIB}" kernel32 shell32 ole32 UE4SSXBDispatch)
     target_compile_options(UE4SSLuaFileBridgeImplementation PRIVATE /W4 /WX /GR- /permissive- /utf-8)
