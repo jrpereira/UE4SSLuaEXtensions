@@ -29,7 +29,7 @@ features rather than inferring them from the product version.
 ## Installation layout
 
 Download the versioned ZIP and checksum from
-[GitHub Releases](https://github.com/jrpereira/UE4SSLuaEventBridge/releases)
+[GitHub Releases](https://github.com/jrpereira/UE4SSLuaExtensionBridges/releases)
 (releases tagged `bridge-files/v*`). Extract the ZIP into the UE4SS `Mods`
 directory to produce:
 
