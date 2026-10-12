@@ -146,7 +146,8 @@ class PackageFolderTests(unittest.TestCase):
         self.assertEqual([f['mod_folder'] for f in folders], ['0_ModCore_UE4SSLuaEXtensions'])
         described = json.loads(folders[0]['files']['mod.json'])
         self.assertEqual(described['version'], '1.1.0')
-        self.assertEqual(list(described)[:3], ['manifest_version', 'id', 'name'])
+        self.assertEqual(list(described)[:3], ['manifest_version', 'id', 'version'])
+        self.assertNotIn('name', described, 'the title comes from the menu page, with its count')
         self.assertNotIn('version_source', described)
         self.assertIn('Scripts/main.lua', folders[0]['files'])
 

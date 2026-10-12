@@ -42,17 +42,16 @@ end
 local ok, why = pcall(function()
     local menu = require('extensions_menu')
     local found = menu.installed(modsDirectory, exists)
-    local absorbing = menu.absorbing(read(root .. '/settings.ini'))
+    local counting = menu.countingInTitle(read(root .. '/settings.ini'))
     local cache = root .. '/cache'
     ensureCache(cache)
     local contributions = require('menu_contributions')
-    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion(), absorbing)) do
+    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion(), counting)) do
         local directory = menu.directory(cache, entry.id)
         ensureCache(directory)
         contributions.publisher(assert(rawget(_G, 'ModRef'), 'ModRef unavailable'),
             {id = entry.id, directory = directory}):publish(entry.contribution)
     end
-    print(string.format('[UE4SSLuaEXtensions] menu published for %d extension(s), %s\n', menu.count(found),
-        absorbing and 'absorbed' or 'listed separately'))
+    print(string.format('[UE4SSLuaEXtensions] menu published for %d extension(s)\n', menu.count(found)))
 end)
 if not ok then print('[UE4SSLuaEXtensions] menu unavailable: ' .. tostring(why) .. '\n') end

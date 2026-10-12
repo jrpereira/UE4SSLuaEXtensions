@@ -13,7 +13,9 @@
 local M = {}
 
 M.id = 'UE4SSLuaEXtensions'
-M.name = 'UE4SS Lua Extensions'
+-- The entry's title. ModCore Settings names an entry from its folder's mod.json when that has
+-- a name, so this folder's mod.json has none: the title, with its count, comes from here.
+M.name = 'ModCore Lua Extensions'
 
 -- Order here is the order of the rows on the page. contributor publishes the hidden page that
 -- holds the extension's toggle; it must differ from the extension's own id, which its
@@ -28,7 +30,7 @@ M.extensions = {
 }
 
 -- The page's own option, stored in this folder's settings.ini. On by default.
-M.absorb = {section = 'Extensions', key = 'Absorb', default = true}
+M.countInTitle = {section = 'Extensions', key = 'CountInTitle', default = true}
 
 local HEADING = 'Enable startup library verifications'
 local DESCRIPTION = "Runs the extension's in-game checks when the game loads and writes PASS and FAIL "
@@ -47,22 +49,29 @@ end
 -- The submodule counter shown on the page.
 function M.count(found) return #found end
 
--- Whether to absorb the extensions, from the text of this folder's settings.ini (nil when
--- absent). A missing or unreadable value keeps the default.
-function M.absorbing(text)
-    if type(text) ~= 'string' then return M.absorb.default end
+-- Whether the title carries the extension count, from the text of this folder's settings.ini
+-- (nil when absent). A missing or unreadable value keeps the default.
+function M.countingInTitle(text)
+    local option = M.countInTitle
+    if type(text) ~= 'string' then return option.default end
     local section, value
     for line in text:gmatch('[^\r\n]+') do
         line = line:match('^%s*(.-)%s*$')
         local name = line:match('^%[(.-)%]$')
         if name then section = name:lower()
-        elseif section == M.absorb.section:lower() then
+        elseif section == option.section:lower() then
             local key, raw = line:match('^([^=]-)%s*=%s*(.*)$')
-            if key and key:lower() == M.absorb.key:lower() then value = tonumber(raw) end
+            if key and key:lower() == option.key:lower() then value = tonumber(raw) end
         end
     end
     if value == 0 then return false elseif value == 1 then return true end
-    return M.absorb.default
+    return option.default
+end
+
+-- The entry's title: the count is worked out once at startup, as it cannot change until the
+-- next launch.
+function M.title(found, counting)
+    return counting and string.format('%s (%d)', M.name, M.count(found)) or M.name
 end
 
 local function block(lines, name, fields)
@@ -79,25 +88,24 @@ local function display(lines, id, group, label, value, extra)
     block(lines, 'Setting.' .. id, fields)
 end
 
--- The page's own manifest: the absorb option, the counter, then a slot for each installed
--- extension while absorbing.
-function M.hostManifest(found, absorbing)
+-- The page's own manifest: the title option, the counter, then a slot for each installed
+-- extension.
+function M.hostManifest(found)
     local lines = {}
     block(lines, 'Mod', {{'Id', M.id}, {'Name', M.name}})
     block(lines, 'Category.Summary', {{'mcHeading', '0'}})
-    block(lines, 'Setting.LEX_Absorb', {{'Id', 'LEX_Absorb'}, {'Type', 'toggle'},
-        {'Label', 'Absorb ModCore Native Extensions into this'},
-        {'Description', 'Lists the installed extensions and their options on this page instead of as '
-            .. 'separate mods. Takes effect on the next launch.'},
+    block(lines, 'Setting.LEX_CountInTitle', {{'Id', 'LEX_CountInTitle'}, {'Type', 'toggle'},
+        {'Label', 'Include Extension count in title'},
+        {'Description', 'Shows how many extensions are installed after this entry\'s name in the mod list. '
+            .. 'Takes effect on the next launch.'},
         {'Group', 'Summary'}, {'PresetValues', '0|1'}, {'PresetLabels', 'Off|On'},
-        {'Default', M.absorb.default and '1' or '0'}, {'ConfigFile', 'settings.ini'},
-        {'ConfigSection', M.absorb.section}, {'ConfigKey', M.absorb.key}})
+        {'Default', M.countInTitle.default and '1' or '0'}, {'ConfigFile', 'settings.ini'},
+        {'ConfigSection', M.countInTitle.section}, {'ConfigKey', M.countInTitle.key}})
     display(lines, 'LEX_Installed', 'Summary', 'Installed extensions', tostring(M.count(found)))
     if #found == 0 then
         display(lines, 'LEX_None', 'Summary', 'Extensions', 'None installed')
         return table.concat(lines, '\n')
     end
-    if absorbing == false then return table.concat(lines, '\n') end
     block(lines, 'Category.Verifications', {{'mcLabel', HEADING}})
     for _, extension in ipairs(found) do
         display(lines, 'LEX_Pending_' .. extension.slot, 'Verifications', extension.label, 'Not available',
@@ -123,12 +131,11 @@ end
 -- by a contributor of its own and this folder's page by another. Each contributor needs its own
 -- directory: publishers name their files by generation only.
 -- root: this mod's folder. modsDirectory: the folder holding all mods.
-function M.contributions(found, root, modsDirectory, version, absorbing)
+function M.contributions(found, root, modsDirectory, version, counting)
     local out = {{id = M.id, contribution = {pages = {{
-        id = M.id, name = M.name, version = version, manifest = M.hostManifest(found, absorbing),
+        id = M.id, name = M.title(found, counting), version = version, manifest = M.hostManifest(found),
         configDirectory = root, attach = root:match('([^/\\]+)$'),
     }}}}}
-    if absorbing == false then return out end
     for _, extension in ipairs(found) do
         out[#out + 1] = {id = extension.contributor, contribution = {
             pages = {{id = extension.contributor, name = extension.title, manifest = M.sourceManifest(extension),

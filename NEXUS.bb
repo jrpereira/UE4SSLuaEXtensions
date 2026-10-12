@@ -22,7 +22,7 @@ The Nexus download is one ZIP holding both extensions. Extract it into the UE4SS
 ├── 0_ModCore_UE4SSLuaEventBridge/
 └── 0_ModCore_UE4SSLuaFileBridge/[/code]
 
-[font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] makes ModCore Settings list both extensions as one entry, "UE4SS Lua Extensions". Its first option, "Absorb ModCore Native Extensions into this" (on by default), moves the extensions and their options onto that page; turned off, they are listed on their own from the next launch. The page also shows how many extensions are installed and, under "Enable startup library verifications", one switch for each. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
+[font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] makes ModCore Settings list the installed extensions as one entry, "ModCore Lua Extensions", with their options on its page. Its first option, "Include Extension count in title" (on by default), shows how many extensions are installed after the name, for example "ModCore Lua Extensions (2)", from the next launch. Under "Enable startup library verifications" the page has one switch for each extension. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
 
 Each extension folder's [font=Courier New]docs[/font] subfolder holds the README, developer guide, examples and license for mod authors.
 

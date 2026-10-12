@@ -1,7 +1,6 @@
 {
   "manifest_version": 1,
   "id": "UE4SSLuaEXtensions",
-  "name": "UE4SS Lua Extensions",
   "preferred": "ModCore",
   "categories": [
     "libraries"

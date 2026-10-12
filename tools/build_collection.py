@@ -255,7 +255,8 @@ def package_folders(manifest, collection_version, read_file, targets=None, commi
                     if key in ('version', 'version_source'):
                         continue
                     packaged[key] = value
-                    if key == 'name':
+                    # After the name, or after the id when the title comes from elsewhere.
+                    if key == 'name' or (key == 'id' and 'name' not in described):
                         packaged['version'] = collection_version
                 data = (json.dumps(packaged, indent=2) + '\n').encode('utf-8')
             files[path] = data

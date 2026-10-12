@@ -74,19 +74,20 @@ assert(#Menu.contributions({}, '/mods/x', '/mods', '1.1.0') == 1)
 local single = Menu.contributions(Menu.installed('/mods', present(EVENTS)), '/mods/x', '/mods', nil)
 assert(#single == 2 and single[2].id == 'UE4SSLuaEXtensions.Events' and single[1].contribution.pages[1].version == nil)
 
--- The absorb option comes first on the page, is on by default, and lives in this folder's settings.ini.
-assert(host:find('[Setting.LEX_Absorb]', 1, true) < host:find('[Setting.LEX_Installed]', 1, true), 'absorb is first')
-assert(host:find('Label=Absorb ModCore Native Extensions into this', 1, true))
-assert(host:find('Default=1\nConfigFile=settings.ini\nConfigSection=Extensions\nConfigKey=Absorb', 1, true))
-assert(Menu.absorbing(nil) == true and Menu.absorbing('') == true and Menu.absorbing('[Other]\nAbsorb=0') == true)
-assert(Menu.absorbing('[Extensions]\nAbsorb=0\n') == false and Menu.absorbing('[extensions]\r\n absorb = 1 \r\n') == true)
-assert(Menu.absorbing('[Extensions]\nAbsorb=maybe') == true, 'an unreadable value keeps the default')
+-- The title option comes first on the page, is on by default, and lives in this folder's settings.ini.
+assert(host:find('[Setting.LEX_CountInTitle]', 1, true) < host:find('[Setting.LEX_Installed]', 1, true), 'option is first')
+assert(host:find('Label=Include Extension count in title', 1, true) and not host:find('Absorb', 1, true))
+assert(host:find('Default=1\nConfigFile=settings.ini\nConfigSection=Extensions\nConfigKey=CountInTitle', 1, true))
+assert(Menu.countingInTitle(nil) == true and Menu.countingInTitle('') == true and Menu.countingInTitle('[Other]\nCountInTitle=0') == true)
+assert(Menu.countingInTitle('[Extensions]\nCountInTitle=0\n') == false and Menu.countingInTitle('[extensions]\r\n countintitle = 1 \r\n') == true)
+assert(Menu.countingInTitle('[Extensions]\nCountInTitle=maybe') == true, 'an unreadable value keeps the default')
 
--- Not absorbing: the page keeps its option and counter, no slots, and nothing hides the extensions.
-local separate = Menu.contributions(both, '/mods/x', '/mods', '1.1.0', false)
-local plain = separate[1].contribution.pages[1].manifest
-assert(#separate == 1 and plain:find('LEX_Absorb', 1, true) and plain:find('PresetLabels=2|2', 1, true)
-    and not plain:find('mcSlot=', 1, true) and not plain:find('Verifications', 1, true))
+-- The title: "ModCore Lua Extensions", with "(n)" while counting; the extensions are always absorbed.
+assert(Menu.title(both, true) == 'ModCore Lua Extensions (2)' and Menu.title(both, false) == 'ModCore Lua Extensions')
+assert(Menu.title({}, true) == 'ModCore Lua Extensions (0)')
+assert(Menu.contributions(both, '/mods/x', '/mods', '1.1.0', true)[1].contribution.pages[1].name == 'ModCore Lua Extensions (2)')
+local plainList = Menu.contributions(both, '/mods/x', '/mods', '1.1.0', false)
+assert(#plainList == 3 and plainList[1].contribution.pages[1].name == 'ModCore Lua Extensions', 'absorbing does not depend on the option')
 
 -- Each contributor publishes into a directory of its own: generation files carry no contributor name.
 local seenDirectory = {}
@@ -94,4 +95,4 @@ for _, entry in ipairs(list) do
     local directory = Menu.directory('/mods/x/cache', entry.id)
     assert(not seenDirectory[directory]); seenDirectory[directory] = true
 end
-print('PASS extensions menu: detection, counter, absorb option, slots, storage and publishing')
+print('PASS extensions menu: detection, counter, title option, slots, storage and publishing')
