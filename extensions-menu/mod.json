@@ -1,11 +1,12 @@
 {
   "manifest_version": 1,
   "id": "UE4SSLuaEXtensions",
+  "name": "ModCore Lua Extensions",
   "preferred": "ModCore",
   "categories": [
     "libraries"
   ],
-  "description": "One ModCore Settings entry for the UE4SS Lua extensions installed beside it: UE4SS Lua Event Bridge and UE4SS Lua File Bridge. It holds no code of its own beyond the menu.",
+  "description": "Shows the UE4SS Lua extensions installed beside it on ModCore Settings' Modules tab: how many there are and a startup verification switch for each. It holds no code of its own beyond that.",
   "links": {
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions",
     "nexus": "https://www.nexusmods.com/thebloodofdawnwalker/mods/526"

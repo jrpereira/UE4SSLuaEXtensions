@@ -42,11 +42,10 @@ end
 local ok, why = pcall(function()
     local menu = require('extensions_menu')
     local found = menu.installed(modsDirectory, exists)
-    local counting = menu.countingInTitle(read(root .. '/settings.ini'))
     local cache = root .. '/cache'
     ensureCache(cache)
     local contributions = require('menu_contributions')
-    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion(), counting)) do
+    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion())) do
         local directory = menu.directory(cache, entry.id)
         ensureCache(directory)
         contributions.publisher(assert(rawget(_G, 'ModRef'), 'ModRef unavailable'),
