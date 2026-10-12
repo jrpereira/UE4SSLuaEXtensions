@@ -29,7 +29,7 @@ Mods/
 └── 0_ModCore_UE4SSLuaFileBridge/
 ```
 
-`0_ModCore_UE4SSLuaEXtensions` puts the installed extensions on ModCore Settings' own page: on its Modules tab, after the listing settings, it shows how many extensions are installed and, under "Enable startup library verifications", one switch for each. The extensions are then not listed as separate mods. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
+`0_ModCore_UE4SSLuaEXtensions` puts the installed extensions on ModCore Settings' own page: on its Modules tab, after the listing settings, it shows how many extensions are installed and, under "Verify Extensions on Startup", one switch for each. The extensions are then not listed as separate mods. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
 
 Each extension folder's `docs` subfolder holds the README, developer guide, examples and license for mod authors.
 
