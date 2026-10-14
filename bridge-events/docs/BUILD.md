@@ -6,6 +6,7 @@ For Lua integration, see the [developer guide](DEVELOPERS.md).
 - [Configure and build](#configure-and-build)
 - [Portable checks](#portable-checks)
 - [Native architecture](#native-architecture)
+- [Function hooks](#function-hooks-110)
 - [Testing and validation limits](#testing-and-validation-limits)
 
 ## Build requirements
@@ -92,8 +93,9 @@ verification gate), then this extension's own C++, Lua and Python suites.
 
 ### Purpose
 
-Translate native Enhanced Input action events into Lua callbacks without
-installing `ProcessEvent` hooks, object scans, or key-state polling. Enhanced
+Translate native Enhanced Input action events into Lua callbacks, and (from
+1.1.0) selected `UFunction` calls into Lua callbacks, without installing a
+process-wide detour, object scans, or key-state polling. Enhanced
 Input remains responsible for trigger evaluation and value generation. A separate
 lifetime service uses UE4SS's native UObject create/delete listeners only to
 invalidate explicitly captured, session-owned observations; listeners never call Lua.
@@ -194,18 +196,80 @@ session's existing dispatcher, independently of the developer callback.
 Trace queues stop accepting records during backend shutdown and are cleared
 before retained Lua session storage is released.
 
+### Function hooks (1.1.0)
+
+The bridge installs no process-wide detour, not on `ProcessEvent`, not on
+`ProcessInternal`, not on `ProcessLocalScriptFunction`. A hook is a pair of
+small, reversible writes inside the one function being hooked, and a function
+nobody hooks costs nothing: no detour, no lookup, no extra branch. Nothing is
+read from the engine's native-function table, and nothing is written, until the
+first `Hooks.Hook()` call in the process.
+
+- **Blueprint functions: two bytes.** A function's bytecode (`UStruct::Script`,
+  a heap array) ends in exactly one `EX_Return`, followed by `EX_Nothing` and
+  `EX_EndOfScript` (`04 0B 53`). The bridge claims two unused opcode slots in
+  the engine's `GNatives` table (the two highest indices among the entries that
+  still hold the shared undefined-opcode pointer; no pair, no Blueprint hooks).
+  Hooking saves `Script[0]` and the `EX_Return` byte and overwrites them with
+  the two claimed opcodes, **A** (entry) and **B** (exit). Both are single-byte
+  writes to heap memory: no page protection changes, no torn reads, and neither
+  the bytecode length nor any jump offset changes. Handler A records the
+  pre-call event, then runs the saved first opcode's native handler; the engine
+  continues as if A were never there. Handler B records the post-call event
+  (return value and out parameters are already in the frame), then points the
+  frame at a static `{EX_Return, EX_Nothing}` pair so the engine's loop finishes
+  normally. A function whose body is empty (`04 0B 53`) gets only B, which then
+  reports pre and post together. Every entry path runs this loop with the
+  parameters already in the frame: `ProcessEvent`, Blueprint-to-Blueprint calls
+  and event stubs alike. A per-thread re-entry guard stops a Kismet loop that
+  jumps back to offset 0 from reporting a second pre-call. A function that has
+  no `Script`, a different tail, or the native flag is refused, never patched.
+- **Native functions: one pointer.** The bridge saves the function's `Func`
+  pointer and swaps in its own thunk, which always calls the saved pointer. If
+  another hooker swapped `Func` after us, unhooking leaves the entry inert
+  instead of restoring over their pointer. Calls that arrive from Blueprint
+  bytecode have unevaluated parameters; they are reported without parameters
+  and, after the call, with the return value only (`params_available = false`).
+- **Handlers copy and enqueue.** Native handlers may run on any thread. They
+  read parameters by fixed offset from a schema built once at hook time, copy
+  bytes into a bounded hook queue of their own, and return. They do no
+  reflection calls and never enter Lua.
+- **Delivery.** The hook queue is drained on the game thread, once per frame, from
+  an engine-tick post-callback registered at the first hook, with a frame-time
+  budget. Without the engine-tick detour (`HookEngineTick = 0`) the drain falls
+  back to `on_update` on the event-loop thread; `hooks_frame_delivery` and
+  `GetStats().delivery` say which one is active. Input events keep their own
+  queue and drain.
+- **Lifetime.** Hook entries live in one process-wide table and are never freed
+  while the DLL is resident. Unhooking restores both bytes (or the `Func`
+  pointer) and leaves the entry inert so a frame already inside a handler
+  finishes normally. A hook on a class that is not loaded yet stays pending and
+  attaches when the class object appears. A deleted `UFunction` orphans its
+  entry (nothing is written back) and the hook returns to pending. Stopping a
+  Lua session unhooks every hook it owns.
+
+Settings: `mod_settings.ini` has a toggle, **Enable function hooks**
+(`[Hooks] Enabled`, default on). Off, `Hooks.Hook()` fails with a reason and
+`GetCapabilities().hooks_reason` says why.
+
 ### Deliberate exclusions
 
-These apply to the Enhanced Input bridge:
+These apply to the bridge as a whole:
 
 - no player-controller or pawn discovery;
 - no listener-driven Lua callback or automatic object discovery;
-- no `ProcessEvent` hook;
+- no process-wide detour: no `ProcessEvent`, `ProcessInternal` or
+  `ProcessLocalScriptFunction` hook; function hooks are per-function and
+  reversible (see above);
+- no C++-to-C++ interception: a call that never passes through a `UFunction` is
+  not seen;
+- no parameter or return-value edits in 1.1: hooks observe only;
 - no background component scanning or polling;
 - no automatic rebinding after component replacement; and
 - no game-specific UI, pause, or gameplay-state filtering.
 
-The Lua caller owns target selection, rebinding, and unbinding policy.
+The Lua caller owns target selection, rebinding, and unbinding policy. The same
+holds for hooks: the bridge does not decide which functions matter.
 
 ### Helper layer boundary
 
