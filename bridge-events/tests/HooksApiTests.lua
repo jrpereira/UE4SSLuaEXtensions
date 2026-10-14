@@ -145,6 +145,8 @@ local function fixture(options)
         env.UE4SSLuaEventBridge_GetHookStats = function() return 3, 9, 1, true, 100, 0, 2, 0xFE, 0xFD end
         env.UE4SSLuaEventBridge_HookSchema = function(fnAddress, ...)
             w.schemaFor = fnAddress
+            if w.schemaEmpty then return end
+            if w.schemaFails then return nil, "no layout" end
             return "Count", "int32", "0:4:1:128", "Data", "struct", "8:8:1:128",
                 "Data.Dir", "int32", "0:4:1:0"
         end
@@ -609,6 +611,17 @@ suite.run("Schema builds a tree from flat triplets", function()
     expect(tree[2].name == "Data" and #tree[2].fields == 1 and tree[2].fields[1].name == "Dir")
     local none, why = w.Hooks.Schema("/Game/Nope.Nope_C:Fn")
     expect(none == nil and why:find("not resolved", 1, true), tostring(why))
+end)
+
+suite.run("Schema of a function without parameters is an empty table", function()
+    local w = fixture()
+    standardFunction(w)
+    w.schemaEmpty = true
+    local tree, why = w.Hooks.Schema(PATH)
+    expect(type(tree) == "table" and #tree == 0 and why == nil)
+    w.schemaEmpty, w.schemaFails = false, true
+    tree, why = w.Hooks.Schema(PATH)
+    expect(tree == nil and why == "no layout", tostring(why))
 end)
 
 suite.finish()

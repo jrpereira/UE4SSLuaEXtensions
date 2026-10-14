@@ -1543,6 +1543,7 @@ function Hooks.Schema(target)
     local args = { functionAddress }
     __append(args, schema)
     local flat = table.pack(UE4SSLuaEventBridge_HookSchema(table.unpack(args, 1, #args)))
+    if flat.n == 0 then return {} end -- a function without properties
     if flat[1] == nil then return nil, flat[2] or "schema unavailable" end
 
     local root, byName = {}, {}
