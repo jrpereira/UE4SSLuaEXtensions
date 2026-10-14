@@ -6,7 +6,8 @@
 --
 -- Three stages, each with its own SUMMARY line:
 --   load    API surface and argument checks, while the mod loads
---   engine  loop start, native handles and object lifetimes, on the game thread
+--   engine  loop start, native handles, object lifetimes and function hooks, on the
+--           game thread
 --   player  input components, bindings and helpers, once a player controller
 --           with a pawn exists (load a save). Tap or hold NumPad 9 during the
 --           listening window to also check delivery; that part is optional.
@@ -128,9 +129,250 @@ local function main()
         raises("onLoopStart(non-function)", nil, Bridge.onLoopStart, 5)
     end)
 
+    group("hooks surface", function()
+        -- Capability shape is checked on every build that reports API 7 or later.
+        local present = caps.hooks ~= nil
+        if not check("capability hooks is a boolean", type(caps.hooks) == "boolean", caps.hooks) then return end
+        check("capability hooks_bp is a boolean", type(caps.hooks_bp) == "boolean", caps.hooks_bp)
+        check("capability hooks_native is a boolean", type(caps.hooks_native) == "boolean", caps.hooks_native)
+        check("capability hooks_sync is false in 1.1", caps.hooks_sync == false, caps.hooks_sync)
+        check("capability hooks_frame_delivery is a boolean", type(caps.hooks_frame_delivery) == "boolean",
+            caps.hooks_frame_delivery)
+        check("capability hooks_reason is a string or nil",
+            caps.hooks_reason == nil or type(caps.hooks_reason) == "string", caps.hooks_reason)
+        if caps.hooks == false then
+            check("hooks_reason says why hooks are off", type(caps.hooks_reason) == "string"
+                and caps.hooks_reason ~= "", caps.hooks_reason)
+            log("NOTE hooks are off at load: " .. tostring(caps.hooks_reason)
+                .. " (the probe runs at Unreal initialization; rechecked in the engine stage)")
+        end
+        check("hooks implies api 7", not present or caps.api >= 7, caps.api)
+
+        local Hooks = Bridge.Hooks
+        if not check("Hooks table", type(Hooks) == "table") then return end
+        for _, name in ipairs({ "Hook", "Unhook", "UnhookAll", "Schema", "GetStats" }) do
+            check("Hooks." .. name .. " is a function", type(Hooks[name]) == "function")
+        end
+
+        -- A refused call returns nil and a message, or raises; both are a refusal.
+        local function refuses(name, fn, ...)
+            local done, value, message = pcall(fn, ...)
+            if not done then
+                pass(name .. " refused (raised)")
+            elseif (value == nil or value == false) and type(message) == "string" then
+                pass(name .. " refused")
+            else
+                fail(name, "expected a refusal; got " .. tostring(value) .. ", " .. tostring(message))
+            end
+        end
+        local function noop() end
+        local path = "/Script/Engine.PlayerController:ClientRestart"
+        refuses("Hook(nil)", Hooks.Hook, nil, { pre = noop })
+        refuses("Hook(number)", Hooks.Hook, 5, { pre = noop })
+        refuses("Hook(empty path)", Hooks.Hook, "", { pre = noop })
+        refuses("Hook(path, no options)", Hooks.Hook, path)
+        refuses("Hook(path, neither pre nor post)", Hooks.Hook, path, {})
+        refuses("Hook(pre is not a function)", Hooks.Hook, path, { pre = 5 })
+        refuses("Hook(delivery sync)", Hooks.Hook, path, { pre = noop, delivery = "sync" })
+        refuses("Hook(max_queued is a string)", Hooks.Hook, path, { pre = noop, max_queued = "many" })
+        refuses("Hook(params is not a table)", Hooks.Hook, path, { pre = noop, params = 5 })
+        refuses("Schema(nil)", Hooks.Schema, nil)
+    end)
+
     -- Engine stage ---------------------------------------------------------------------
 
     local playerStage
+
+    -- Hooks, engine stage. The synchronous part checks status, stats, the immediate and
+    -- the pending path, Unhook and UnhookAll. The asynchronous part hooks a harmless
+    -- native function, calls it, waits for the frame drain and checks that Unhook stops
+    -- delivery. `done` runs after both, on any thread.
+    local HOOK_DELIVERY_WAIT_MS = 5000
+    local HOOK_QUIET_WAIT_MS = 2000
+
+    local function hooksEngine(done)
+        local Hooks = Bridge.Hooks
+        local live = false
+        local driver
+
+        group("hooks", function()
+            caps = Bridge.GetCapabilities()
+            if caps.hooks ~= true then
+                skip("hooks", "hooks is off: " .. tostring(caps.hooks_reason))
+                return
+            end
+            live = true
+            check("hooks_frame_delivery matches GetStats().delivery", (function()
+                local stats = Hooks.GetStats()
+                return type(stats) == "table" and (stats.delivery == "tick") == caps.hooks_frame_delivery
+            end)(), "see GetStats().delivery")
+
+            local stats = Hooks.GetStats()
+            if check("GetStats returns a table", type(stats) == "table", stats) then
+                for _, key in ipairs({ "queued", "high_water", "rejected", "ticks", "update_calls", "entries" }) do
+                    check("GetStats." .. key .. " is a number", type(stats[key]) == "number", stats[key])
+                end
+                check("GetStats.delivery is tick or loop", stats.delivery == "tick" or stats.delivery == "loop",
+                    stats.delivery)
+            end
+
+            -- A path that resolves: attaches immediately.
+            if caps.hooks_native ~= true then
+                skip("native hook on ClientRestart", "hooks_native is off")
+            else
+                local calls = 0
+                local h, why = Hooks.Hook("/Script/Engine.PlayerController:ClientRestart", {
+                    pre = function() calls = calls + 1 end,
+                })
+                if check("Hook on PlayerController:ClientRestart", h ~= nil, why) then
+                    local status = h:Status()
+                    check("Status is a table", type(status) == "table", status)
+                    if type(status) == "table" then
+                        check("a resolvable path attaches immediately", status.state == "active",
+                            tostring(status.state) .. " " .. tostring(status.reason))
+                        for _, key in ipairs({ "calls", "matched", "delivered", "dropped", "reentries" }) do
+                            check("Status." .. key .. " is a number", type(status[key]) == "number", status[key])
+                        end
+                    end
+                    local slots = Hooks.GetStats()
+                    if caps.hooks_bp == true then
+                        check("GetStats.slots after the first hook", type(slots) == "table"
+                            and type(slots.slots) == "table" and type(slots.slots.a) == "number"
+                            and type(slots.slots.b) == "number", slots and slots.slots)
+                    end
+                    check("Unhook", h:Unhook() == true)
+                    status = h:Status()
+                    check("Status after Unhook is unhooked", type(status) == "table" and status.state == "unhooked",
+                        type(status) == "table" and status.state)
+                    local again, againWhy = h:Unhook()
+                    check("Unhook twice is refused with a reason", again == false and type(againWhy) == "string",
+                        tostring(again) .. " " .. tostring(againWhy))
+                    check("no callback ran for ClientRestart", calls == 0, calls)
+                end
+            end
+
+            -- A path that stays pending: the class does not exist.
+            local pendingCalls = 0
+            local pending, pendingWhy = Hooks.Hook("/Script/Nowhere.Nothing:Missing", {
+                post = function() pendingCalls = pendingCalls + 1 end,
+            })
+            if check("Hook on a missing path is accepted as pending", pending ~= nil, pendingWhy) then
+                local status = pending:Status()
+                check("the missing path is pending", type(status) == "table" and status.state == "pending",
+                    type(status) == "table" and (tostring(status.state) .. " " .. tostring(status.reason)))
+                check("Unhook removes a pending hook", pending:Unhook() == true)
+                local after = pending:Status()
+                check("a removed pending hook is unhooked", type(after) == "table" and after.state == "unhooked",
+                    type(after) == "table" and after.state)
+            end
+
+            -- UnhookAll leaves nothing active.
+            local first = Hooks.Hook("/Script/Nowhere.Nothing:MissingOne", { pre = function() end })
+            local second = Hooks.Hook("/Script/Nowhere.Nothing:MissingTwo", { post = function() end })
+            if first and second then
+                Hooks.UnhookAll()
+                local a, b = first:Status(), second:Status()
+                check("UnhookAll unhooks both handles", type(a) == "table" and type(b) == "table"
+                    and a.state == "unhooked" and b.state == "unhooked",
+                    type(a) == "table" and type(b) == "table" and (a.state .. " " .. b.state))
+            else
+                fail("UnhookAll setup", "could not create two pending hooks")
+            end
+
+            local lib = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+            if caps.hooks_native ~= true then
+                skip("hook delivery", "hooks_native is off")
+                live = false
+            elseif not isValid(lib) then
+                skip("hook delivery", "KismetSystemLibrary default object not found")
+                live = false
+            else
+                driver = lib
+            end
+        end)
+
+        if not live then return done() end
+
+        -- Asynchronous part: delivery, then silence after Unhook. GetObjectName on the
+        -- library's default object is a pure native call with no side effects.
+        local pre, post, lastSequence = 0, 0, {}
+        local ordered, h = true, nil
+        local function callOnce()
+            return pcall(function() return driver:GetObjectName(driver) end)
+        end
+        local function finish(reason)
+            if reason then fail("hook delivery", reason) end
+            done()
+        end
+
+        ExecuteInGameThread(function()
+            local why
+            h, why = Bridge.Hooks.Hook("/Script/Engine.KismetSystemLibrary:GetObjectName", {
+                pre = function(call)
+                    pre = pre + 1
+                    if call.phase ~= "pre" then ordered = false end
+                    local last = lastSequence.pre
+                    if type(call.sequence) ~= "number" or (last and call.sequence <= last) then ordered = false end
+                    lastSequence.pre = call.sequence
+                end,
+                post = function(call)
+                    post = post + 1
+                    if call.phase ~= "post" then ordered = false end
+                    local last = lastSequence.post
+                    if type(call.sequence) ~= "number" or (last and call.sequence <= last) then ordered = false end
+                    lastSequence.post = call.sequence
+                end,
+            })
+            if not h then return finish("Hook on GetObjectName failed: " .. tostring(why)) end
+            local callable = callOnce() and callOnce() and callOnce()
+            if not callable then
+                h:Unhook()
+                skip("hook delivery", "GetObjectName could not be called from Lua")
+                return finish()
+            end
+            local waited = 0
+            LoopAsync(100, function()
+                waited = waited + 100
+                if (pre >= 3 and post >= 3) or waited >= HOOK_DELIVERY_WAIT_MS then
+                    ExecuteInGameThread(function()
+                        group("hook delivery", function()
+                            check("pre callbacks delivered (3 of 3)", pre == 3, pre)
+                            check("post callbacks delivered (3 of 3)", post == 3, post)
+                            check("phase and sequence are ordered per phase", ordered)
+                            local status = h:Status()
+                            check("Status.delivered counts the callbacks", type(status) == "table"
+                                and status.delivered >= 6, type(status) == "table" and status.delivered)
+                            check("Status.dropped is zero", type(status) == "table" and status.dropped == 0,
+                                type(status) == "table" and status.dropped)
+                            local stats = Bridge.Hooks.GetStats()
+                            check("GetStats.queued is back to zero", type(stats) == "table" and stats.queued == 0,
+                                type(stats) == "table" and stats.queued)
+                            check("Unhook after delivery", h:Unhook() == true)
+                        end)
+                        local preAtUnhook, postAtUnhook = pre, post
+                        callOnce() callOnce() callOnce()
+                        local quiet = 0
+                        LoopAsync(100, function()
+                            quiet = quiet + 100
+                            if quiet < HOOK_QUIET_WAIT_MS then return false end
+                            ExecuteInGameThread(function()
+                                group("hook silence", function()
+                                    check("no pre callback after Unhook", pre == preAtUnhook, pre - preAtUnhook)
+                                    check("no post callback after Unhook", post == postAtUnhook, post - postAtUnhook)
+                                    Bridge.Hooks.UnhookAll()
+                                end)
+                                done()
+                            end)
+                            return true
+                        end)
+                    end)
+                    return true
+                end
+                return false
+            end)
+        end)
+    end
+
 
     local function engineStage()
         group("handles nobody owns", function()
@@ -203,8 +445,10 @@ local function main()
                 .. tostring(outcome[2]) .. ")")
         end)
 
-        summary("engine")
-        playerStage()
+        hooksEngine(function()
+            summary("engine")
+            playerStage()
+        end)
     end
 
     local loopStarted = false
