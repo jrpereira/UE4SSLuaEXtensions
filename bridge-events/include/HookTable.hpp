@@ -151,12 +151,12 @@ public:
             auto* target = entry(id);
             if (target == nullptr) return nullptr;
             Subscription* slot = nullptr;
-            for (auto& subscription : target->subscriptions)
+            for (auto& item : target->subscriptions)
             {
-                if (!subscription.active.load(std::memory_order_acquire) &&
-                    subscription.queued.load(std::memory_order_acquire) == 0)
+                if (!item.active.load(std::memory_order_acquire) &&
+                    item.queued.load(std::memory_order_acquire) == 0)
                 {
-                    slot = &subscription;
+                    slot = &item;
                     break;
                 }
             }
@@ -183,20 +183,19 @@ public:
         {
             auto* target = entry(id);
             if (target == nullptr) return nullptr;
-            for (auto& subscription : target->subscriptions)
+            for (auto& item : target->subscriptions)
             {
-                if (subscription.active.load(std::memory_order_acquire) && subscription.session == session &&
-                    subscription.hook == hook)
-                    return &subscription;
+                if (item.active.load(std::memory_order_acquire) && item.session == session && item.hook == hook)
+                    return &item;
             }
             return nullptr;
         }
 
         bool unsubscribe(uint32_t id, uint64_t session, uint64_t hook)
         {
-            auto* subscription = this->subscription(id, session, hook);
-            if (subscription == nullptr) return false;
-            subscription->active.store(false, std::memory_order_release);
+            auto* found = subscription(id, session, hook);
+            if (found == nullptr) return false;
+            found->active.store(false, std::memory_order_release);
             return true;
         }
 
@@ -208,11 +207,10 @@ public:
             for (auto& owned : table_->entries_)
             {
                 bool touched = false;
-                for (auto& subscription : owned->subscriptions)
+                for (auto& item : owned->subscriptions)
                 {
-                    if (subscription.session != session || !subscription.active.load(std::memory_order_acquire))
-                        continue;
-                    subscription.active.store(false, std::memory_order_release);
+                    if (item.session != session || !item.active.load(std::memory_order_acquire)) continue;
+                    item.active.store(false, std::memory_order_release);
                     touched = true;
                 }
                 if (touched && owned->state == EntryState::active && active_subscriptions(owned->id) == 0)
@@ -226,8 +224,8 @@ public:
             auto* target = entry(id);
             if (target == nullptr) return 0;
             std::size_t count = 0;
-            for (const auto& subscription : target->subscriptions)
-                count += subscription.active.load(std::memory_order_acquire) ? 1 : 0;
+            for (const auto& item : target->subscriptions)
+                count += item.active.load(std::memory_order_acquire) ? 1 : 0;
             return count;
         }
 
@@ -254,18 +252,18 @@ public:
         friend class HookTable;
         explicit Writer(HookTable& table) : lock_(table.mutex_), table_(&table) {}
 
-        static void reset(HookEntry& entry, EntryKind kind)
+        static void reset(HookEntry& target, EntryKind kind)
         {
-            entry.kind = kind;
-            entry.state = EntryState::inert;
-            entry.patch = ScriptPatch{};
-            entry.exit_kept = false;
-            entry.patch_thread = std::thread::id{};
-            entry.off_thread.store(false, std::memory_order_relaxed);
-            entry.saved_func = nullptr;
-            entry.thunk_in_chain = false;
-            entry.schema.reset();
-            entry.reason.clear();
+            target.kind = kind;
+            target.state = EntryState::inert;
+            target.patch = ScriptPatch{};
+            target.exit_kept = false;
+            target.patch_thread = std::thread::id{};
+            target.off_thread.store(false, std::memory_order_relaxed);
+            target.saved_func = nullptr;
+            target.thunk_in_chain = false;
+            target.schema.reset();
+            target.reason.clear();
         }
 
         std::unique_lock<std::shared_mutex> lock_;

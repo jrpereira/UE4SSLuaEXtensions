@@ -111,7 +111,7 @@ struct FakeFunction
     std::atomic<NativeFuncPtr> func{};
 
     FakeFunction() = default;
-    explicit FakeFunction(std::initializer_list<uint8_t> bytes) : script(bytes) {}
+    explicit FakeFunction(std::initializer_list<uint8_t> code) : script(code) {}
     FakeFunction(const FakeFunction&) = delete;
     FakeFunction& operator=(const FakeFunction&) = delete;
 
@@ -232,9 +232,9 @@ struct FakeHookRig
     // Claims a slot pair in the fake GNatives and points the context at it.
     static SlotClaim<FakeExec> claim()
     {
-        auto claim = claim_free_pair<FakeExec>(natives.span(), &entry_handler, &exit_handler);
-        if (claim.slots) context.configure(natives.table.data(), claim.slots->undefined);
-        return claim;
+        auto result = claim_free_pair<FakeExec>(natives.span(), &entry_handler, &exit_handler);
+        if (result.slots) context.configure(natives.table.data(), result.slots->undefined);
+        return result;
     }
 
     static AttachResult hook(FakeFunction& function, uint8_t slot_a, uint8_t slot_b)
