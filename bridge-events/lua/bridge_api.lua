@@ -41,7 +41,11 @@ local function __traceback(message)
     return tostring(message)
 end
 
-local function __dispatch(
+-- Hook messages (token <= -3) are routed here; the Hooks block below replaces
+-- this no-op. Contract: COORDINATOR/LEX/LEX_hooks.md §9.2.
+local __hookDispatch = function() end
+
+local function __dispatchInput(
     token, handle, sourceAction, phaseName, elapsed, triggered, x, y, z, valueType,
     eventSequence)
     if token == -1 then
@@ -80,6 +84,13 @@ local function __dispatch(
         __forget(handle)
         error(callbackError, 0)
     end
+end
+
+-- The one dispatcher closure the native side keeps per session. Input messages
+-- are -2, -1, 0 and positive callback tokens; hook messages are -3 and below.
+local function __dispatch(token, ...)
+    if type(token) == "number" and token <= -3 then return __hookDispatch(token, ...) end
+    return __dispatchInput(token, ...)
 end
 
 local function __packText(value, wordCount)
@@ -975,6 +986,34 @@ __UE4SSLuaEventBridge_StopHelperScopes = function()
     end
     return true
 end
+
+-- Function hooks (COORDINATOR/LEX/LEX_hooks.md §9). Day-0 stub: the names are
+-- the contract; Track L replaces the bodies and assigns __hookDispatch.
+-- Native functions this block calls (registered per Lua state by BridgeMod.cpp):
+--   UE4SSLuaEventBridge_HooksEnabled() -> bool, reason|nil
+--   UE4SSLuaEventBridge_HookFunction(session, functionAddress, classAddress, phaseMask,
+--       options..., schema...) -> hookId | nil, reason
+--   UE4SSLuaEventBridge_Unhook(session, hookId) -> bool, reason|nil
+--   UE4SSLuaEventBridge_HookStatus(session, hookId)
+--       -> state, reason|nil, calls, matched, delivered, dropped, reentries
+--   UE4SSLuaEventBridge_HookPendingName(session, token, shortClassName) -> bool
+--   UE4SSLuaEventBridge_HookPendingForget(session, token)
+--   UE4SSLuaEventBridge_HookSchema(functionAddress, schema...) -> flat triplets | nil, reason
+--   UE4SSLuaEventBridge_GetHookStats()
+--       -> queued, high_water, rejected, deliveryIsTick, ticks, update_calls, entries, slotA, slotB
+local __hooksNotImplemented = "function hooks are not implemented in this build"
+bridge.Hooks = {
+    Hook = function() return nil, __hooksNotImplemented end,
+    Unhook = function() return false, __hooksNotImplemented end,
+    UnhookAll = function() return 0 end,
+    Schema = function() return nil, __hooksNotImplemented end,
+    GetStats = function() return nil, __hooksNotImplemented end,
+}
+
+-- Called by the native Lua-stop path; Track L makes it unhook every hook the
+-- session owns and raise on failure, like __UE4SSLuaEventBridge_StopHelperScopes.
+__UE4SSLuaEventBridge_StopHooks = function() return true end
+
 UE4SSLuaEventBridge = bridge
 
 return __dispatch

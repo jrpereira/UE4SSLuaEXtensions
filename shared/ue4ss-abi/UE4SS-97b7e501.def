@@ -40,3 +40,43 @@ EXPORTS
     ?get_stack_size@Lua@LuaMadeSimple@RC@@QEBAHXZ
     ?is_string@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
     ?is_integer@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
+    ?GNatives_Internal@Unreal@RC@@3PEAP6AXPEAVUObject@12@AEAUFFrame@12@PEAX@ZEA
+    ?GetFuncPtr@UFunction@Unreal@RC@@QEAAP6AXPEAVUObject@23@AEAUFFrame@23@PEAX@ZXZ
+    ?SetFuncPtr@UFunction@Unreal@RC@@QEAAXP6AXPEAVUObject@23@AEAUFFrame@23@PEAX@Z@Z
+    ?GetFunctionFlags@UFunction@Unreal@RC@@QEAAAEAIXZ
+    ?GetReturnValueOffset@UFunction@Unreal@RC@@QEAAAEAGXZ
+    ?GetNumParms@UFunction@Unreal@RC@@QEAAAEAEXZ
+    ?GetParmsSize@UFunction@Unreal@RC@@QEAAAEAGXZ
+    ?StaticClass@UFunction@Unreal@RC@@SAPEAVUClass@23@XZ
+    ?GetScript@UStruct@Unreal@RC@@QEAAAEAV?$TArray@EV?$TSizedDefaultAllocator@$0CA@@Unreal@RC@@@23@XZ
+    ?GetChildProperties@UStruct@Unreal@RC@@QEAAAEAPEAVFField@23@XZ
+    ?GetSuperStruct@UStruct@Unreal@RC@@QEAAAEAPEAV123@XZ
+    ?GetFName@FField@Unreal@RC@@QEAA?AVFName@23@XZ
+    ?GetFName@FFieldClass@Unreal@RC@@QEAAAEAVFName@23@XZ
+    ?GetOffset_Internal@FProperty@Unreal@RC@@QEAAAEAHXZ
+    ?GetElementSize@FProperty@Unreal@RC@@QEAAAEAHXZ
+    ?GetArrayDim@FProperty@Unreal@RC@@QEAAAEAHXZ
+    ?GetPropertyFlags@FProperty@Unreal@RC@@QEAAAEAW4EPropertyFlags@23@XZ
+    ?GetByteOffset@FBoolProperty@Unreal@RC@@QEAAAEAEXZ
+    ?GetFieldMask@FBoolProperty@Unreal@RC@@QEAAAEAEXZ
+    ?GetStruct@FStructProperty@Unreal@RC@@QEAAAEAV?$TObjectPtr@VUScriptStruct@Unreal@RC@@@23@XZ
+    ?GetEnum@FEnumProperty@Unreal@RC@@QEAAAEAV?$TObjectPtr@VUEnum@Unreal@RC@@@23@XZ
+    ?GetUnderlyingProperty@FEnumProperty@Unreal@RC@@QEAAPEAVFNumericProperty@23@XZ
+    ?GetPropertyClass@FObjectPropertyBase@Unreal@RC@@QEAAAEAV?$TObjectPtr@VUClass@Unreal@RC@@@23@XZ
+    ??0FName@Unreal@RC@@QEAA@PEB_WW4EFindName@12@PEAX@Z
+    ?ToString@FName@Unreal@RC@@QEBA?BV?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@XZ
+    ?GetComparisonIndex@FName@Unreal@RC@@QEBA?AUFNameEntryId@23@XZ
+    ?Code@FFrame@Unreal@RC@@QEAAAEAPEAEXZ
+    ?Node@FFrame@Unreal@RC@@QEAAAEAPEAVUFunction@23@XZ
+    ?Object@FFrame@Unreal@RC@@QEAAAEAPEAVUObject@23@XZ
+    ?Locals@FFrame@Unreal@RC@@QEAAAEAPEAEXZ
+    ?OutParms@FFrame@Unreal@RC@@QEAAAEAPEAUFOutParmRec@23@XZ
+    ?CurrentNativeFunction@FFrame@Unreal@RC@@QEAAAEAPEAVUFunction@23@XZ
+    ?Step@FFrame@Unreal@RC@@QEAAXPEAVUObject@23@PEAX@Z
+    ?FindOutParamValueAddress@Unreal@RC@@YAPEAXAEAUFFrame@12@PEAVFProperty@12@@Z
+    ?IsA@UObjectBase@Unreal@RC@@QEBA_NPEAVUClass@23@@Z
+    ?GetNamePrivate@UObjectBase@Unreal@RC@@QEAAAEAVFName@23@XZ
+    ?GetClassPrivate@UObjectBase@Unreal@RC@@QEAAAEAPEAVUClass@23@XZ
+    ?GetOuterPrivate@UObjectBase@Unreal@RC@@QEAAAEAPEAVUObject@23@XZ
+    ?RegisterEngineTickPostCallback@Hook@Unreal@RC@@YAXV?$function@$$A6AXPEAVUEngine@Unreal@RC@@M@Z@std@@@Z
+    ?IsEngineTickAvailable@UE4SSRuntime@RC@@SA_NXZ

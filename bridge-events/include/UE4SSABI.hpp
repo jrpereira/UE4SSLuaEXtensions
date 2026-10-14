@@ -26,6 +26,57 @@ class UClass;
 struct FUObjectItem;
 class FUObjectCreateListener;
 class FUObjectDeleteListener;
+class FField;
+
+// Minimal pinned layouts for values the hook ABI (HookABI.hpp) receives by
+// reference: TObjectPtr is one pointer outside the editor, TArray is
+// {data, num, max}. Both are classes, as MSVC mangles class and struct apart.
+template <typename T>
+class TObjectPtr
+{
+public:
+    T* pointer{};
+};
+
+template <int32_t N>
+class TSizedDefaultAllocator
+{
+};
+
+template <typename T, typename Allocator>
+class TArray
+{
+public:
+    T* data{};
+    int32_t num{};
+    int32_t max{};
+};
+
+enum EFindName : int32_t
+{
+    FNAME_Find = 0,
+    FNAME_Add = 1,
+};
+
+struct FNameEntryId
+{
+    uint32_t value{};
+};
+
+// Shipping layout: comparison index then instance number, no case-preserving
+// index. ToString is thread-safe; the constructor with FNAME_Find never adds
+// a name.
+class FName
+{
+public:
+    uint32_t comparison_index{};
+    uint32_t number{};
+
+    FName() = default;
+    UE4SS_IMPORT FName(const wchar_t* name, EFindName find_type, void* name_table = nullptr);
+    UE4SS_IMPORT const std::wstring ToString() const;
+    UE4SS_IMPORT FNameEntryId GetComparisonIndex() const;
+};
 
 class FUObjectArray
 {
@@ -39,6 +90,14 @@ public:
 
 class UObjectBase
 {
+public:
+    // UE4SS's accessors resolve member offsets dynamically; the hooks read the
+    // same members at the fixed offsets in HookABI.hpp's HookLayout after the
+    // startup probe has checked them against these.
+    UE4SS_IMPORT bool IsA(UClass* uclass) const;
+    UE4SS_IMPORT FName& GetNamePrivate();
+    UE4SS_IMPORT UClass*& GetClassPrivate();
+    UE4SS_IMPORT UObject*& GetOuterPrivate();
 };
 
 class UObject : public UObjectBase
@@ -52,6 +111,9 @@ class UStruct : public UObject
 {
 public:
     UE4SS_IMPORT int32_t& GetPropertiesSize();
+    UE4SS_IMPORT TArray<uint8_t, TSizedDefaultAllocator<32>>& GetScript();
+    UE4SS_IMPORT FField*& GetChildProperties();
+    UE4SS_IMPORT UStruct*& GetSuperStruct();
 };
 
 class UClass : public UStruct
