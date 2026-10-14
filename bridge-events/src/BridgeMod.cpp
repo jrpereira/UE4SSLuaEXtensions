@@ -44,6 +44,16 @@ extern "C" __declspec(dllimport) int UE4SSLEB_WINAPI ReadProcessMemory(
 
 #undef UE4SSLEB_WINAPI
 
+// G0 spike (src/HookSpike.cpp, feature/hooks-spike only).
+namespace UE4SSLuaEventBridge::HookSpike
+{
+void on_unreal_init();
+void on_update();
+void shut_down();
+bool retains_module();
+int lua_entry(const RC::LuaMadeSimple::Lua& lua);
+}
+
 namespace UE4SSLuaEventBridge
 {
 struct LuaSession
@@ -187,17 +197,21 @@ public:
     [[nodiscard]] bool prepare_for_unload()
     {
         stop_lifecycle_service();
-        return backend_.shutdown();
+        UE4SSLuaEventBridge::HookSpike::shut_down();
+        const bool backend_released = backend_.shutdown();
+        return backend_released && !UE4SSLuaEventBridge::HookSpike::retains_module();
     }
 
     void on_unreal_init() override {
         backend_.set_queue_limit(configured_limit("UE4SSLEB_MAX_QUEUED_EVENTS", 65536, 1000000));
         backend_.initialize();
         start_lifetime_service();
+        UE4SSLuaEventBridge::HookSpike::on_unreal_init();
     }
 
     void on_update() override
     {
+        UE4SSLuaEventBridge::HookSpike::on_update();
         flush_loop_start_callbacks();
         if (!queue_schedule_.due(UE4SSLuaEventBridge::QueueDispatchSchedule::Clock::now())) return;
         flush_delivery_faults();
@@ -348,6 +362,7 @@ public:
         lua.register_function("UE4SSLuaEventBridge_LifetimeTakeLost", &lifetime_take_lost);
         lua.register_function("UE4SSLuaEventBridge_LifetimeReportLosses", &lifetime_report_losses);
         lua.register_function("UE4SSLuaEventBridge_LifetimeRelease", &lifetime_release);
+        lua.register_function("UE4SSLuaEventBridge_HookSpike", &UE4SSLuaEventBridge::HookSpike::lua_entry);
 
         const auto session_script =
             std::string{"__UE4SSLuaEventBridge_SessionId = "} + std::to_string(session_ptr->id);
