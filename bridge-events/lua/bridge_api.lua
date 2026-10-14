@@ -181,7 +181,8 @@ local bridge = {
     GetCapabilities = function()
         local api, enhancedInput, explicitTarget, helpers, dynamicInput,
             triggerTap, triggerHold, detailedErrors, debugTracing, target, bindingSnapshot,
-            targetDeliveryFaults, loopStart, objectLifetimes, objectLifetimesReason =
+            targetDeliveryFaults, loopStart, objectLifetimes, objectLifetimesReason,
+            hooks, hooksReason, hooksBp, hooksNative, hooksSync, hooksFrameDelivery =
             UE4SSLuaEventBridge_GetCapabilities()
         return {
             api = api,
@@ -201,6 +202,12 @@ local bridge = {
             object_lifetimes_reason = objectLifetimes ~= true and objectLifetimesReason or nil,
             weak_handles = objectLifetimes == true,
             loss_opt_in = objectLifetimes == true,
+            hooks = hooks == true,
+            hooks_reason = hooks ~= true and hooksReason or nil,
+            hooks_bp = hooksBp == true,
+            hooks_native = hooksNative == true,
+            hooks_sync = hooksSync == true,
+            hooks_frame_delivery = hooksFrameDelivery == true,
         }
     end,
     SetTargetDeliveryFaultHandler = function(target, callback)
@@ -987,8 +994,7 @@ __UE4SSLuaEventBridge_StopHelperScopes = function()
     return true
 end
 
--- Function hooks (COORDINATOR/LEX/LEX_hooks.md §9). Day-0 stub: the names are
--- the contract; Track L replaces the bodies and assigns __hookDispatch.
+-- Function hooks (COORDINATOR/LEX/LEX_hooks.md §9).
 -- Native functions this block calls (registered per Lua state by BridgeMod.cpp):
 --   UE4SSLuaEventBridge_HooksEnabled() -> bool, reason|nil
 --   UE4SSLuaEventBridge_HookFunction(session, functionAddress, classAddress, phaseMask,
@@ -1001,18 +1007,695 @@ end
 --   UE4SSLuaEventBridge_HookSchema(functionAddress, schema...) -> flat triplets | nil, reason
 --   UE4SSLuaEventBridge_GetHookStats()
 --       -> queued, high_water, rejected, deliveryIsTick, ticks, update_calls, entries, slotA, slotB
-local __hooksNotImplemented = "function hooks are not implemented in this build"
-bridge.Hooks = {
-    Hook = function() return nil, __hooksNotImplemented end,
-    Unhook = function() return false, __hooksNotImplemented end,
-    UnhookAll = function() return 0 end,
-    Schema = function() return nil, __hooksNotImplemented end,
-    GetStats = function() return nil, __hooksNotImplemented end,
+--
+-- Argument encodings chosen by this block where §9.2 leaves them open:
+--   * options and every name are sent as `length, word...` with ceil(length / 8)
+--     words (__packText), not a fixed word count.
+--   * the schema list is `count`, then per property in pre-order:
+--     parentIndex (0-based, -1 for a parameter), address, offset, name,
+--     enumCount, enum names (an empty name for a gap in the values).
+--   * `obj=<address>:<weak token>` identifies one instance from a weak handle.
+local __hooksUnavailable = "function hooks are not available in this build"
+local __hooksPhaseMask = { pre = 1, post = 2 }
+local __hookRecords = {}      -- Lua hook id -> record
+local __hookByNative = {}     -- native hook id -> record
+local __hookState = setmetatable({}, { __mode = "k" })
+local __nextHookId = 0
+local __nextPendingToken = 0
+local __hooksStopped = false
+local __hookRetryQueued = false
+local __hookTimerArmed = false
+local __hookRetryMs = 1000
+local __maxHookStrikes = 32
+local __maxHookProperties = 512
+local __maxStructDepth = 3
+local __classPath = "/Script/CoreUObject.Class"
+local __functionPath = "/Script/CoreUObject.Function"
+
+local function __hookLog(message)
+    pcall(print, "[UE4SSLuaEventBridge] " .. message)
+end
+
+local function __textOf(value)
+    if type(value) == "string" then return value end
+    if value == nil then return nil end
+    local ok, text = pcall(function() return value:ToString() end)
+    if ok and type(text) == "string" then return text end
+    return nil
+end
+
+local function __packVariable(text)
+    return __packText(text, (#text + 7) // 8)
+end
+
+local function __append(list, values)
+    for i = 1, #values do list[#list + 1] = values[i] end
+end
+
+local function __isFunctionObject(object)
+    local ok, result = pcall(function() return object:IsA(__functionPath) end)
+    return ok and result == true
+end
+
+local function __objectAddress(object)
+    local ok, address = pcall(function() return object:GetAddress() end)
+    if ok and __positiveInteger(address) then return address end
+    return nil
+end
+
+local function __functionPathOf(object)
+    local ok, fullName = pcall(function() return object:GetFullName() end)
+    if not ok or type(fullName) ~= "string" then return nil end
+    return string.match(fullName, "^%S+ (.+)$")
+end
+
+-- "/Game/X.X_C:Fn" -> "X_C"
+local function __ownerClassName(path)
+    return string.match(path, "%.([^%./:]+):[^:%.]+$")
+end
+
+local function __enumNamesOf(enum)
+    local names, highest = {}, -1
+    pcall(function()
+        enum:ForEachName(function(name, value)
+            name = __textOf(name)
+            if name ~= nil and type(value) == "number" and value % 1 == 0
+                and value >= 0 and value <= 1023 then
+                names[value + 1] = name
+                if value > highest then highest = value end
+            end
+        end)
+    end)
+    for i = 1, highest + 1 do
+        if names[i] == nil then names[i] = "" end
+    end
+    return names
+end
+
+-- Pre-order list of {parent, address, offset, name, enum}; raises on a bad property.
+local function __collectProperties(owner, list, parent, depth)
+    owner:ForEachProperty(function(property)
+        if #list >= __maxHookProperties then
+            error("function has more than " .. __maxHookProperties .. " properties", 0)
+        end
+        local name = __textOf(property:GetFName())
+        local offset = property:GetOffset_Internal()
+        local address = property:GetAddress()
+        if name == nil or #name == 0 then error("a property has no name", 0) end
+        if type(offset) ~= "number" or offset % 1 ~= 0 or offset < 0 then
+            error("property " .. name .. " has no valid offset", 0)
+        end
+        if type(address) ~= "number" then error("property " .. name .. " has no address", 0) end
+        local entry = { parent = parent, address = address, offset = offset, name = name, enum = {} }
+        list[#list + 1] = entry
+        local index = #list - 1
+
+        local enumOk, enum = pcall(function() return property:GetEnum() end)
+        if enumOk and __validObject(enum) then entry.enum = __enumNamesOf(enum) end
+        if depth < __maxStructDepth then
+            local structOk, struct = pcall(function() return property:GetStruct() end)
+            if structOk and __validObject(struct) then
+                __collectProperties(struct, list, index, depth + 1)
+            end
+        end
+    end)
+end
+
+local function __schemaArgs(functionObject)
+    local list = {}
+    local ok, why = pcall(__collectProperties, functionObject, list, -1, 0)
+    if not ok then return nil, "failed to enumerate properties: " .. tostring(why) end
+    local args = { #list }
+    for _, entry in ipairs(list) do
+        args[#args + 1] = entry.parent
+        args[#args + 1] = entry.address
+        args[#args + 1] = entry.offset
+        __append(args, __packVariable(entry.name))
+        args[#args + 1] = #entry.enum
+        for _, enumName in ipairs(entry.enum) do __append(args, __packVariable(enumName)) end
+    end
+    return args
+end
+
+local function __stringList(value, label)
+    if type(value) ~= "table" or #value < 1 then
+        return nil, label .. " must be a non-empty array of strings"
+    end
+    for i = 1, #value do
+        local item = value[i]
+        if type(item) ~= "string" or #item < 1 or #item > 256 or item:find("[;|=]") then
+            return nil, label .. " entries must be 1..256 byte strings without ; | ="
+        end
+    end
+    return table.concat(value, "|")
+end
+
+local __hookOptionNames = {
+    pre = true, post = true, params = true, object = true, object_names = true,
+    outer_class = true, outer_class_exact = true, object_paths = true,
+    max_queued = true, delivery = true,
 }
 
--- Called by the native Lua-stop path; Track L makes it unhook every hook the
--- session owns and raise on failure, like __UE4SSLuaEventBridge_StopHelperScopes.
-__UE4SSLuaEventBridge_StopHooks = function() return true end
+-- Returns phaseMask, packedOptionsText or nil, message.
+local function __validateHookOptions(options)
+    if type(options) ~= "table" then return nil, "options must be a table" end
+    for name in pairs(options) do
+        if not __hookOptionNames[name] then
+            return nil, "unsupported Hook option: " .. tostring(name)
+        end
+    end
+    local mask = 0
+    if options.pre ~= nil then
+        if type(options.pre) ~= "function" then return nil, "pre must be a function" end
+        mask = mask | __hooksPhaseMask.pre
+    end
+    if options.post ~= nil then
+        if type(options.post) ~= "function" then return nil, "post must be a function" end
+        mask = mask | __hooksPhaseMask.post
+    end
+    if mask == 0 then return nil, "at least one of pre or post must be a function" end
+
+    local parts = {}
+    if options.object_names ~= nil then
+        local text, why = __stringList(options.object_names, "object_names")
+        if text == nil then return nil, why end
+        parts[#parts + 1] = "names=" .. text
+    end
+    if options.outer_class ~= nil then
+        local class = options.outer_class
+        if type(class) == "string" then
+            local ok, found = pcall(StaticFindObject, class)
+            class = ok and found or nil
+        end
+        local isClass = false
+        if class ~= nil and __validObject(class) then
+            local ok, result = pcall(function() return class:IsA(__classPath) end)
+            isClass = ok and result == true
+        end
+        if not isClass then return nil, "outer_class must be a live UClass object or path" end
+        local address = __objectAddress(class)
+        if address == nil then return nil, "outer_class did not provide a valid address" end
+        parts[#parts + 1] = "outer=" .. address
+    end
+    if options.outer_class_exact ~= nil then
+        if type(options.outer_class_exact) ~= "boolean" then
+            return nil, "outer_class_exact must be a boolean"
+        end
+        if options.outer_class == nil then return nil, "outer_class_exact needs outer_class" end
+        parts[#parts + 1] = "exact=" .. (options.outer_class_exact and 1 or 0)
+    end
+    if options.object ~= nil then
+        local identity = type(options.object) == "table" and options.object.identity
+        if type(identity) ~= "function" then
+            return nil, "object must be a weak handle from lifetimes.weak"
+        end
+        local token, address = options.object:identity()
+        if token == nil or not __positiveInteger(address) then
+            return nil, "object weak handle is released"
+        end
+        parts[#parts + 1] = "obj=" .. address .. ":" .. token
+    end
+    if options.object_paths ~= nil then
+        if type(options.object_paths) ~= "boolean" then return nil, "object_paths must be a boolean" end
+        parts[#parts + 1] = "paths=" .. (options.object_paths and 1 or 0)
+    end
+    if options.max_queued ~= nil then
+        local value = options.max_queued
+        if not __positiveInteger(value) or value > 1000000 then
+            return nil, "max_queued must be an integer in 1..1000000"
+        end
+        parts[#parts + 1] = "maxq=" .. value
+    end
+    if options.params ~= nil then
+        local text, why = __stringList(options.params, "params")
+        if text == nil then return nil, why end
+        parts[#parts + 1] = "params=" .. text
+    end
+    if options.delivery ~= nil and options.delivery ~= "queued" then
+        if options.delivery ~= "sync" then return nil, 'delivery must be "queued" or "sync"' end
+        if bridge.GetCapabilities().hooks_sync ~= true then
+            return nil, "sync delivery needs hooks_sync"
+        end
+        parts[#parts + 1] = "sync=1"
+    end
+    return mask, table.concat(parts, ";")
+end
+
+local __HookHandle = {}
+__HookHandle.__index = __HookHandle
+__HookHandle.__metatable = false
+
+local function __zeroCounters()
+    return { calls = 0, matched = 0, delivered = 0, dropped = 0, reentries = 0 }
+end
+
+local function __forgetPendingName(record)
+    if record.token ~= nil and UE4SSLuaEventBridge_HookPendingForget ~= nil then
+        pcall(UE4SSLuaEventBridge_HookPendingForget, __session, record.token)
+    end
+end
+
+local function __snapshotCounters(record)
+    if record.nativeId == nil or UE4SSLuaEventBridge_HookStatus == nil then return end
+    local ok, state, reason, calls, matched, delivered, dropped, reentries =
+        pcall(UE4SSLuaEventBridge_HookStatus, __session, record.nativeId)
+    if ok and state ~= nil then
+        record.counters = {
+            calls = calls or 0, matched = matched or 0, delivered = delivered or 0,
+            dropped = dropped or 0, reentries = reentries or 0,
+        }
+        return state, reason
+    end
+end
+
+local function __pendingCount()
+    local count = 0
+    for _, record in pairs(__hookRecords) do
+        if record.state == "pending" then count = count + 1 end
+    end
+    return count
+end
+
+local __retryPending
+
+local function __armHookTimer()
+    if __hookTimerArmed or __hooksStopped or ExecuteInGameThreadWithDelay == nil then return end
+    __hookTimerArmed = true
+    ExecuteInGameThreadWithDelay(__hookRetryMs, function()
+        __hookTimerArmed = false
+        if __hooksStopped then return end
+        __retryPending()
+    end)
+end
+
+local function __makePending(record, reason)
+    record.state = "pending"
+    record.reason = reason
+    if record.token == nil then
+        __nextPendingToken = __nextPendingToken + 1
+        record.token = __nextPendingToken
+    end
+    if record.className ~= nil and UE4SSLuaEventBridge_HookPendingName ~= nil then
+        pcall(UE4SSLuaEventBridge_HookPendingName, __session, record.token, record.className)
+    end
+    __armHookTimer()
+end
+
+-- Returns the UFunction, or nil, reason, fatal.
+local function __resolveHookFunction(path)
+    local ok, object = pcall(StaticFindObject, path)
+    if not ok then return nil, "lookup failed: " .. tostring(object), true end
+    if not __validObject(object) then return nil, "not found: " .. path, false end
+    if not __isFunctionObject(object) then return nil, "target is not a UFunction: " .. path, true end
+    return object
+end
+
+local function __attachHook(record, functionObject)
+    local functionAddress = __objectAddress(functionObject)
+    if functionAddress == nil then return nil, "function did not provide a valid address" end
+    local outerOk, outer = pcall(function() return functionObject:GetOuter() end)
+    if not outerOk or not __validObject(outer) then return nil, "function has no live owner class" end
+    local classAddress = __objectAddress(outer)
+    if classAddress == nil then return nil, "owner class did not provide a valid address" end
+    local schema, schemaError = __schemaArgs(functionObject)
+    if schema == nil then return nil, schemaError end
+
+    local args = { __session, functionAddress, classAddress, record.phaseMask }
+    __append(args, __packVariable(record.optionsText))
+    __append(args, schema)
+    local id, why = UE4SSLuaEventBridge_HookFunction(table.unpack(args, 1, #args))
+    if id == nil then return nil, why or "native hook registration failed" end
+    record.nativeId = id
+    record.state = "active"
+    record.reason = nil
+    record.strikes = 0
+    __hookByNative[id] = record
+    __forgetPendingName(record)
+    return true
+end
+
+__retryPending = function()
+    __hookRetryQueued = false
+    if __hooksStopped then return end
+    local pending = {}
+    for _, record in pairs(__hookRecords) do
+        if record.state == "pending" then pending[#pending + 1] = record end
+    end
+    table.sort(pending, function(a, b) return a.id < b.id end)
+    for _, record in ipairs(pending) do
+        local ok, functionObject, why, fatal = pcall(__resolveHookFunction, record.path)
+        if not ok then
+            record.reason = tostring(functionObject)
+        elseif functionObject == nil then
+            if fatal then
+                record.state, record.reason = "failed", why
+                __forgetPendingName(record)
+            else
+                record.reason = why
+            end
+        else
+            local attached, attachOk, attachError = pcall(__attachHook, record, functionObject)
+            if not attached then
+                record.reason = tostring(attachOk)
+            elseif not attachOk then
+                record.reason = attachError
+            end
+        end
+    end
+    if __pendingCount() > 0 then __armHookTimer() end
+end
+
+local function __scheduleRetry()
+    if __hookRetryQueued or __hooksStopped or ExecuteInGameThread == nil then return end
+    __hookRetryQueued = true
+    ExecuteInGameThread(__retryPending)
+end
+
+local function __unhookRecord(record)
+    if record.state == "unhooked" then return true end
+    if record.nativeId ~= nil then
+        __snapshotCounters(record)
+        local removed, why = UE4SSLuaEventBridge_Unhook(__session, record.nativeId)
+        if not removed then return false, why or "native unhook failed" end
+        __hookByNative[record.nativeId] = nil
+        record.nativeId = nil
+    end
+    __forgetPendingName(record)
+    record.state = "unhooked"
+    record.reason = nil
+    __hookRecords[record.id] = nil
+    return true
+end
+
+local function __faultRecord(record, reason)
+    if record.state == "unhooked" then return end
+    if record.state == "active" then __snapshotCounters(record) end
+    record.state = "failed"
+    record.reason = reason
+    if record.nativeId ~= nil then
+        local ok, removed = pcall(UE4SSLuaEventBridge_Unhook, __session, record.nativeId)
+        if ok and removed then
+            __hookByNative[record.nativeId] = nil
+            record.nativeId = nil
+        end
+    end
+    __forgetPendingName(record)
+    __hookLog("hook disabled (" .. tostring(record.path or "function") .. "): " .. tostring(reason))
+end
+
+local function __newHookRecord(path, options, mask, optionsText)
+    __nextHookId = __nextHookId + 1
+    local record = {
+        id = __nextHookId, path = path, pre = options.pre, post = options.post,
+        phaseMask = mask, optionsText = optionsText, state = "pending",
+        strikes = 0, counters = __zeroCounters(),
+        className = path ~= nil and __ownerClassName(path) or nil,
+    }
+    local handle = setmetatable({}, __HookHandle)
+    record.handle = handle
+    __hookState[handle] = record
+    return record
+end
+
+function __HookHandle:Status()
+    local record = __hookState[self]
+    if record == nil then return nil end
+    local state, reason = record.state, record.reason
+    if record.state == "active" then
+        local nativeState, nativeReason = __snapshotCounters(record)
+        if type(nativeState) == "string" then state, reason = nativeState, nativeReason or reason end
+    end
+    local counters = record.counters
+    return {
+        state = state, reason = reason, calls = counters.calls, matched = counters.matched,
+        delivered = counters.delivered, dropped = counters.dropped, reentries = counters.reentries,
+    }
+end
+
+function __HookHandle:Unhook()
+    local record = __hookState[self]
+    if record == nil then return false, "not a hook handle" end
+    return __unhookRecord(record)
+end
+
+local function __hooksReady()
+    if UE4SSLuaEventBridge_HookFunction == nil or UE4SSLuaEventBridge_HooksEnabled == nil then
+        return false, __hooksUnavailable
+    end
+    local enabled, why = UE4SSLuaEventBridge_HooksEnabled()
+    if enabled ~= true then return false, why or "function hooks are disabled" end
+    return true
+end
+
+local function __hookTarget(target)
+    if type(target) == "string" then
+        if #target < 1 or #target > 1024 or __ownerClassName(target) == nil then
+            return nil, nil, "target path must look like /Package.Class:Function"
+        end
+        local functionObject, why, fatal = __resolveHookFunction(target)
+        if functionObject == nil and fatal then return nil, nil, why end
+        return functionObject, target
+    end
+    if target == nil or not __validObject(target) then
+        return nil, nil, "target must be a path string or a live UFunction"
+    end
+    if not __isFunctionObject(target) then return nil, nil, "target is not a UFunction" end
+    return target, __functionPathOf(target)
+end
+
+local Hooks = {}
+
+function Hooks.Hook(target, options)
+    local ready, readyError = __hooksReady()
+    if not ready then return nil, readyError end
+    if __hooksStopped then return nil, "the hook session is stopped" end
+    if UE4SSLuaEventBridge_IsInGameThread() ~= true then
+        return nil, "Hooks.Hook must run on the Unreal game thread"
+    end
+    local mask, optionsText = __validateHookOptions(options)
+    if mask == nil then return nil, optionsText end
+
+    local functionObject, path, targetError = __hookTarget(target)
+    if targetError ~= nil then return nil, targetError end
+    local record = __newHookRecord(path, options, mask, optionsText)
+    if functionObject == nil then
+        __hookRecords[record.id] = record
+        __makePending(record, "waiting for " .. path)
+        return record.handle
+    end
+    local attached, why = __attachHook(record, functionObject)
+    if not attached then
+        __hookState[record.handle] = nil
+        return nil, why
+    end
+    __hookRecords[record.id] = record
+    return record.handle
+end
+
+function Hooks.Unhook(handle)
+    local record = type(handle) == "table" and __hookState[handle] or nil
+    if record == nil then return false, "handle must be returned by Hooks.Hook" end
+    return __unhookRecord(record)
+end
+
+function Hooks.UnhookAll()
+    local records = {}
+    for _, record in pairs(__hookRecords) do records[#records + 1] = record end
+    table.sort(records, function(a, b) return a.id < b.id end)
+    local count, errors = 0, {}
+    for _, record in ipairs(records) do
+        local called, removed, why = pcall(__unhookRecord, record)
+        if called and removed then
+            count = count + 1
+        else
+            errors[#errors + 1] = tostring(called and why or removed or "failed to unhook")
+        end
+    end
+    if #errors > 0 then return count, false, table.concat(errors, "; ") end
+    return count, true
+end
+
+function Hooks.GetStats()
+    if UE4SSLuaEventBridge_GetHookStats == nil then return nil, __hooksUnavailable end
+    local queued, highWater, rejected, isTick, ticks, updateCalls, entries, slotA, slotB =
+        UE4SSLuaEventBridge_GetHookStats()
+    if queued == nil then return nil, "bridge unavailable" end
+    return {
+        queued = queued, high_water = highWater, rejected = rejected,
+        delivery = isTick and "tick" or "loop", ticks = ticks, update_calls = updateCalls,
+        entries = entries, slots = { a = slotA, b = slotB }, pending = __pendingCount(),
+    }
+end
+
+-- Flat (name, kind, meta) triplets -> tree. meta is "offset:size:dim:flags".
+function Hooks.Schema(target)
+    if UE4SSLuaEventBridge_HookSchema == nil then return nil, __hooksUnavailable end
+    if UE4SSLuaEventBridge_IsInGameThread() ~= true then
+        return nil, "Hooks.Schema must run on the Unreal game thread"
+    end
+    local functionObject, _, targetError = __hookTarget(target)
+    if targetError ~= nil then return nil, targetError end
+    if functionObject == nil then return nil, "target is not resolved: " .. tostring(target) end
+    local functionAddress = __objectAddress(functionObject)
+    if functionAddress == nil then return nil, "function did not provide a valid address" end
+    local schema, schemaError = __schemaArgs(functionObject)
+    if schema == nil then return nil, schemaError end
+    local args = { functionAddress }
+    __append(args, schema)
+    local flat = table.pack(UE4SSLuaEventBridge_HookSchema(table.unpack(args, 1, #args)))
+    if flat[1] == nil then return nil, flat[2] or "schema unavailable" end
+
+    local root, byName = {}, {}
+    for i = 1, flat.n - 2, 3 do
+        local name, kind, meta = flat[i], flat[i + 1], flat[i + 2]
+        local numbers = {}
+        if type(meta) == "number" then
+            numbers[1] = meta
+        elseif type(meta) == "string" then
+            for piece in meta:gmatch("[^:|,;]+") do numbers[#numbers + 1] = tonumber(piece) end
+        end
+        local parentName, leaf = name:match("^(.*)%.([^%.]+)$")
+        local node = {
+            name = leaf or name, kind = kind, offset = numbers[1], size = numbers[2],
+            dim = numbers[3], flags = numbers[4], fields = {},
+        }
+        byName[name] = node
+        local siblings = parentName ~= nil and byName[parentName] and byName[parentName].fields or root
+        siblings[#siblings + 1] = node
+    end
+    return root
+end
+
+bridge.Hooks = Hooks
+
+-- Dispatcher: -10 event, -5 fault, -4 back to pending, -3 wake-up.
+local function __decodeHookValue(tag, value)
+    if tag == "b" then return value == true or value == 1 end
+    if tag == "i" then
+        local number = tonumber(value)
+        return number and (math.tointeger(number) or number) or nil
+    end
+    if tag == "n" then return tonumber(value) end
+    if tag == "s" then return value end
+    if tag == "e" then
+        if type(value) == "number" then return { value = math.tointeger(value) or value } end
+        local number, name = tostring(value):match("^(%-?%d+)|?(.*)$")
+        if number == nil then return nil end
+        return { value = math.tointeger(tonumber(number)), name = name ~= "" and name or nil }
+    end
+    if tag == "o" then
+        local address, index, serial, rest = tostring(value):match("^(%-?%d+):(%-?%d+):(%-?%d+)(.*)$")
+        if address == nil then return nil end
+        local object = {
+            address = math.tointeger(tonumber(address)), index = math.tointeger(tonumber(index)),
+            serial = math.tointeger(tonumber(serial)),
+        }
+        if rest:sub(1, 1) == ":" and #rest > 1 then object.path = rest:sub(2) end
+        return object
+    end
+    return nil
+end
+
+local function __setNested(root, dotted, value)
+    local node = root
+    local first = 1
+    while true do
+        local dot = dotted:find(".", first, true)
+        if dot == nil then break end
+        local key = dotted:sub(first, dot - 1)
+        if type(node[key]) ~= "table" then node[key] = {} end
+        node = node[key]
+        first = dot + 1
+    end
+    node[dotted:sub(first)] = value
+end
+
+local function __deliverHookEvent(
+    nativeId, sequence, phase, gameThread, objAddress, objIndex, objSerial, objPath,
+    paramsAvailable, count, ...)
+    local record = __hookByNative[nativeId]
+    if record == nil or record.state ~= "active" then return end
+    local postPhase = phase == 2 or phase == "post"
+    local callback = postPhase and record.post or record.pre
+    if callback == nil then return end
+
+    local available = paramsAvailable == true or paramsAvailable == 1
+    local call = {
+        hook = record.handle, phase = postPhase and "post" or "pre", sequence = sequence,
+        game_thread = gameThread == true or gameThread == 1, function_path = record.path,
+        params_available = available,
+    }
+    if type(objAddress) == "number" and objAddress ~= 0 then
+        call.object = { address = objAddress, index = objIndex, serial = objSerial, path = objPath }
+    end
+    if available then call.params = {} end
+    if postPhase then call.out = {} end
+
+    local values = table.pack(...)
+    for i = 1, (count or 0) do
+        local base = (i - 1) * 3
+        local name, value = values[base + 1], __decodeHookValue(values[base + 2], values[base + 3])
+        if type(name) == "string" then
+            if name == "ret" then
+                if postPhase then call.result = value end
+            elseif name:sub(1, 4) == "out:" then
+                if postPhase and value ~= nil then __setNested(call.out, name:sub(5), value) end
+            elseif available and value ~= nil then
+                __setNested(call.params, name, value)
+            end
+        end
+    end
+
+    local ok, callbackError = xpcall(callback, __traceback, call)
+    if ok then
+        record.strikes = 0
+        return
+    end
+    record.strikes = record.strikes + 1
+    __hookLog("hook callback failed (" .. tostring(record.path) .. "): " .. tostring(callbackError))
+    if record.strikes >= __maxHookStrikes then
+        __faultRecord(record, "callback failed " .. __maxHookStrikes .. " times in a row: "
+            .. tostring(callbackError))
+    end
+end
+
+__hookDispatch = function(code, hookId, ...)
+    if code == -10 then
+        return __deliverHookEvent(hookId, ...)
+    elseif code == -3 then
+        return __scheduleRetry()
+    elseif code == -5 then
+        local record = __hookByNative[hookId]
+        if record ~= nil then __faultRecord(record, tostring((...) or "hook fault")) end
+    elseif code == -4 then
+        local record = __hookByNative[hookId]
+        if record == nil or record.state ~= "active" then return end
+        __snapshotCounters(record)
+        pcall(UE4SSLuaEventBridge_Unhook, __session, hookId)
+        __hookByNative[hookId] = nil
+        record.nativeId = nil
+        if record.path == nil or record.className == nil then
+            record.state, record.reason = "failed", "function was deleted and has no path to retry"
+            return
+        end
+        __makePending(record, tostring((...) or "function was deleted"))
+    end
+end
+
+-- Called by the native Lua-stop path: unhooks everything the session owns and
+-- raises on failure, like __UE4SSLuaEventBridge_StopHelperScopes.
+__UE4SSLuaEventBridge_StopHooks = function()
+    __hooksStopped = true
+    local called, count, completed, stopError = pcall(Hooks.UnhookAll)
+    if not called then stopError = count end
+    if not called or not completed then
+        local message = "[UE4SSLuaEventBridge] Lua-stop hook cleanup incomplete: "
+            .. tostring(stopError or "unknown cleanup failure")
+        pcall(print, message)
+        error(message, 0)
+    end
+    return true
+end
 
 UE4SSLuaEventBridge = bridge
 
