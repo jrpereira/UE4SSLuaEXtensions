@@ -458,6 +458,41 @@ suite.run("dispatch decodes every tag", function()
         and seen.params.Skip == nil, "unsupported tag delivers nil")
 end)
 
+suite.run("fixed arrays, empty enum names and null objects", function()
+    local w = fixture()
+    standardFunction(w)
+    local seen
+    assert(w.Hooks.Hook(PATH, { post = function(call) seen = call end }))
+    w.dispatch(-10, 1, 1, 2, true, 1, 1, 1, nil, true, 9,
+        "Arr[0]", "i", 10, "Arr[1]", "i", 11, "Arr[2]", "i", 12,
+        "S.Arr[1]", "n", 2.5, "S.Arr[0]", "n", 1.5,
+        "Kind", "e", "5|",
+        "Target", "o", "0:-1:0",
+        "out:Outs[1]", "i", 8,
+        "Single", "i", 3)
+    local arr = seen.params.Arr
+    expect(#arr == 3 and arr[1] == 10 and arr[2] == 11 and arr[3] == 12, "1-based array")
+    expect(seen.params.S.Arr[1] == 1.5 and seen.params.S.Arr[2] == 2.5)
+    expect(seen.params.Kind.value == 5 and seen.params.Kind.name == nil)
+    expect(seen.params.Target == nil, "null object is nil")
+    expect(seen.out.Outs[2] == 8 and seen.params.Single == 3)
+end)
+
+suite.run("a struct at depth 3 is listed but not expanded", function()
+    local w = fixture()
+    local inner = propertyOwner({ property("Never", 0) })
+    local l3 = propertyOwner({ property("Deep", 0, { struct = inner }) })
+    local l2 = propertyOwner({ property("L3", 0, { struct = l3 }) })
+    local l1 = propertyOwner({ property("L2", 0, { struct = l2 }) })
+    w:add(PATH, functionObject(PATH, classObject("c"), {
+        property("L1", 0, { struct = l1 }), property("After", 8) }))
+    assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local names, parents = {}, {}
+    for i, p in ipairs(w.hooks[1].properties) do names[i], parents[i] = p.name, p.parent end
+    expect(table.concat(names, ",") == "L1,L2,L3,Deep,After", table.concat(names, ","))
+    expect(table.concat(parents, ",") == "-1,0,1,2,-1", table.concat(parents, ","))
+end)
+
 suite.run("post delivers out, result and params_available", function()
     local w = fixture()
     standardFunction(w)

@@ -1586,6 +1586,7 @@ local function __decodeHookValue(tag, value)
     if tag == "o" then
         local address, index, serial, rest = tostring(value):match("^(%-?%d+):(%-?%d+):(%-?%d+)(.*)$")
         if address == nil then return nil end
+        if tonumber(address) == 0 then return nil end -- null object
         local object = {
             address = math.tointeger(tonumber(address)), index = math.tointeger(tonumber(index)),
             serial = math.tointeger(tonumber(serial)),
@@ -1596,18 +1597,27 @@ local function __decodeHookValue(tag, value)
     return nil
 end
 
+-- "S.Arr[2]" -> root.S.Arr[3]: segments may carry a 0-based [i] element suffix.
 local function __setNested(root, dotted, value)
     local node = root
-    local first = 1
-    while true do
-        local dot = dotted:find(".", first, true)
-        if dot == nil then break end
-        local key = dotted:sub(first, dot - 1)
-        if type(node[key]) ~= "table" then node[key] = {} end
-        node = node[key]
-        first = dot + 1
+    local segments = {}
+    for segment in dotted:gmatch("[^.]+") do segments[#segments + 1] = segment end
+    for i, segment in ipairs(segments) do
+        local base, element = segment:match("^(.-)%[(%d+)%]$")
+        local key, slot = base or segment, element and (tonumber(element) + 1) or nil
+        local last = i == #segments
+        local container = node
+        if slot ~= nil then
+            if type(node[key]) ~= "table" then node[key] = {} end
+            container, key = node[key], slot
+        end
+        if last then
+            container[key] = value
+        else
+            if type(container[key]) ~= "table" then container[key] = {} end
+            node = container[key]
+        end
     end
-    node[dotted:sub(first)] = value
 end
 
 local function __deliverHookEvent(
