@@ -170,7 +170,7 @@ local function __bindAction(targetHandle, action, event, callback, trace)
 end
 
 local bridge = {
-    API_VERSION = 6,
+    API_VERSION = 7,
     GetVersion = UE4SSLuaEventBridge_GetVersion,
     GetDispatchStats = function()
         local queued, highWater, rejected, tracesRejected = UE4SSLuaEventBridge_GetDispatchStats()
@@ -1372,7 +1372,7 @@ local function __scheduleRetry()
 end
 
 local function __unhookRecord(record)
-    if record.state == "unhooked" then return true end
+    if record.state == "unhooked" then return false, "hook is already unhooked" end
     if record.nativeId ~= nil then
         __snapshotCounters(record)
         local removed, why = UE4SSLuaEventBridge_Unhook(__session, record.nativeId)
