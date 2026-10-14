@@ -41,7 +41,8 @@
         "enabled.txt",
         "Scripts/main.lua",
         "Scripts/extensions_menu.lua",
-        "Scripts/vendor/menu_contributions.lua"
+        "Scripts/vendor/menu_contributions.lua",
+        "Scripts/vendor/safe_file.lua"
       ],
       "documents": [
         {

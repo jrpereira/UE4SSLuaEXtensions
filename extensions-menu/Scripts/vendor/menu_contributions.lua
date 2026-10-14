@@ -4,7 +4,7 @@
 -- variable per contributor; ModCoreSettings reads them while building the menu.
 -- Descriptors use contract 1, contract 2 when they carry slot rows or slot links,
 -- contract 3 when a page names a hooks file, or contract 4 when a page carries menu data.
-local M={version=6,contract=1,rowsContract=2,hooksContract=3,menuContract=4}
+local M={version=7,contract=1,rowsContract=2,hooksContract=3,menuContract=4}
 local PREFIX='MCS_MenuContrib_v1_'
 M.prefix,M.index=PREFIX,PREFIX..'index'
 local MAX_PAGES,MAX_ROWS,MAX_ROW_SETTINGS,MAX_MANIFEST=256,64,32,262144
@@ -200,6 +200,26 @@ function M.contractFor(contribution)
     return M.needsRows(contribution) and M.rowsContract or M.contract
 end
 
+-- A map keyed by values, as read from a declaration: a key is one value or a list of values
+-- sharing the entry, so {[{1,2}]='A',[3]='B'} unfolds to {[1]='A',[2]='A',[3]='B'}. A value
+-- under two keys raises with where. Readers unfold once; menu data travels unfolded.
+function M.unfold(map,where)
+    assert(type(map)=='table','invalid '..where)
+    local out={}
+    for key,entry in pairs(map) do
+        local keys=type(key)=='table' and key or {key}
+        assert(next(keys)~=nil,where..': empty value list')
+        for name,value in pairs(keys) do
+            assert(math.type(name)=='integer' and name>=1 and name<=#keys,where..': a value list must be a list')
+            assert(type(value)=='number' and value==value and math.abs(value)<=1000000000,
+                where..': invalid value '..tostring(value))
+            assert(out[value]==nil,where..': value '..tostring(value)..' appears twice')
+            out[value]=entry
+        end
+    end
+    return out
+end
+
 -- Menu data travels as a Lua table constructor holding only strings, finite numbers,
 -- booleans and tables; ModCoreSettings loads it without access to any globals.
 local function serialize(value,depth)
@@ -216,7 +236,8 @@ local function serialize(value,depth)
     for n=1,#value do parts[n]=serialize(value[n],depth+1) end
     for key in pairs(value) do
         if not (math.type(key)=='integer' and key>=1 and key<=#value) then
-            assert(type(key)=='string' or math.type(key)=='integer','menu keys are strings or integers')
+            assert(type(key)=='string' or math.type(key)=='integer',
+                'menu keys are strings or integers; unfold value lists before publishing')
             keys[#keys+1]=key
         end
     end
@@ -357,20 +378,12 @@ function M.slot(value)
     return generation,path
 end
 
-local function defaultRead(path)
-    local file=io.open(path,'rb')
-    if not file then return nil end
-    local content=file:read('a')
-    file:close()
-    return content
-end
-
-local function defaultWrite(path,content)
-    local file=assert(io.open(path,'wb'))
-    local ok,err=file:write(content)
-    file:close()
-    assert(ok,err)
-end
+-- The publisher's own files are read and replaced crash-safely by default, so a crash while
+-- writing the generation counter leaves the previous counter rather than a truncated one.
+-- Removing a retired file also removes the backup a replacement kept beside it.
+local function defaultRead(path) return require('safe_file').read(path) end
+local function defaultWrite(path,content) require('safe_file').write(path,content) end
+local function defaultRemove(path) os.remove(path..'.old');return os.remove(path) end
 
 function M.publisher(shared,options)
     assert(shared and type(shared.GetSharedVariable)=='function'
@@ -381,7 +394,7 @@ function M.publisher(shared,options)
     line(directory,1024,'directory')
     assert(absolute(directory),'directory must be absolute')
     directory=directory:gsub('[/\\]+$','')
-    local write,remove=options.write or defaultWrite,options.remove or os.remove
+    local write,remove=options.write or defaultWrite,options.remove or defaultRemove
     local read=options.read or defaultRead
     local hexId=M.hex(id)
     local key=PREFIX..hexId
