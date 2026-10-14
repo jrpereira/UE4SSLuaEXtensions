@@ -2306,7 +2306,11 @@ private:
             auto writer = Hooks::Core::table().write();
             auto* entry = writer.entry(outcome.entry);
             auto* subscription = entry ? writer.subscribe(outcome.entry, session->id, hook) : nullptr;
-            if (subscription == nullptr) return fail("hook table entry vanished");
+            if (subscription == nullptr)
+            {
+                runtime.request_idle_sweep(); // the entry may now be active without a subscription
+                return fail("hook table entry vanished");
+            }
             if (entry->owner_class == 0)
             {
                 entry->owner_class = static_cast<std::uintptr_t>(class_address);
