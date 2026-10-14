@@ -9,6 +9,7 @@
 - [Ownership, errors, and lifecycle](#ownership-errors-and-lifecycle)
 - [Inspection and debugging](#inspection-and-debugging)
 - [Dispatch limits and tuning](#dispatch-limits-and-tuning)
+- [Function hooks](#function-hooks)
 
 UE4SSLuaEventBridge exposes two API layers:
 
@@ -62,7 +63,7 @@ The current API reports:
 
 ```lua
 {
-    api = 6,
+    api = 7,
     enhanced_input = true,
     explicit_target = true,
     helpers = true,
@@ -756,3 +757,143 @@ See the [maintainer guide](BUILD.md#testing-and-validation-limits) for validatio
 For inputs that must stop after delivery loss, use
 [target delivery faults](#opt-in-target-delivery-faults). Those notifications
 are independent of the bounded event and trace queues.
+
+## Function hooks
+
+`UE4SSLuaEventBridge.Hooks` observes individual `UFunction`s, Blueprint
+functions and events included, without any process-wide UE4SS setting. A
+function nobody hooks costs nothing. Hook events are copied when the function
+runs and delivered to your callback later, on the game thread, once per frame.
+The callback sees a snapshot, not the live call: it cannot block, replace or
+edit the function (v1 observes only). Design: `COORDINATOR/LEX/LEX_hooks.md`.
+
+Gate on the capability first:
+
+```lua
+local caps = UE4SSLuaEventBridge.GetCapabilities()
+-- caps.hooks (bool), caps.hooks_reason (why not), caps.hooks_bp, caps.hooks_native,
+-- caps.hooks_sync (false in 1.1), caps.hooks_frame_delivery (engine-tick drain active)
+```
+
+An older build returns `false` for all of these. `Hooks.Hook` must run on the
+game thread (`ExecuteInGameThread`).
+
+### `Hooks.Hook(target, options)`
+
+```lua
+local Hooks = UE4SSLuaEventBridge.Hooks
+
+local h, err = Hooks.Hook("/Game/UI/WBP_Warning.WBP_Warning_C:OnShowWarning", {
+    pre  = function(call) end,          -- either or both
+    post = function(call) end,
+    params = { "IconType" },            -- optional selection; dotted paths for struct fields
+    object = weakHandle,                -- optional: one instance (lifetimes.weak)
+    object_names = { "Reticle" },       -- optional: object FName set
+    outer_class = classObject,          -- optional: an outer must be (or derive from) this class
+    outer_class_exact = false,
+    object_paths = false,               -- also deliver object path names
+    max_queued = 256,
+    delivery = "queued",                -- "sync" is rejected until hooks_sync is true
+})
+```
+
+`target` is a path `"/Package.Class:Function"` or a live `UFunction` wrapper.
+A path that does not resolve yet becomes a **pending** hook: it is owned by the
+session and attaches by itself when the class appears (the owner class's short
+name is registered as a wake-up) and on a one-second retry while any hook is
+pending. If the function is later deleted (level or class reload) the hook goes
+back to pending and attaches to the new function. A path that resolves to
+something that is not a `UFunction` fails at once.
+
+Failures return `nil, message`: unknown option, wrong type, `delivery = "sync"`
+(`"sync delivery needs hooks_sync"`), hooks disabled (`[Hooks] Enabled=0`), or a
+native refusal such as `"property layout mismatch"`. A hook that stays refused
+while pending shows the last reason in `h:Status()`.
+
+Parameters are copied by name. Supported kinds: bool, 8..64-bit integers,
+float, double, enum, `FName`, `FString` (up to 4 KiB), object pointers, structs
+of those (depth 3) and fixed arrays. Other kinds (arrays, maps, delegates,
+`FText`, soft pointers) arrive as `nil`; asking for one explicitly in `params`
+fails at `Hook`.
+
+### The callback argument
+
+```lua
+call = {
+    hook = h, phase = "pre" | "post", sequence = n, game_thread = bool,
+    function_path = "...",
+    object = { address = n, index = n, serial = n, path = "..."? },
+    params = { Name = value, Struct = { Field = value },
+               Enum = { value = n, name = "..." }, Obj = { address, index, serial, path? } },
+    out = { ... },            -- post only: out parameters
+    result = value,           -- post only: ReturnValue
+    params_available = bool,  -- false on the Blueprint-to-native path
+}
+```
+
+When a native function is called from Blueprint bytecode its parameters are not
+evaluated yet: `params_available` is `false`, `params` is `nil`, and the post
+call carries only `result`. `object.serial` may be `0` for an object that was
+never weakly referenced; capture it later with `lifetimes.captureAddress` on the
+game thread. Do not compare wrappers with `==`.
+
+A callback error is printed and the hook stays active. After 32 failures in a
+row the hook is disabled and `h:Status()` reports `state = "failed"`. A success
+resets the count.
+
+### Handle and library calls
+
+```lua
+h:Status()   --> { state = "active"|"pending"|"orphaned"|"failed"|"unhooked", reason = s?,
+                   calls, matched, delivered, dropped, reentries }
+h:Unhook()   --> true | false, reason      -- also removes a pending hook; a repeat call returns false, reason
+Hooks.Unhook(h)
+Hooks.UnhookAll()   --> count, true | count, false, reason
+Hooks.GetStats()    --> { queued, high_water, rejected, delivery = "tick"|"loop", ticks,
+                          update_calls, entries, slots = { a, b }, pending }
+Hooks.Schema(target) --> { { name, kind, offset, size, dim, flags, fields = {...} }, ... } | nil, reason
+```
+
+`calls` counts handler entries before filters, `matched` the ones that passed
+them, `delivered` those that reached Lua, `dropped` those lost to the per-hook
+or queue limit. Counters survive `Unhook`. `Schema` is a diagnostic: it lists
+what the bridge would copy for a resolved function.
+
+Hot reload unhooks everything the session owns when the Lua state stops. Call
+`Hooks.UnhookAll()` yourself when you tear down earlier.
+
+### Example
+
+```lua
+ExecuteInGameThread(function()
+    local h, err = UE4SSLuaEventBridge.Hooks.Hook(
+        "/Game/UI/WBP_Warning.WBP_Warning_C:OnShowWarning", {
+            params = { "IconType" },
+            pre = function(call) print("icon", call.params.IconType) end,
+        })
+    if not h then print("hook failed: " .. err) end
+end)
+```
+
+See `examples/HookIndicator/main.lua` for a fuller case.
+
+### Environment variables and stats
+
+Read once at bridge construction, like the input ones; invalid values use the
+defaults.
+
+| Variable | Default | Meaning |
+|---|---:|---|
+| `UE4SSLEB_MAX_QUEUED_HOOK_EVENTS` | 8,192 | Producer queue for hook events, separate from input |
+| `UE4SSLEB_MAX_HOOK_EVENTS_PER_PASS` | 64 | Callbacks per frame drain |
+| `UE4SSLEB_MAX_HOOK_DISPATCH_US` | 500 | Time allowance per frame drain, in microseconds |
+| `UE4SSLEB_HOOK_CHECKS_PER_SECOND` | 120 | Fallback drain rate (1-1,000), used only when the engine-tick detour is unavailable |
+
+Hook events are drained from an engine-tick callback on the game thread, so a
+slow callback costs frame time; the allowances bound the bridge's own work only.
+Without the engine-tick detour (`HookEngineTick = 0`) delivery falls back to the
+event-loop thread, `hooks_frame_delivery` is `false` and `GetStats().delivery`
+is `"loop"`: Lua callbacks may then overlap UE4SS's game-thread Lua. Per-hook
+`max_queued` (default 256) stops one hot hook from starving the rest. Watch
+`dropped` in `h:Status()` and `rejected` in `GetStats()` to see a backlog.
+Once your Blueprint hooks use this API, `HookProcessInternal = 0` is safe again.

@@ -10,6 +10,7 @@ Unreal handles the stopwatch; your mod handles the action.
 - Receive copied event values outside Unreal's native input-dispatch stack.
 - Use session-owned handles, explicit cleanup, and optional delivery-fault handlers.
 - Inspect bindings and dispatch statistics on demand; enable tracing when needed.
+- Hook individual `UFunction`s, Blueprint events included, and receive queued, frame-aligned calls with copied parameters (`Hooks`).
 - Tune bounded dispatch queues and per-pass budgets for your workload.
 
 Supply exact live component and subsystem paths. Your mod owns target discovery

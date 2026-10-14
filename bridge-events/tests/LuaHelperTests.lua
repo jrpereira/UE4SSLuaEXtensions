@@ -165,7 +165,7 @@ local bridge = UE4SSLuaEventBridge
 local Helpers = bridge.Helpers
 local Trigger = Helpers.Trigger
 
-expect(bridge.API_VERSION == 6)
+expect(bridge.API_VERSION == 7)
 expect(bridge.GetCapabilities().helpers == true)
 expect(bridge.GetCapabilities().detailed_errors == true)
 expect(bridge.GetCapabilities().debug_tracing == true)
