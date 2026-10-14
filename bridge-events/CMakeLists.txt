@@ -54,7 +54,8 @@ if(WIN32)
         VERSION ${UE4SSLEB_PRODUCT_VERSION})
     lex_ue4ss_import_library(UE4SS_IMPORT_LIB UE4SS_IMPORT_TARGET)
     add_library(UE4SSLuaEventBridgeImplementation SHARED
-        src/BridgeMod.cpp src/EnhancedInputBackend.cpp "${UE4SSLEB_GENERATED_LUA_API}" "${UE4SSLEB_BRIDGE_RESOURCE}")
+        src/BridgeMod.cpp src/EnhancedInputBackend.cpp src/HookCore.cpp src/ParamSchema.cpp
+        "${UE4SSLEB_GENERATED_LUA_API}" "${UE4SSLEB_BRIDGE_RESOURCE}")
     add_dependencies(UE4SSLuaEventBridgeImplementation ${UE4SS_IMPORT_TARGET})
     target_compile_features(UE4SSLuaEventBridgeImplementation PRIVATE cxx_std_20)
     if(UE4SSLEB_COMPONENT_LAYOUT_128)

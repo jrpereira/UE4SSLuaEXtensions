@@ -1,5 +1,51 @@
 # Changelog
 
+## v1.1.0
+
+Minor, not patch: this release adds a public API (`UE4SSLuaEventBridge.Hooks`),
+capability fields, a setting and a new native mechanism that patches engine data
+when used. Patch releases (1.0.x) did not change what the bridge can do to the
+game; this one does, so the version says so. Consumers that never call
+`Hooks.Hook` see no change: nothing is read or written until the first call.
+
+### Changes
+
+- Add function hooks. `Hooks.Hook(target, options)` hooks one Blueprint or
+  native `UFunction`, pre and post, by path or wrapper. Parameters are copied
+  at call time by a schema built when the hook attaches; filters by object,
+  object name set and outer class run before any copying. Events go to a queue
+  of their own with per-hook limits, and are delivered to Lua once per frame on
+  the game thread from an engine-tick callback (falling back to the event loop
+  when the engine-tick detour is off). Observation only: no parameter edits,
+  no blocking, and `delivery = "sync"` is refused.
+- Hooks install no process-wide detour. A Blueprint function gets two
+  single-byte writes in its bytecode through two claimed opcode slots; a native
+  function gets its `Func` pointer swapped. Both are reversed on unhook, on
+  Lua stop and on hot reload.
+- A hook on a class that is not loaded yet stays pending and attaches when the
+  class object appears; a hook whose function is deleted returns to pending
+  (level or class reload).
+- Add capabilities `hooks`, `hooks_reason`, `hooks_bp`, `hooks_native`,
+  `hooks_sync` and `hooks_frame_delivery`; API number 7.
+- Add a ModCore Settings toggle, **Enable function hooks** (default on).
+- Mods that moved their Blueprint hooks to this API can set
+  `HookProcessInternal = 0` in `UE4SS-settings.ini`.
+- Extend the startup layout probe to the class, name and outer fields that
+  filters and pending hooks read. Hooks stay off if it fails.
+- Add function-hook checks to the load-time verifications.
+- New environment variables `UE4SSLEB_MAX_QUEUED_HOOK_EVENTS`,
+  `UE4SSLEB_MAX_HOOK_EVENTS_PER_PASS`, `UE4SSLEB_MAX_HOOK_DISPATCH_US` and
+  `UE4SSLEB_HOOK_CHECKS_PER_SECOND` (fallback drain only).
+
+### Limits
+
+- A call from C++ to C++ that never goes through a `UFunction` is not seen.
+- A native function called from Blueprint bytecode is reported without
+  parameters (`params_available = false`) and, after the call, with its return
+  value only.
+- Parameter kinds without a copier (arrays, maps, sets, delegates, interfaces,
+  soft, weak and lazy pointers, text) are delivered as `nil`.
+
 ## v1.0.13
 
 ### Changes
