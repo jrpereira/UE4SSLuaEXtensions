@@ -1387,9 +1387,12 @@ private:
         return 1;
     }
 
+    // require_serial = false accepts a live object whose serial Unreal has not
+    // assigned yet (serial 0): enough to prove liveness, not to hold a weak identity.
     static std::optional<UE4SSLuaEventBridge::ObjectLifetimeIdentity> read_object_identity(
         std::uintptr_t address,
-        bool require_game_thread = true)
+        bool require_game_thread = true,
+        bool require_serial = true)
     {
         if (!address || (require_game_thread && !RC::Unreal::IsInGameThread())) return {};
         const auto read = [](const void* source, void* destination, std::size_t size) {
@@ -1414,7 +1417,8 @@ private:
                     item_address + RC::Unreal::FWeakObjectPtr::object_item_serial_offset),
                 &serial,
                 sizeof(serial)) ||
-            reinterpret_cast<std::uintptr_t>(indexed_object) != address || serial <= 0) return {};
+            reinterpret_cast<std::uintptr_t>(indexed_object) != address || serial < 0 ||
+            (require_serial && serial == 0)) return {};
         return UE4SSLuaEventBridge::ObjectLifetimeIdentity{address, index, serial};
     }
 
@@ -2189,10 +2193,11 @@ private:
         return {checked, mismatched};
     }
 
-    // A live UObject that is a UFunction. Game thread.
+    // A live UObject that is a UFunction. Game thread. UFunctions are rarely
+    // weakly referenced, so most have no serial yet; liveness is enough here.
     static UFunction* live_function(int64_t address)
     {
-        if (address <= 0 || !read_object_identity(static_cast<std::uintptr_t>(address))) return nullptr;
+        if (address <= 0 || !read_object_identity(static_cast<std::uintptr_t>(address), true, false)) return nullptr;
         auto* object = reinterpret_cast<RC::Unreal::UObjectBase*>(static_cast<std::uintptr_t>(address));
         if (!object->IsA(UFunction::StaticClass())) return nullptr;
         return reinterpret_cast<UFunction*>(static_cast<std::uintptr_t>(address));
@@ -2280,7 +2285,7 @@ private:
         }
         if (options.outer != 0)
         {
-            if (!read_object_identity(options.outer)) return fail("outer_class is not a live object");
+            if (!read_object_identity(options.outer, true, false)) return fail("outer_class is not a live object");
             auto* outer_class = reinterpret_cast<RC::Unreal::UStruct*>(options.outer);
             if (reinterpret_cast<std::uintptr_t>(outer_class->GetSuperStruct()) !=
                 read_field<std::uintptr_t>(options.outer, HookLayout::ustruct_super_struct))
