@@ -199,7 +199,7 @@ constexpr uint32_t never_matching_name = 0xFFFFFFFFu;
 // one more for its error handler. A direct dispatcher call pushes the function,
 // 11 header values and 3 per triplet; larger events go through the session's
 // push/flush helpers in chunks of 5 triplets (function, reset flag, 15 values).
-constexpr std::size_t direct_triplets = 2;
+constexpr std::size_t direct_triplets = 2; // 11 header values + 3 per triplet stays under ~20 Lua stack slots
 constexpr std::size_t chunk_triplets = 5;
 
 // Set once by the first hook (or pending registration) on the game thread;
@@ -612,13 +612,24 @@ public:
     {
     }
 
+    // Two reserved triplets lead every event: "@frame" (the frame counter when the
+    // call was captured) and "@age" (seconds from capture to this delivery). Lua
+    // turns them into call.frame and call.clock; they are not parameters.
+    static constexpr std::size_t meta_triplets = 2;
+
     void begin(std::size_t count) override
     {
-        count_ = count;
-        direct_ = count <= direct_triplets;
-        if (!direct_) return;
-        lua_.registry().get_function_ref(session_.dispatcher_ref);
-        header();
+        count_ = count + meta_triplets;
+        direct_ = count_ <= direct_triplets;
+        if (direct_)
+        {
+            lua_.registry().get_function_ref(session_.dispatcher_ref);
+            header();
+        }
+        const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        integer("@frame", static_cast<int64_t>(event_.frame));
+        number("@age", static_cast<double>(now_ns - event_.timestamp_ns) / 1e9);
     }
     void boolean(const std::string& name, bool value) override
     {

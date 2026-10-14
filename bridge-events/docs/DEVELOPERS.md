@@ -828,8 +828,14 @@ call = {
     out = { ... },            -- post only: out parameters
     result = value,           -- post only: ReturnValue
     params_available = bool,  -- false on the Blueprint-to-native path
+    frame = n,                -- GetStats().ticks when the game made the call
+    clock = n,                -- os.clock() at the moment of the call (estimated at delivery)
 }
 ```
+
+Delivery happens later in the frame, or in a later frame under load. Use
+`frame` and `clock` when you need to know when the game made the call; read
+`GetStats().ticks` or `os.clock()` yourself for delivery time.
 
 When a native function is called from Blueprint bytecode its parameters are not
 evaluated yet: `params_available` is `false`, `params` is `nil`, and the post

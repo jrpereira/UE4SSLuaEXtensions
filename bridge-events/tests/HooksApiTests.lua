@@ -460,6 +460,20 @@ suite.run("dispatch decodes every tag", function()
         and seen.params.Skip == nil, "unsupported tag delivers nil")
 end)
 
+suite.run("capture frame and clock are call fields, not parameters", function()
+    local w = fixture()
+    standardFunction(w)
+    local seen
+    assert(w.Hooks.Hook(PATH, { post = function(call) seen = call end }))
+    local before = os.clock()
+    w.dispatch(-10, 1, 7, 2, true, 0, 0, 0, nil, true, 3,
+        "@frame", "i", 6337, "@age", "n", 0.25, "IconType", "e", "2|ERebelIndicatorIconType::Right")
+    expect(seen.frame == 6337, "call.frame is the capture frame")
+    expect(type(seen.clock) == "number" and seen.clock <= before + 0.01 - 0.24, "call.clock is os.clock() minus the age")
+    expect(seen.params["@frame"] == nil and seen.params["@age"] == nil, "reserved names stay out of params")
+    expect(seen.params.IconType.value == 2)
+end)
+
 suite.run("fixed arrays, empty enum names and null objects", function()
     local w = fixture()
     standardFunction(w)

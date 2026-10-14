@@ -448,6 +448,7 @@ public:
             queued.event.sequence = sequence_.fetch_add(1, std::memory_order_relaxed) + 1;
             queued.event.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 Clock::now().time_since_epoch()).count();
+            queued.event.frame = ticks_.load(std::memory_order_acquire);
             queued.event.game_thread = *game_thread;
             queued.event.params_available = call.params_available;
             queued.event.object = *identity;

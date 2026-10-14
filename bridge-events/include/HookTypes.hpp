@@ -154,6 +154,7 @@ struct HookEvent
     Phase phase{Phase::pre};
     uint64_t sequence{};
     int64_t timestamp_ns{};
+    uint64_t frame{};                  // frame counter (GetStats().ticks) when the call was captured
     bool game_thread{};
     bool params_available{};
     ObjectIdentity object;

@@ -1647,7 +1647,11 @@ local function __deliverHookEvent(
         local base = (i - 1) * 3
         local name, value = values[base + 1], __decodeHookValue(values[base + 2], values[base + 3])
         if type(name) == "string" then
-            if name == "ret" then
+            if name == "@frame" then
+                call.frame = value
+            elseif name == "@age" then
+                if type(value) == "number" then call.clock = os.clock() - value end
+            elseif name == "ret" then
                 if postPhase then call.result = value end
             elseif name:sub(1, 4) == "out:" then
                 if postPhase and value ~= nil then __setNested(call.out, name:sub(5), value) end
