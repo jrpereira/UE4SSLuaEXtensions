@@ -59,7 +59,7 @@ public:
     std::unique_ptr<PropertyView> first_child() const override
     {
         if (class_name() != "StructProperty") return nullptr;
-        RC::Unreal::UStruct* inner = static_cast<RC::Unreal::UStruct*>(
+        RC::Unreal::UStruct* inner = reinterpret_cast<RC::Unreal::UStruct*>(
             static_cast<FStructProperty*>(property())->GetStruct().pointer);
         if (inner == nullptr) return nullptr;
         return wrap(inner->GetChildProperties());
