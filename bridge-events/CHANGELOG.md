@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.0
+
+### Changes
+
+- Hook events carry the frame and time of the call itself. `call.frame` is the
+  game's frame counter when the call was captured and `call.clock` is
+  `os.clock()` at that moment. Before, Lua saw only delivery time, so events
+  compared against in-game stamps looked a frame or more late.
+
 ## v1.1.0
 
 Minor, not patch: this release adds a public API (`UE4SSLuaEventBridge.Hooks`),
