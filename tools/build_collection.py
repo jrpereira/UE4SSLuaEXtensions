@@ -21,7 +21,7 @@ import time
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from release_notes import extract_notes
+from release_notes import HEADING, extract_notes
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
@@ -323,14 +323,17 @@ def assemble(manifest, collection_version, source_commit, products, output, date
 
 
 def release_notes(manifest, collection_version, products, changelogs):
-    lines = ['### Changes', '',
+    lines = [HEADING, '',
              f'{manifest["package"]} {collection_version} packages these extensions together for Nexus. '
              'Each is released separately on GitHub.', '']
     for product in products:
         name, version = product['product_name'], product['version']
-        lines += [f'#### {name} {version}', '',
+        notes = extract_notes(changelogs[name], f'v{version}', heading=False).strip()
+        # Product sections sit one level below the package heading, so their own subsections drop one too.
+        notes = re.sub(r'^(#{2,5})(?=[ \t])', r'#\1', notes, flags=re.M)
+        lines += [f'### {name} {version}', '',
                   f'[GitHub release](https://github.com/{manifest["repository"]}/releases/tag/{product["tag"]})', '',
-                  extract_notes(changelogs[name], f'v{version}').strip(), '']
+                  notes, '']
     return '\n'.join(lines).rstrip() + '\n'
 
 

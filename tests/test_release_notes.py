@@ -1,3 +1,4 @@
+# Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """Ensure release notes cannot accidentally include another version's history.
 Each extension's CHANGELOG.md is checked by shared/tests/product_checks.py."""
 import importlib.util
@@ -14,13 +15,20 @@ extract_notes = release_notes.extract_notes
 class ReleaseNotesTests(unittest.TestCase):
     def test_exact_version_and_subsections(self):
         text = '# Changelog\n\n## v1.0.10\n\nNewer.\n\n## v1.0.1\n\n### Changes\n\nChosen.\n\n## v1.0.0\n\nOlder.\n'
-        self.assertEqual(extract_notes(text, 'v1.0.1'), '### Changes\n\nChosen.\n')
+        self.assertEqual(extract_notes(text, 'v1.0.1'), '## Changes\n\nChosen.\n')
+
+    def test_changes_heading_added_once(self):
+        self.assertEqual(extract_notes('## v1.0.1\n\n- Fixed.\n', 'v1.0.1'), '## Changes\n\n- Fixed.\n')
+        self.assertEqual(extract_notes('## v1.0.1\n\n### Changes\n- Fixed.\n', 'v1.0.1'), '## Changes\n\n- Fixed.\n')
+        self.assertEqual(extract_notes('## v1.0.1\n\n### Added\n- New.\n', 'v1.0.1'), '## Changes\n\n### Added\n- New.\n')
+        self.assertEqual(extract_notes('## v1.0.1\n\n### Changes\n\n- Fixed.\n', 'v1.0.1', heading=False), '- Fixed.\n')
 
     def test_reject_missing_duplicate_empty_and_invalid_tag(self):
         for text, tag in [
             ('## v1.0.10\nOther', 'v1.0.1'),
             ('## v1.0.1\nOne\n## v1.0.1\nTwo', 'v1.0.1'),
             ('## v1.0.1\n\n## v1.0.0\nOlder', 'v1.0.1'),
+            ('## v1.0.1\n\n### Changes\n\n## v1.0.0\nOlder', 'v1.0.1'),
             ('## latest\nNotes', 'latest'),
         ]:
             with self.subTest(text=text, tag=tag), self.assertRaises(ValueError):
@@ -32,7 +40,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertNotIn('Older.', extract_notes(text, 'v1.0.1'))
 
     def test_historical_prerelease_and_crlf(self):
-        self.assertEqual(extract_notes('## v0.3.4-rc.3\r\n\r\nHistorical.\r\n', 'v0.3.4-rc.3'), 'Historical.\n')
+        self.assertEqual(extract_notes('## v0.3.4-rc.3\r\n\r\nHistorical.\r\n', 'v0.3.4-rc.3'), '## Changes\n\nHistorical.\n')
 
 
 if __name__ == '__main__':
