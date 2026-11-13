@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.1
+
+### Changes
+
+- `OpenInputComponent` and `BindAction` look objects up by path in the engine's
+  name hash instead of scanning every loaded object. Each call took about one
+  full object scan (around 45 ms in a loaded level); it now takes microseconds.
+  Paths, results and error messages are unchanged, and a path that is not a
+  full object path (starting with `/`) is reported as not found.
+
 ## v1.2.0
 
 ### Changes
