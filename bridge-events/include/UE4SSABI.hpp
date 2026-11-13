@@ -1,7 +1,7 @@
 #pragma once
 
 // The event bridge's part of the pinned UE4SS 97b7e501 ABI: the Unreal object
-// model, object listeners, StaticFindObject and the ProcessEvent hook. The part every
+// model, object listeners, FindAllOf and the ProcessEvent hook. The part every
 // extension uses (Lua, output, CppUserModBase) is shared/ue4ss-abi/UE4SSLuaABI.hpp.
 #include <UE4SSLuaABI.hpp>
 
@@ -238,8 +238,7 @@ public:
 
 namespace UObjectGlobals
 {
-// The engine's StaticFindObject (hashed by name), as Lua's StaticFindObject uses it.
-UE4SS_IMPORT UObject* StaticFindObject_InternalSlow(UClass* object_class, UObject* in_object_package, const wchar_t* name, bool exact_class);
+UE4SS_IMPORT void FindAllOf(const wchar_t* class_name, std::vector<UObject*>& objects);
 }
 
 

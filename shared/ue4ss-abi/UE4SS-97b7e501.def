@@ -11,7 +11,7 @@ EXPORTS
     ?AddUObjectDeleteListener@FUObjectArray@Unreal@RC@@SAXPEAVFUObjectDeleteListener@23@@Z
     ?RemoveUObjectCreateListener@FUObjectArray@Unreal@RC@@SAXPEAVFUObjectCreateListener@23@@Z
     ?RemoveUObjectDeleteListener@FUObjectArray@Unreal@RC@@SAXPEAVFUObjectDeleteListener@23@@Z
-    ?StaticFindObject_InternalSlow@UObjectGlobals@Unreal@RC@@YAPEAVUObject@23@PEAVUClass@23@PEAV423@PEB_W_N@Z
+    ?FindAllOf@UObjectGlobals@Unreal@RC@@YAXPEB_WAEAV?$vector@PEAVUObject@Unreal@RC@@V?$allocator@PEAVUObject@Unreal@RC@@@std@@@std@@@Z
     ?GetPathName@UObject@Unreal@RC@@QEBA?AV?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@PEAV123@@Z
     ?GetValuePtrByPropertyNameInChain@UObject@Unreal@RC@@QEAAPEAXPEB_W@Z
     ?GetPropertiesSize@UStruct@Unreal@RC@@QEAAAEAHXZ

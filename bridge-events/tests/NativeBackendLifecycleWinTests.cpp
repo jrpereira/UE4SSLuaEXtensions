@@ -22,41 +22,33 @@ void operator delete(void* pointer, std::size_t) noexcept { std::free(pointer); 
 namespace UE4SSLuaEventBridge { struct LuaSession {}; }
 namespace RC::Unreal {
 struct FUObjectItem { alignas(8) std::byte bytes[0x18]{}; };
-static std::array<FUObjectItem,2> objects;
+static std::array<FUObjectItem,3> objects;
 static UObject* component{};
 static UObject* action_object{};
+static UObject* asset_action{};
 static thread_local bool game_thread = true;
 static std::atomic<int> allocations{};
 static bool fail_allocation{};
 FUObjectItem* FUObjectArray::IndexToObject(int32_t index) {
-    return index >= 0 && index < 2 ? &objects[static_cast<std::size_t>(index)] : nullptr;
+    return index >= 0 && index < 3 ? &objects[static_cast<std::size_t>(index)] : nullptr;
 }
 bool IsInGameThread() { return game_thread; }
 int32_t& UStruct::GetPropertiesSize() {
     static int32_t size = static_cast<int32_t>(UE4SSLuaEventBridge::EnhancedInputABI::enhanced_input_component_size);
     return size;
 }
-// Stand-ins for the engine's script classes; only their addresses matter.
-static std::array<std::byte,1> component_class_tag{}, action_class_tag{};
-static UClass* const component_class=reinterpret_cast<UClass*>(component_class_tag.data());
-static UClass* const action_class=reinterpret_cast<UClass*>(action_class_tag.data());
-static std::atomic<int> lookups{};
+std::wstring UObject::GetPathName(UObject*) const {
+    if (this==component) return L"/Game/Maps/Map.Map:PersistentLevel.PlayerController_0.InputComponent0";
+    if (this==asset_action) return L"/Game/Input/Actions/IA_ToggleQuickslots.IA_ToggleQuickslots";
+    return L"/Engine/Transient.IA_MCC_Test";
+}
+static std::atomic<int> scans{};
 namespace UObjectGlobals {
-// A name-hashed lookup: one entry per object path, filtered by class.
-UObject* StaticFindObject_InternalSlow(UClass* type, UObject* package, const wchar_t* name, bool exact) {
-    ++lookups; CHECK(package==nullptr && !exact);
-    const std::wstring_view path(name);
-    if (!type) {
-        if (path==L"/Script/Engine.InputComponent") return reinterpret_cast<UObject*>(component_class);
-        if (path==L"/Script/EnhancedInput.InputAction") return reinterpret_cast<UObject*>(action_class);
-        return nullptr;
-    }
-    if (type==component_class && path==L"/Game/Maps/Map.Map:PersistentLevel.PlayerController_0.InputComponent0")
-        return component;
-    if (type==action_class && (path==L"/Engine/Transient.IA_MCC_Test" ||
-                               path==L"/Game/Input/Actions/IA_ToggleQuickslots.IA_ToggleQuickslots"))
-        return action_object;
-    return nullptr;
+// A full object walk, counted: the cost the backend must not repeat per call.
+void FindAllOf(const wchar_t* name, std::vector<UObject*>& out) {
+    ++scans;
+    if (std::wstring_view(name) == L"EnhancedInputComponent") out.push_back(component);
+    if (std::wstring_view(name) == L"InputAction") { out.push_back(action_object); out.push_back(asset_action); }
 }
 }
 void* FMemory::Malloc(std::size_t size, uint32_t) {
@@ -78,14 +70,16 @@ static const std::string asset_action_path="/Game/Input/Actions/IA_ToggleQuicksl
 struct Fixture {
     alignas(8) std::array<std::byte,ABI::enhanced_input_component_size> storage{};
     alignas(8) std::array<std::byte,0x20> action_storage{};
+    alignas(8) std::array<std::byte,0x20> asset_action_storage{};
     UClass type;
     Fixture() {
         component=reinterpret_cast<UObject*>(storage.data());
         action_object=reinterpret_cast<UObject*>(action_storage.data());
+        asset_action=reinterpret_cast<UObject*>(asset_action_storage.data());
         auto* cls=&type;
         std::memcpy(storage.data()+ABI::uobject_class_offset,&cls,sizeof(cls));
-        for(int32_t i=0;i<2;++i) {
-            auto* obj=i==0?component:action_object;
+        for(int32_t i=0;i<3;++i) {
+            auto* obj=i==0?component:i==1?action_object:asset_action;
             std::memcpy(reinterpret_cast<std::byte*>(obj)+0x0c,&i,sizeof(i));
             const int32_t serial=10+i;
             std::memcpy(objects[i].bytes,&obj,sizeof(obj));
@@ -253,38 +247,52 @@ int main() {
         fail_allocation=false; CHECK(!failed.first && !failed.second.empty() && f.bindings().size==0);
         bind(backend,s); CHECK(backend.unsubscribe_all(s)==1); CHECK(backend.shutdown());
     }
-    // Lookups are hashed by full path: a transient-package action, a game
-    // asset action and a missing path, each one engine lookup per call with
-    // the script classes looked up once. Misses keep their error text.
+    // Lookups walk the object array once per class and then come from a
+    // path cache: a transient-package action and a game asset action share
+    // one walk, repeat binds and reopened targets walk nothing, and a miss
+    // walks again and keeps its error text.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
-        lookups=0;
+        scans=0;
         auto target=backend.open_target(s,component_path); CHECK(target.first && target.second.empty());
-        CHECK(lookups==2); // InputComponent class, then the component.
+        CHECK(scans==1);
         auto transient=backend.subscribe(s,target.first,1,action_path,"Triggered",ABI::TriggerEvent::Triggered);
-        CHECK(transient.first && transient.second.empty()); CHECK(lookups==4);
+        CHECK(transient.first && transient.second.empty()); CHECK(scans==2);
         auto asset=backend.subscribe(s,target.first,2,asset_action_path,"Triggered",ABI::TriggerEvent::Triggered);
-        CHECK(asset.first && asset.second.empty()); CHECK(lookups==5);
+        CHECK(asset.first && asset.second.empty()); CHECK(scans==2);
         CHECK(f.bindings().size==2);
+        CHECK(f.bindings().data[0]->action.Get()==action_object && f.bindings().data[1]->action.Get()==asset_action);
+        auto again=backend.subscribe(s,target.first,3,action_path,"Started",ABI::TriggerEvent::Started);
+        CHECK(again.first && scans==2);
+        auto reopened=backend.open_target(s,component_path); CHECK(reopened.first && scans==2);
         const std::string missing_action="/Game/Input/Actions/IA_Missing.IA_Missing";
-        auto miss=backend.subscribe(s,target.first,3,missing_action,"Triggered",ABI::TriggerEvent::Triggered);
+        auto miss=backend.subscribe(s,target.first,4,missing_action,"Triggered",ABI::TriggerEvent::Triggered);
         CHECK(!miss.first && miss.second=="InputAction was not found at object path: "+missing_action);
-        // A component path is not an InputAction, and a short name never reaches the engine.
-        auto wrong=backend.subscribe(s,target.first,4,component_path,"Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(scans==3);
+        // The refilled cache still serves the known paths.
+        CHECK(backend.subscribe(s,target.first,5,asset_action_path,"Started",ABI::TriggerEvent::Started).first);
+        CHECK(scans==3);
+        // A component path is not an InputAction.
+        auto wrong=backend.subscribe(s,target.first,6,component_path,"Triggered",ABI::TriggerEvent::Triggered);
         CHECK(!wrong.first && wrong.second=="InputAction was not found at object path: "+component_path);
-        const int before_short=lookups;
-        auto bare=backend.subscribe(s,target.first,5,"IA_MCC_Test","Triggered",ABI::TriggerEvent::Triggered);
-        CHECK(!bare.first && lookups==before_short);
+        // A missing component walks both component classes, as before.
         const std::string missing_component="/Script/Nowhere.Nothing:Missing";
+        const int before_component=scans;
         auto none=backend.open_target(s,missing_component);
         CHECK(!none.first && none.second=="EnhancedInputComponent was not found at object path: "+missing_component);
-        auto bare_component=backend.open_target(s,"InputComponent0");
-        CHECK(!bare_component.first && !bare_component.second.empty());
+        CHECK(scans==before_component+2);
         // The target error still wins over a missing action.
-        auto unknown=backend.subscribe(s,999,6,missing_action,"Triggered",ABI::TriggerEvent::Triggered);
+        auto unknown=backend.subscribe(s,999,7,missing_action,"Triggered",ABI::TriggerEvent::Triggered);
         CHECK(!unknown.first && unknown.second.find("target handle is unknown")!=std::string::npos);
-        CHECK(f.bindings().size==2);
-        CHECK(backend.unsubscribe_all(s)==2); CHECK(backend.shutdown());
+        // An object that left its slot is not served from the cache.
+        const auto saved=objects[2]; objects[2]={};
+        const int before_stale=scans;
+        auto stale=backend.subscribe(s,target.first,8,asset_action_path,"Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(!stale.first && scans==before_stale+1);
+        objects[2]=saved;
+        CHECK(backend.subscribe(s,target.first,9,asset_action_path,"Triggered",ABI::TriggerEvent::Triggered).first);
+        CHECK(f.bindings().size==5);
+        CHECK(backend.unsubscribe_all(s)==5); CHECK(backend.shutdown());
     }
     return LexTests::finish("NativeBackendLifecycleTests");
 }

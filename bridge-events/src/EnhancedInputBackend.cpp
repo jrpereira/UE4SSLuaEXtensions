@@ -462,33 +462,68 @@ bool EnhancedInputBackend::shutdown()
            dispatch_state_->live_bindings.load(std::memory_order_acquire) == 0;
 }
 
-UClass* EnhancedInputBackend::find_class(UClass*& cache, const wchar_t* path)
+UObject* EnhancedInputBackend::cached_object(ObjectCache& cache, const std::wstring& path)
 {
-    // Script classes are rooted for the life of the process, so the pointer
-    // stays valid; a miss is retried on the next call.
-    if (!cache)
-    {
-        cache = reinterpret_cast<UClass*>(
-            RC::Unreal::UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr, path, false));
-    }
-    return cache;
-}
-
-UObject* EnhancedInputBackend::find_by_path(UClass* type, const std::wstring& path)
-{
-    // The engine's hashed StaticFindObject, the lookup Lua's StaticFindObject
-    // uses. Only full object paths reach it, so it never falls back to a
-    // short-name search; anything else is simply not found.
-    if (!type || path.empty() || path.front() != L'/')
+    const auto it = cache.find(path);
+    if (it == cache.end())
     {
         return nullptr;
     }
-    return RC::Unreal::UObjectGlobals::StaticFindObject_InternalSlow(type, nullptr, path.c_str(), false);
+    // Still the object in that GUObjectArray slot, and still at that path.
+    UObject* live{};
+    if (auto* item = RC::Unreal::FUObjectArray::IndexToObject(it->second.index))
+    {
+        std::memcpy(
+            &live,
+            reinterpret_cast<const std::byte*>(item) + FWeakObjectPtr::object_item_object_offset,
+            sizeof(live));
+    }
+    if (live && live == it->second.object && live->GetPathName() == path)
+    {
+        return live;
+    }
+    cache.erase(it);
+    return nullptr;
+}
+
+void EnhancedInputBackend::fill_cache(ObjectCache& cache, const wchar_t* class_name)
+{
+    // One object walk indexes every object of the class by path, so the
+    // other paths a caller binds next are found without walking again.
+    std::vector<UObject*> objects;
+    RC::Unreal::UObjectGlobals::FindAllOf(class_name, objects);
+    for (auto* object : objects)
+    {
+        if (!object)
+        {
+            continue;
+        }
+        int32_t index{};
+        std::memcpy(
+            &index,
+            reinterpret_cast<const std::byte*>(object) + FWeakObjectPtr::uobject_internal_index_offset,
+            sizeof(index));
+        if (index >= 0)
+        {
+            cache.insert_or_assign(object->GetPathName(), CachedObject{object, index});
+        }
+    }
 }
 
 UObject* EnhancedInputBackend::resolve_component(const std::wstring& path, std::string& error)
 {
-    auto* object = find_by_path(find_class(input_component_class_, L"/Script/Engine.InputComponent"), path);
+    auto* object = cached_object(component_cache_, path);
+    if (!object)
+    {
+        component_cache_.clear();
+        fill_cache(component_cache_, L"EnhancedInputComponent");
+        object = cached_object(component_cache_, path);
+    }
+    if (!object)
+    {
+        fill_cache(component_cache_, L"InputComponent");
+        object = cached_object(component_cache_, path);
+    }
     if (object && !validate_component(object))
     {
         auto* type = object_class(object);
@@ -502,7 +537,13 @@ UObject* EnhancedInputBackend::resolve_component(const std::wstring& path, std::
 
 UObject* EnhancedInputBackend::resolve_action(const std::wstring& path)
 {
-    return find_by_path(find_class(input_action_class_, L"/Script/EnhancedInput.InputAction"), path);
+    if (auto* action = cached_object(action_cache_, path))
+    {
+        return action;
+    }
+    action_cache_.clear();
+    fill_cache(action_cache_, L"InputAction");
+    return cached_object(action_cache_, path);
 }
 
 bool EnhancedInputBackend::validate_component(UObject* component) const

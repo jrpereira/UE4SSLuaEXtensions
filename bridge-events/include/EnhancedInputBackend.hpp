@@ -186,8 +186,15 @@ private:
         uint32_t expected_handle{};
     };
 
-    static RC::Unreal::UClass* find_class(RC::Unreal::UClass*& cache, const wchar_t* path);
-    static RC::Unreal::UObject* find_by_path(RC::Unreal::UClass* type, const std::wstring& path);
+    // Objects by path, filled by one FindAllOf walk per class on a miss.
+    struct CachedObject
+    {
+        RC::Unreal::UObject* object{};
+        int32_t index{};
+    };
+    using ObjectCache = std::unordered_map<std::wstring, CachedObject>;
+    static RC::Unreal::UObject* cached_object(ObjectCache& cache, const std::wstring& path);
+    static void fill_cache(ObjectCache& cache, const wchar_t* class_name);
     RC::Unreal::UObject* resolve_component(const std::wstring& path, std::string& error);
     RC::Unreal::UObject* resolve_action(const std::wstring& path);
     bool validate_component(RC::Unreal::UObject* component) const;
@@ -200,8 +207,8 @@ private:
     bool unsubscribe_locked(LuaSession& session, uint64_t id);
 
     // Game-thread only, like every lookup that fills them.
-    RC::Unreal::UClass* input_component_class_{};
-    RC::Unreal::UClass* input_action_class_{};
+    ObjectCache component_cache_;
+    ObjectCache action_cache_;
     std::atomic_bool initialized_{false};
     std::atomic_uint64_t next_target_{1};
     std::atomic_uint64_t next_subscription_{1};
