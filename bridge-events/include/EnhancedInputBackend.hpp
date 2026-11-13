@@ -186,8 +186,10 @@ private:
         uint32_t expected_handle{};
     };
 
-    RC::Unreal::UObject* resolve_component(const std::wstring& path, std::string& error) const;
-    RC::Unreal::UObject* resolve_action(const std::wstring& path) const;
+    static RC::Unreal::UClass* find_class(RC::Unreal::UClass*& cache, const wchar_t* path);
+    static RC::Unreal::UObject* find_by_path(RC::Unreal::UClass* type, const std::wstring& path);
+    RC::Unreal::UObject* resolve_component(const std::wstring& path, std::string& error);
+    RC::Unreal::UObject* resolve_action(const std::wstring& path);
     bool validate_component(RC::Unreal::UObject* component) const;
     NativeBinding* attach(
         RC::Unreal::UObject* component,
@@ -197,6 +199,9 @@ private:
     void collect_inactive_locked();
     bool unsubscribe_locked(LuaSession& session, uint64_t id);
 
+    // Game-thread only, like every lookup that fills them.
+    RC::Unreal::UClass* input_component_class_{};
+    RC::Unreal::UClass* input_action_class_{};
     std::atomic_bool initialized_{false};
     std::atomic_uint64_t next_target_{1};
     std::atomic_uint64_t next_subscription_{1};

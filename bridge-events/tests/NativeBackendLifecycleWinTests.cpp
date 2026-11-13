@@ -32,15 +32,31 @@ FUObjectItem* FUObjectArray::IndexToObject(int32_t index) {
     return index >= 0 && index < 2 ? &objects[static_cast<std::size_t>(index)] : nullptr;
 }
 bool IsInGameThread() { return game_thread; }
-std::wstring UObject::GetPathName(UObject*) const { return this == component ? L"Component" : L"Action"; }
 int32_t& UStruct::GetPropertiesSize() {
     static int32_t size = static_cast<int32_t>(UE4SSLuaEventBridge::EnhancedInputABI::enhanced_input_component_size);
     return size;
 }
+// Stand-ins for the engine's script classes; only their addresses matter.
+static std::array<std::byte,1> component_class_tag{}, action_class_tag{};
+static UClass* const component_class=reinterpret_cast<UClass*>(component_class_tag.data());
+static UClass* const action_class=reinterpret_cast<UClass*>(action_class_tag.data());
+static std::atomic<int> lookups{};
 namespace UObjectGlobals {
-void FindAllOf(const wchar_t* name, std::vector<UObject*>& out) {
-    if (std::wstring_view(name) == L"EnhancedInputComponent") out.push_back(component);
-    if (std::wstring_view(name) == L"InputAction") out.push_back(action_object);
+// A name-hashed lookup: one entry per object path, filtered by class.
+UObject* StaticFindObject_InternalSlow(UClass* type, UObject* package, const wchar_t* name, bool exact) {
+    ++lookups; CHECK(package==nullptr && !exact);
+    const std::wstring_view path(name);
+    if (!type) {
+        if (path==L"/Script/Engine.InputComponent") return reinterpret_cast<UObject*>(component_class);
+        if (path==L"/Script/EnhancedInput.InputAction") return reinterpret_cast<UObject*>(action_class);
+        return nullptr;
+    }
+    if (type==component_class && path==L"/Game/Maps/Map.Map:PersistentLevel.PlayerController_0.InputComponent0")
+        return component;
+    if (type==action_class && (path==L"/Engine/Transient.IA_MCC_Test" ||
+                               path==L"/Game/Input/Actions/IA_ToggleQuickslots.IA_ToggleQuickslots"))
+        return action_object;
+    return nullptr;
 }
 }
 void* FMemory::Malloc(std::size_t size, uint32_t) {
@@ -56,6 +72,9 @@ void FMemory::Free(void* p) { if(p) { --allocations; std::free(p); } }
 using namespace UE4SSLuaEventBridge;
 namespace ABI=EnhancedInputABI;
 using namespace RC::Unreal;
+static const std::string component_path="/Game/Maps/Map.Map:PersistentLevel.PlayerController_0.InputComponent0";
+static const std::string action_path="/Engine/Transient.IA_MCC_Test";
+static const std::string asset_action_path="/Game/Input/Actions/IA_ToggleQuickslots.IA_ToggleQuickslots";
 struct Fixture {
     alignas(8) std::array<std::byte,ABI::enhanced_input_component_size> storage{};
     alignas(8) std::array<std::byte,0x20> action_storage{};
@@ -85,8 +104,8 @@ struct Fixture {
     ~Fixture() { destroy_component(); CHECK(allocations==0); }
 };
 uint64_t bind(EnhancedInputBackend& backend, LuaSession& session) {
-    auto target=backend.open_target(session,"Component"); CHECK(target.first && target.second.empty());
-    auto subscription=backend.subscribe(session,target.first,1,"Action","Triggered",ABI::TriggerEvent::Triggered);
+    auto target=backend.open_target(session,component_path); CHECK(target.first && target.second.empty());
+    auto subscription=backend.subscribe(session,target.first,1,action_path,"Triggered",ABI::TriggerEvent::Triggered);
     CHECK(subscription.first && subscription.second.empty()); return subscription.first;
 }
 int main() {
@@ -96,7 +115,7 @@ int main() {
     // requires neither queue capacity nor further input.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s, stranger;
-        auto target=backend.open_target(s,"Component").first; CHECK(target);
+        auto target=backend.open_target(s,component_path).first; CHECK(target);
         CHECK(!backend.target_delivery_valid(s,target).first);
         CHECK(!backend.enable_delivery_faults(stranger,target).empty());
         game_thread=false; CHECK(!backend.enable_delivery_faults(s,target).empty()); game_thread=true;
@@ -105,7 +124,7 @@ int main() {
         CHECK(backend.target_delivery_valid(s,target).first);
         CHECK(!backend.target_delivery_valid(stranger,target).first);
         for (auto phase : {ABI::TriggerEvent::Started,ABI::TriggerEvent::Completed,ABI::TriggerEvent::Canceled}) {
-            auto result=backend.subscribe(s,target,1,"Action","phase",phase); CHECK(result.first);
+            auto result=backend.subscribe(s,target,1,action_path,"phase",phase); CHECK(result.first);
         }
         auto* started=f.bindings().data[0]; auto* release=f.bindings().data[1];
         backend.set_queue_limit(1);
@@ -118,7 +137,7 @@ int main() {
         CHECK(fault && fault->target==target && fault->session==&s && fault->reason==DeliveryFault::QueueCapacity);
         CHECK(!backend.take_delivery_fault());
         release->Execute(event); CHECK(backend.queue_stats().rejected==1);
-        auto denied=backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started); CHECK(!denied.first);
+        auto denied=backend.subscribe(s,target,1,action_path,"Started",ABI::TriggerEvent::Started); CHECK(!denied.first);
         backend.consumer_events_remaining(0); auto queued=backend.take_events(); CHECK(queued.size()==1);
         CHECK(!queued[0].owner->delivery_valid()); backend.consumer_events_remaining(0);
         DispatchBacklog<EnhancedInputEvent> backlog; backlog.load(std::move(stale));
@@ -131,17 +150,17 @@ int main() {
         },[&] { return now; })==0);
         CHECK(backlog.empty() && delivered==0);
         CHECK(backend.close_target(s,target)); CHECK(!backend.target_delivery_valid(s,target).first);
-        auto fresh=backend.open_target(s,"Component").first; CHECK(fresh && fresh!=target);
+        auto fresh=backend.open_target(s,component_path).first; CHECK(fresh && fresh!=target);
         CHECK(backend.enable_delivery_faults(s,fresh).empty() && backend.target_delivery_valid(s,fresh).first);
-        CHECK(backend.subscribe(s,fresh,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        CHECK(backend.subscribe(s,fresh,1,action_path,"Started",ABI::TriggerEvent::Started).first);
         f.bindings().data[0]->Execute(event); auto live=backend.take_events(); CHECK(live.size()==1 && live[0].owner->delivery_valid());
         backend.consumer_events_remaining(0); CHECK(backend.shutdown());
     }
     // Legacy targets keep overflow behavior and cannot opt in retroactively.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
-        auto target=backend.open_target(s,"Component").first;
-        auto id=backend.subscribe(s,target,1,"Action","Triggered",ABI::TriggerEvent::Triggered).first; CHECK(id);
+        auto target=backend.open_target(s,component_path).first;
+        auto id=backend.subscribe(s,target,1,action_path,"Triggered",ABI::TriggerEvent::Triggered).first; CHECK(id);
         CHECK(!backend.enable_delivery_faults(s,target).empty());
         backend.set_queue_limit(1); f.bindings().data[0]->Execute(event); f.bindings().data[0]->Execute(event);
         CHECK(backend.queue_stats().rejected==1 && !backend.take_delivery_fault());
@@ -152,9 +171,9 @@ int main() {
     // Actual queue allocation exception latches independently of the trace queue.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
-        auto target=backend.open_target(s,"Component").first;
+        auto target=backend.open_target(s,component_path).first;
         CHECK(backend.enable_delivery_faults(s,target).empty());
-        CHECK(backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        CHECK(backend.subscribe(s,target,1,action_path,"Started",ABI::TriggerEvent::Started).first);
         fail_next_cpp_allocation=true; f.bindings().data[0]->Execute(event);
         CHECK(!fail_next_cpp_allocation && !backend.target_delivery_valid(s,target).first);
         auto fault=backend.take_delivery_fault(); CHECK(fault && fault->reason==DeliveryFault::QueueException);
@@ -164,17 +183,17 @@ int main() {
     // before notification prevents a callback into a released consumer.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
-        auto target=backend.open_target(s,"Component").first;
-        auto other=backend.open_target(s,"Component").first;
+        auto target=backend.open_target(s,component_path).first;
+        auto other=backend.open_target(s,component_path).first;
         CHECK(backend.enable_delivery_faults(s,target).empty()); CHECK(backend.enable_delivery_faults(s,other).empty());
-        CHECK(backend.subscribe(s,target,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        CHECK(backend.subscribe(s,target,1,action_path,"Started",ABI::TriggerEvent::Started).first);
         f.bindings().data[0]->Execute(event); auto batch=backend.take_events(); CHECK(batch.size()==1);
         backend.consumer_events_remaining(0);
         backend.report_delivery_fault(*batch[0].owner,DeliveryFault::CallbackError);
         backend.report_delivery_fault(*batch[0].owner,DeliveryFault::QueueCapacity);
         CHECK(!batch[0].owner->delivery_valid() && backend.target_delivery_valid(s,other).first);
         CHECK(backend.close_target(s,target)); CHECK(!backend.take_delivery_fault());
-        CHECK(backend.subscribe(s,other,1,"Action","Started",ABI::TriggerEvent::Started).first);
+        CHECK(backend.subscribe(s,other,1,action_path,"Started",ABI::TriggerEvent::Started).first);
         f.bindings().data[0]->Execute(event); batch=backend.take_events(); backend.consumer_events_remaining(0);
         backend.report_delivery_fault(*batch[0].owner,DeliveryFault::CallbackError);
         backend.deactivate_all(s); CHECK(!backend.take_delivery_fault()); CHECK(backend.shutdown());
@@ -228,11 +247,44 @@ int main() {
     // A failed native allocation is recoverable and publishes no binding.
     {
         Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
-        auto target=backend.open_target(s,"Component"); CHECK(target.first);
+        auto target=backend.open_target(s,component_path); CHECK(target.first);
         fail_allocation=true;
-        auto failed=backend.subscribe(s,target.first,1,"Action","Triggered",ABI::TriggerEvent::Triggered);
+        auto failed=backend.subscribe(s,target.first,1,action_path,"Triggered",ABI::TriggerEvent::Triggered);
         fail_allocation=false; CHECK(!failed.first && !failed.second.empty() && f.bindings().size==0);
         bind(backend,s); CHECK(backend.unsubscribe_all(s)==1); CHECK(backend.shutdown());
+    }
+    // Lookups are hashed by full path: a transient-package action, a game
+    // asset action and a missing path, each one engine lookup per call with
+    // the script classes looked up once. Misses keep their error text.
+    {
+        Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
+        lookups=0;
+        auto target=backend.open_target(s,component_path); CHECK(target.first && target.second.empty());
+        CHECK(lookups==2); // InputComponent class, then the component.
+        auto transient=backend.subscribe(s,target.first,1,action_path,"Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(transient.first && transient.second.empty()); CHECK(lookups==4);
+        auto asset=backend.subscribe(s,target.first,2,asset_action_path,"Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(asset.first && asset.second.empty()); CHECK(lookups==5);
+        CHECK(f.bindings().size==2);
+        const std::string missing_action="/Game/Input/Actions/IA_Missing.IA_Missing";
+        auto miss=backend.subscribe(s,target.first,3,missing_action,"Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(!miss.first && miss.second=="InputAction was not found at object path: "+missing_action);
+        // A component path is not an InputAction, and a short name never reaches the engine.
+        auto wrong=backend.subscribe(s,target.first,4,component_path,"Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(!wrong.first && wrong.second=="InputAction was not found at object path: "+component_path);
+        const int before_short=lookups;
+        auto bare=backend.subscribe(s,target.first,5,"IA_MCC_Test","Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(!bare.first && lookups==before_short);
+        const std::string missing_component="/Script/Nowhere.Nothing:Missing";
+        auto none=backend.open_target(s,missing_component);
+        CHECK(!none.first && none.second=="EnhancedInputComponent was not found at object path: "+missing_component);
+        auto bare_component=backend.open_target(s,"InputComponent0");
+        CHECK(!bare_component.first && !bare_component.second.empty());
+        // The target error still wins over a missing action.
+        auto unknown=backend.subscribe(s,999,6,missing_action,"Triggered",ABI::TriggerEvent::Triggered);
+        CHECK(!unknown.first && unknown.second.find("target handle is unknown")!=std::string::npos);
+        CHECK(f.bindings().size==2);
+        CHECK(backend.unsubscribe_all(s)==2); CHECK(backend.shutdown());
     }
     return LexTests::finish("NativeBackendLifecycleTests");
 }

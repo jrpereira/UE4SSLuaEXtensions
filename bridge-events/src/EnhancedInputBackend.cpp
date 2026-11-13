@@ -462,48 +462,47 @@ bool EnhancedInputBackend::shutdown()
            dispatch_state_->live_bindings.load(std::memory_order_acquire) == 0;
 }
 
-UObject* EnhancedInputBackend::resolve_component(const std::wstring& path, std::string& error) const
+UClass* EnhancedInputBackend::find_class(UClass*& cache, const wchar_t* path)
 {
-    const auto find_exact = [&](const wchar_t* class_name) -> UObject* {
-        std::vector<UObject*> objects;
-        RC::Unreal::UObjectGlobals::FindAllOf(class_name, objects);
-        for (auto* object : objects)
-        {
-            if (object && object->GetPathName() == path)
-            {
-                if (!validate_component(object))
-                {
-                    auto* type = object_class(object);
-                    error = "EnhancedInputComponent found, but native layout validation failed: properties_size=" +
-                        std::to_string(type ? type->GetPropertiesSize() : -1) +
-                        ", expected=" + std::to_string(ABI::enhanced_input_component_size);
-                    return nullptr;
-                }
-                return object;
-            }
-        }
-        return nullptr;
-    };
-
-    if (auto* component = find_exact(L"EnhancedInputComponent"))
+    // Script classes are rooted for the life of the process, so the pointer
+    // stays valid; a miss is retried on the next call.
+    if (!cache)
     {
-        return component;
+        cache = reinterpret_cast<UClass*>(
+            RC::Unreal::UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr, path, false));
     }
-    return find_exact(L"InputComponent");
+    return cache;
 }
 
-UObject* EnhancedInputBackend::resolve_action(const std::wstring& path) const
+UObject* EnhancedInputBackend::find_by_path(UClass* type, const std::wstring& path)
 {
-    std::vector<UObject*> actions;
-    RC::Unreal::UObjectGlobals::FindAllOf(L"InputAction", actions);
-    for (auto* action : actions)
+    // The engine's hashed StaticFindObject, the lookup Lua's StaticFindObject
+    // uses. Only full object paths reach it, so it never falls back to a
+    // short-name search; anything else is simply not found.
+    if (!type || path.empty() || path.front() != L'/')
     {
-        if (action && action->GetPathName() == path)
-        {
-            return action;
-        }
+        return nullptr;
     }
-    return nullptr;
+    return RC::Unreal::UObjectGlobals::StaticFindObject_InternalSlow(type, nullptr, path.c_str(), false);
+}
+
+UObject* EnhancedInputBackend::resolve_component(const std::wstring& path, std::string& error)
+{
+    auto* object = find_by_path(find_class(input_component_class_, L"/Script/Engine.InputComponent"), path);
+    if (object && !validate_component(object))
+    {
+        auto* type = object_class(object);
+        error = "EnhancedInputComponent found, but native layout validation failed: properties_size=" +
+            std::to_string(type ? type->GetPropertiesSize() : -1) +
+            ", expected=" + std::to_string(ABI::enhanced_input_component_size);
+        return nullptr;
+    }
+    return object;
+}
+
+UObject* EnhancedInputBackend::resolve_action(const std::wstring& path)
+{
+    return find_by_path(find_class(input_action_class_, L"/Script/EnhancedInput.InputAction"), path);
 }
 
 bool EnhancedInputBackend::validate_component(UObject* component) const
@@ -671,6 +670,9 @@ std::pair<uint64_t, std::string> EnhancedInputBackend::subscribe(
     ABI::TriggerEvent phase,
     EnhancedInputDebugInfo debug)
 {
+    // Resolve outside the lock; errors keep their order below.
+    auto* action = resolve_action(widen_ascii(action_path));
+
     std::scoped_lock lock(mutex_);
     if (!initialized_.load(std::memory_order_acquire))
     {
@@ -693,7 +695,6 @@ std::pair<uint64_t, std::string> EnhancedInputBackend::subscribe(
         return {0, "Enhanced Input target is no longer valid"};
     }
 
-    auto* action = resolve_action(widen_ascii(action_path));
     if (!action)
     {
         return {0, "InputAction was not found at object path: " + action_path};
