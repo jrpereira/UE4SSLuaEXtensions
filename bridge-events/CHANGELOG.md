@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.2.2
+
+### Changes
+
+- Fix a slowdown in 1.2.1: its lookup was UE4SS's name-matching walk, not the
+  engine's hashed one, and made each `BindAction` about ten times slower
+  (around 440 ms in a loaded level). Lookups now walk the objects of one class
+  once (`FindAllOf`, as 1.2.0 did) and keep every object found, indexed by
+  path. Further `OpenInputComponent` and `BindAction` calls for any of those
+  paths need no walk while the object stays alive; a path that is not found
+  walks again. Error messages are those of 1.2.0, and paths are no longer
+  required to start with `/`.
+
 ## v1.2.1
 
 ### Changes
