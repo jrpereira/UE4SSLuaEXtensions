@@ -264,7 +264,7 @@
 // error; no `closed` kind follows, because the Lua layer already dropped it.
 // The file is the buffer: only the held partial line (<= 1 MiB) is buffered
 // natively, so nothing is lost while the budget defers delivery. Budget
-// defaults: 256 deliveries and 2000 us per pass, overridable with
+// defaults: 256 deliveries and 500 us per pass, overridable with
 // UE4SSLFB_MAX_EVENTS_PER_PASS / UE4SSLFB_MAX_DISPATCH_US.
 //
 // on_lua_stop (and reload), in order: deliver `stop` if on the game thread;
@@ -324,7 +324,7 @@ inline constexpr int64_t tail_identity_check_ms = 250;
 inline constexpr int64_t tail_read_bytes_per_pass = 256 * 1024;
 inline constexpr int64_t tail_read_bytes_per_subscription = 64 * 1024;
 inline constexpr uint32_t default_max_deliveries_per_pass = 256;
-inline constexpr uint32_t default_max_dispatch_us = 2000;
+inline constexpr uint32_t default_max_dispatch_us = 500;
 
 // --- Error codes ----------------------------------------------------------
 

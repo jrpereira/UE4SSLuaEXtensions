@@ -717,7 +717,7 @@ behind but loses nothing (unless the file is truncated or rotated first). Expect
 delivery in the next frame or so after the writer's flush. A line longer than
 1 MiB is delivered in 1 MiB pieces (`info.partial`).
 
-The per-pass budget defaults to 256 deliveries or 2,000 microseconds, whichever
+The per-pass budget defaults to 256 deliveries or 500 microseconds, whichever
 comes first, and at least one delivery per non-empty pass. Like the event
 bridge, it is set by process environment variables read once at bridge start;
 invalid values use the defaults:
@@ -725,7 +725,7 @@ invalid values use the defaults:
 | Variable | Default | Zero means |
 |---|---:|---|
 | `UE4SSLFB_MAX_EVENTS_PER_PASS` | 256 | No delivery-count limit |
-| `UE4SSLFB_MAX_DISPATCH_US` | 2,000 | No time limit |
+| `UE4SSLFB_MAX_DISPATCH_US` | 500 | No time limit |
 
 File reads per pass are also capped (256 KiB in total, 64 KiB per
 subscription, round-robin); see [Limits](#limits).

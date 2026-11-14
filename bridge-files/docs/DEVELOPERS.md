@@ -385,7 +385,7 @@ defaults:
 | Variable | Default | Zero means |
 |---|---:|---|
 | `UE4SSLFB_MAX_EVENTS_PER_PASS` | 256 | No delivery-count limit |
-| `UE4SSLFB_MAX_DISPATCH_US` | 2,000 | No time limit |
+| `UE4SSLFB_MAX_DISPATCH_US` | 500 | No time limit |
 
 At least one line is delivered per pass that has data, and a slow callback can
 still exceed the time allowance; the budget isn't preemptive.
