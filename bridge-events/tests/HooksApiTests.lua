@@ -93,13 +93,14 @@ local function fixture(options)
     env.ExecuteInGameThreadWithDelay = function(ms, fn) w.timers[#w.timers + 1] = { ms = ms, fn = fn } end
     env.UE4SSLuaEventBridge_GetVersion = function() return "test" end
     env.UE4SSLuaEventBridge_IsInGameThread = function() return w.gameThread end
+    -- Positions 1-15 come from GetCapabilities, 16-21 from HooksEnabled.
     env.UE4SSLuaEventBridge_GetCapabilities = function()
-        return table.unpack(w.capabilities, 1, 21)
+        return table.unpack(w.capabilities, 1, 15)
     end
     if not options.oldNative then
         env.UE4SSLuaEventBridge_HooksEnabled = function()
-            if w.enabled then return true end
-            return false, "disabled by Enabled=0"
+            if not w.enabled then return false, "disabled by Enabled=0", false, false, false, false end
+            return table.unpack(w.capabilities, 16, 21)
         end
         env.UE4SSLuaEventBridge_HookFunction = function(...)
             local args = table.pack(...)

@@ -1319,20 +1319,10 @@ private:
         if (reason) lua.set_string(*reason);
         else lua.set_nil();
         // Additive object_lifetimes_reason: why lifetimes are unavailable, nil when available.
-        // Function hooks (api 7), positions 16-21: hooks, hooks_reason,
-        // hooks_bp, hooks_native, hooks_sync, hooks_frame_delivery.
-        const auto hooks_reason = active_mod
-            ? active_mod->hooks_unavailable_reason()
-            : std::optional<std::string>{"the bridge is not active"};
-        const bool hooks = !hooks_reason;
-        lua.set_bool(hooks);
-        if (hooks_reason) lua.set_string(*hooks_reason);
-        else lua.set_nil();
-        lua.set_bool(hooks && blueprint_hooks_possible());
-        lua.set_bool(hooks);
-        lua.set_bool(false);
-        lua.set_bool(hooks && hook_delivery_is_tick());
-        return 21;
+        // Lua guarantees a C function only LUA_MINSTACK (20) free slots and
+        // UE4SS exports no lua_checkstack: return at most 20 values. Function
+        // hook capabilities come from HooksEnabled.
+        return 15;
     }
 
     static int is_in_game_thread(const Lua& lua)
@@ -2241,15 +2231,22 @@ private:
         return reinterpret_cast<UFunction*>(static_cast<std::uintptr_t>(address));
     }
 
+    // HooksEnabled() -> hooks, reason|nil, hooks_bp, hooks_native, hooks_sync,
+    // hooks_frame_delivery (the hook fields of GetCapabilities).
     static int hooks_enabled(const Lua& lua)
     {
         const auto reason = active_mod
             ? active_mod->hooks_unavailable_reason()
             : std::optional<std::string>{"the bridge is not active"};
-        lua.set_bool(!reason);
-        if (!reason) return 1;
-        lua.set_string(*reason);
-        return 2;
+        const bool hooks = !reason;
+        lua.set_bool(hooks);
+        if (reason) lua.set_string(*reason);
+        else lua.set_nil();
+        lua.set_bool(hooks && blueprint_hooks_possible());
+        lua.set_bool(hooks);
+        lua.set_bool(false);
+        lua.set_bool(hooks && hook_delivery_is_tick());
+        return 6;
     }
 
     // HookFunction(session, functionAddress, classAddress, phaseMask, options, properties)

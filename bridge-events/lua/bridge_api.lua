@@ -183,9 +183,15 @@ local bridge = {
     GetCapabilities = function()
         local api, enhancedInput, explicitTarget, helpers, dynamicInput,
             triggerTap, triggerHold, detailedErrors, debugTracing, target, bindingSnapshot,
-            targetDeliveryFaults, loopStart, objectLifetimes, objectLifetimesReason,
-            hooks, hooksReason, hooksBp, hooksNative, hooksSync, hooksFrameDelivery =
+            targetDeliveryFaults, loopStart, objectLifetimes, objectLifetimesReason =
             UE4SSLuaEventBridge_GetCapabilities()
+        -- Hook fields come from their own native: one native returns at most
+        -- 20 values (LUA_MINSTACK).
+        local hooks, hooksReason, hooksBp, hooksNative, hooksSync, hooksFrameDelivery
+        if UE4SSLuaEventBridge_HooksEnabled ~= nil then
+            hooks, hooksReason, hooksBp, hooksNative, hooksSync, hooksFrameDelivery =
+                UE4SSLuaEventBridge_HooksEnabled()
+        end
         return {
             api = api,
             enhanced_input = enhancedInput,
