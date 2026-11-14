@@ -127,7 +127,7 @@ Read-only:
 
 Stops the sound's plays and frees it. Returns `true`, also when already
 released. A sound that is no longer referenced is released by garbage
-collection; when its Lua state stops or reloads, all its sounds are released.
+collection; when its Lua state stops, all its sounds are released.
 
 ## Playing
 

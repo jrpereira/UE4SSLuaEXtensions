@@ -9,8 +9,7 @@
 --
 -- The cue is sounds/cue.wav in this mod's folder. Without one, the script
 -- writes a short beep there first. Each key also prints the bridge's
--- statistics to UE4SS.log, so a Lua reload (sounds released, then loaded
--- again) shows whether loaded sounds pile up.
+-- statistics to UE4SS.log.
 
 local Bridge = UE4SSLuaSoundBridge
 if type(Bridge) ~= "table" then

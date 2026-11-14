@@ -21,7 +21,7 @@ direction must not lag the camera.
   devices restarts playback on the new default; with no device, plays are
   dropped quietly.
 - Sounds belong to the Lua state that loaded them and are released when it
-  stops or reloads.
+  stops.
 - Errors as `nil, code, message` with eight stable codes.
 
 Sounds are read only from the calling mod's own folder. By convention they go
