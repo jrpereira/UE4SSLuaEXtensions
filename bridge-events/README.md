@@ -12,12 +12,11 @@ native function without turning on a process-wide UE4SS hook.
 - Receive copied event values outside Unreal's native input-dispatch stack.
 - Use session-owned handles, explicit cleanup, and optional delivery-fault handlers.
 - Inspect bindings and dispatch statistics on demand; enable tracing when needed.
-- Hook individual `UFunction`s, Blueprint events included, and receive queued, frame-aligned calls with copied parameters (`Hooks`).
 - Tune bounded dispatch queues and per-pass budgets for your workload.
-- Hook individual Blueprint and native functions (`Hooks.Hook`), pre and post,
-  with copied parameters, delivered to Lua once per frame on the game thread. A
-  hook on a class that is not loaded yet waits and attaches when it appears. A
-  function nobody hooks costs nothing.
+- Hook individual Blueprint and native functions, Blueprint events included
+  (`Hooks.Hook`), pre and post, with copied parameters, delivered to Lua once per
+  frame on the game thread. A hook on a class that is not loaded yet waits and
+  attaches when it appears. A function nobody hooks costs nothing.
 
 Supply exact live component and subsystem paths. Your mod owns target discovery
 and rebinding when the game replaces those objects.
@@ -52,7 +51,7 @@ Mods/
     │   ├── main.dll
     │   ├── main.json
     │   └── versions/
-    │       └── UE4SSLuaEventBridge-1.0.13.dll
+    │       └── UE4SSLuaEventBridge-<version>.dll
     ├── enabled.txt
     └── mod.json
 ```
@@ -140,7 +139,7 @@ end
 ```
 
 Hook callbacks observe a call after it was made (delivery is queued, once per
-frame); they cannot block or change it. `hooks_sync` is false in 1.1.
+frame); they cannot block or change it. `hooks_sync` is false in this version.
 
 ## Documentation
 

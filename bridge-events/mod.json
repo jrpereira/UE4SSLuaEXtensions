@@ -7,6 +7,12 @@
     "libraries"
   ],
   "description": "Expose Unreal Enhanced Input events to UE4SS Lua mods through a native C++ bridge. Bind Lua callbacks to input actions and use engine-managed triggers, including Tap and Hold.",
+  "dependencies": [
+    {
+      "id": "UE4SS",
+      "url": "https://github.com/UE4SS-RE/RE-UE4SS"
+    }
+  ],
   "links": {
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions",
     "nexus": "https://www.nexusmods.com/thebloodofdawnwalker/mods/526"

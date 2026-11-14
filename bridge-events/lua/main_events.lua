@@ -135,7 +135,7 @@ local function main()
         if not check("capability hooks is a boolean", type(caps.hooks) == "boolean", caps.hooks) then return end
         check("capability hooks_bp is a boolean", type(caps.hooks_bp) == "boolean", caps.hooks_bp)
         check("capability hooks_native is a boolean", type(caps.hooks_native) == "boolean", caps.hooks_native)
-        check("capability hooks_sync is false in 1.1", caps.hooks_sync == false, caps.hooks_sync)
+        check("capability hooks_sync is false in this version", caps.hooks_sync == false, caps.hooks_sync)
         check("capability hooks_frame_delivery is a boolean", type(caps.hooks_frame_delivery) == "boolean",
             caps.hooks_frame_delivery)
         check("capability hooks_reason is a string or nil",

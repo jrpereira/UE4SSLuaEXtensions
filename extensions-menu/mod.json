@@ -7,6 +7,12 @@
     "libraries"
   ],
   "description": "Shows the UE4SS Lua extensions installed beside it on ModCore Settings' Modules tab: how many there are and a startup verification switch for each. It holds no code of its own beyond that.",
+  "dependencies": [
+    {
+      "id": "UE4SS",
+      "url": "https://github.com/UE4SS-RE/RE-UE4SS"
+    }
+  ],
   "links": {
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions",
     "nexus": "https://www.nexusmods.com/thebloodofdawnwalker/mods/526"

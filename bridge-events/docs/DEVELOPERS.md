@@ -781,7 +781,7 @@ Gate on the capability first:
 ```lua
 local caps = UE4SSLuaEventBridge.GetCapabilities()
 -- caps.hooks (bool), caps.hooks_reason (why not), caps.hooks_bp, caps.hooks_native,
--- caps.hooks_sync (false in 1.1), caps.hooks_frame_delivery (engine-tick drain active)
+-- caps.hooks_sync (false in this version), caps.hooks_frame_delivery (engine-tick drain active)
 ```
 
 An older build returns `false` for all of these. `Hooks.Hook` must run on the
@@ -902,7 +902,7 @@ See `examples/HookIndicator/main.lua` for a fuller case.
 
 ### Environment variables and stats
 
-Read once at bridge construction, like the input ones; invalid values use the
+Read once, at the first hook in the process; invalid values use the
 defaults.
 
 | Variable | Default | Meaning |

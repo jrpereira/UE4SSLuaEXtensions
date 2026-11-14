@@ -8,6 +8,7 @@ For contributors to the extensions themselves. Mod authors who use them want the
 ```text
 bridge-events/, bridge-files/   one folder per extension: src/, include/, lua/, contract/Version.hpp,
                                 packaging/, tests/, docs/, examples/, CHANGELOG.md, mod.json
+extensions-menu/                the package's own Lua folder (no DLL): the extensions on ModCore Settings' page
 shared/
   bootstrap/                    the generic main.dll that selects and starts an extension's versioned DLL
   contract/                     ImplementationABI.h, the private ABI between the bootstrap and a DLL
@@ -20,6 +21,8 @@ shared/
   tests/                        checks every extension must pass, TestSupport.hpp (CHECK), TestKit.lua
 tools/                          build, packaging, release and hygiene tooling
 tests/                          run.sh (the test runner) and the tooling's own tests
+package-manifest.json           what the combined package ZIP holds and where each file goes
+repository-policy.json          vendored files and their source modules, for the hygiene check
 ```
 
 An extension's folder holds only what is specific to it. Its `CMakeLists.txt`

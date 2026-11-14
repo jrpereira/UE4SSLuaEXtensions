@@ -485,7 +485,7 @@ These apply to the bridge as a whole:
   reversible (see above);
 - no C++-to-C++ interception: a call that never passes through a `UFunction` is
   not seen;
-- no parameter or return-value edits in 1.1: hooks observe only;
+- no parameter or return-value edits in this version: hooks observe only;
 - no background component scanning or polling;
 - no automatic rebinding after component replacement; and
 - no game-specific UI, pause, or gameplay-state filtering.
