@@ -1,6 +1,6 @@
 #pragma once
 
-// Opcode slots for the Blueprint handlers (LEX_hooks.md §4.4).
+// Opcode slots for the Blueprint handlers (docs/BUILD.md, "Opcode slots").
 //
 // GNatives (UE4SS: GNatives_Internal) is the engine's FNativeFuncPtr
 // GNatives[EX_Max] table, EX_Max = 0x100, indexed by a bytecode opcode; the
@@ -116,7 +116,7 @@ struct SlotClaim
 };
 
 // Choose, claim, and on a collision choose again from the current table
-// (LEX_hooks.md §14), up to `attempts` times.
+// (another writer took a slot meanwhile), up to `attempts` times.
 template <typename Exec>
 SlotClaim<Exec> claim_free_pair(std::span<Exec, gnatives_count> natives, Exec entry_handler, Exec exit_handler,
     uint32_t attempts = 4)

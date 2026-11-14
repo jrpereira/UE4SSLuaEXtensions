@@ -13,7 +13,7 @@ namespace UE4SSLuaEventBridge
 // a later attempt would not change, and registering object-array listeners
 // mid-game could race the engine's loading threads.
 //
-// Function hooks add a second check on the same sample (LEX_hooks.md §6.3):
+// Function hooks add a second check on the same sample (docs/BUILD.md, "Layout probe"):
 // HookLayout's ClassPrivate, NamePrivate and OuterPrivate offsets read
 // directly against the exported accessors. Hooks need both checks; one
 // mismatch fails the hook layout, since filters and wake-ups read those

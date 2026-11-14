@@ -3,7 +3,7 @@
 // GetFunctionFlags/GetFuncPtr/SetFuncPtr and the FFrame accessors. The logic
 // lives in the headers; this file only supplies the real frame, the real
 // table and the three handlers with plain function pointers. Interface:
-// HookTable.hpp, namespace Hooks::Core (LEX_hooks.md §4, §6.1).
+// HookTable.hpp, namespace Hooks::Core (docs/BUILD.md, "Blueprint patch", "Native Func swap", "Hook lifetime").
 //
 // Threads: hook_blueprint, hook_native, unhook and unhook_all are meant for
 // the game thread (they write bytecode and Func); on_function_deleted runs on

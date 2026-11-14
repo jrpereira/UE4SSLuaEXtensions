@@ -42,7 +42,7 @@ local function __traceback(message)
 end
 
 -- Hook messages (token <= -3) are routed here; the Hooks block below replaces
--- this no-op. Contract: COORDINATOR/LEX/LEX_hooks.md §9.2.
+-- this no-op. Messages: docs/BUILD.md, "Hook natives and messages".
 local __hookDispatch = function() end
 
 local function __dispatchInput(
@@ -1054,7 +1054,7 @@ __UE4SSLuaEventBridge_StopHelperScopes = function()
     return true
 end
 
--- Function hooks (COORDINATOR/LEX/LEX_hooks.md §9).
+-- Function hooks (docs/BUILD.md, "Hook natives and messages").
 -- Native functions this block calls (registered per Lua state by BridgeMod.cpp):
 --   UE4SSLuaEventBridge_HooksEnabled() -> bool, reason|nil
 --   UE4SSLuaEventBridge_HookFunction(session, functionAddress, phaseMask,
@@ -1068,7 +1068,7 @@ end
 --   UE4SSLuaEventBridge_GetHookStats()
 --       -> queued, high_water, rejected, deliveryIsTick, ticks, update_calls, entries, slotA, slotB
 --
--- Argument encodings chosen by this block where §9.2 leaves them open:
+-- Argument encodings:
 --   * options and every name are sent as `length, word...` with ceil(length / 8)
 --     words (__packText), not a fixed word count.
 --   * the schema list is `count`, then per property in pre-order:

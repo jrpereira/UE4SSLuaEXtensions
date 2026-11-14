@@ -91,8 +91,7 @@ if(UE4SSLEB_BUILD_TESTS)
         target_link_libraries(${test}Tests PRIVATE Threads::Threads)
         add_test(NAME ${test}Tests COMMAND ${test}Tests)
     endforeach()
-    # Function-hook suites (COORDINATOR/LEX/LEX_hooks.md §11). Listed ahead of the
-    # tracks that write them, so no track edits this file; a missing suite is skipped.
+    # Function-hook suites; a missing suite is skipped.
     foreach(test IN ITEMS OpcodeSlots ScriptPatch ReentryGuard HookTable ParamSchema ParamCopier HookFilters)
         if(EXISTS "${UE4SSLEB_TEST_ROOT}/${test}Tests.cpp")
             add_executable(${test}Tests "${UE4SSLEB_TEST_ROOT}/${test}Tests.cpp")

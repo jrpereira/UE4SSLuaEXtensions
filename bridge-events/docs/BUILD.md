@@ -252,6 +252,228 @@ Settings: `mod_settings.ini` has a toggle, **Enable function hooks**
 (`[Hooks] Enabled`, default on). Off, `Hooks.Hook()` fails with a reason and
 `GetCapabilities().hooks_reason` says why.
 
+### Function hook design reference
+
+The rules below are what the hook code relies on. Source comments point to
+these headings.
+
+#### Hook design rules
+
+- **Inert until used.** Nothing is read from `GNatives`, nothing is written and
+  no table is allocated until the first hook (or pending hook) in the process.
+  The object listeners that already run for lifetimes add one atomic fast path
+  (`hooks_started`, then the pending-name count).
+- **Kill switch.** `[Hooks] Enabled` in the mod's `settings.ini` (written by
+  ModCore Settings, default on) is read at Lua start. Off, hooking fails with a
+  reason and `hooks_reason` says why. Configuration never blocks launch.
+- **Separate queue.** Hook events have their own bounded queue, drain, budget
+  and counters; an input overflow and a hook flood cannot affect each other.
+- **No detours.** Each hooked function gets reversible writes inside itself
+  only: bytes in its `Script`, or its `Func` pointer.
+
+#### Hook threads and locks
+
+- Handlers run on whatever thread calls the function (game thread, animation
+  workers). They read memory, copy bytes and enqueue under the producer mutex;
+  they never enter Lua.
+- The hook table is read-mostly: handlers take a shared lock for a lookup by
+  `UFunction*`; hooking and unhooking take it exclusively on the game thread.
+- Hook events and notices are drained on the game thread once per frame, from
+  an engine-tick post-callback registered at the first hook (the plain
+  `std::function<void(UEngine*, float)>` overload; the callback checks an inert
+  flag that `prepare_for_unload` sets, and the DLL stays resident). It runs
+  after the world and widget ticks and before Slate paints, so a call made
+  during this frame's tick is delivered before the frame is drawn.
+- Without the engine-tick detour (`HookEngineTick = 0`, or its scan failed) the
+  drain falls back to `on_update` on the event-loop thread. There the bridge's
+  Lua calls can overlap UE4SS's game-thread Lua, as input delivery already can;
+  `hooks_frame_delivery = false` reports it.
+
+#### Blueprint patch
+
+A script function's bytecode is run by `ProcessLocalScriptFunction`: step until
+`EX_Return`, then one more step for the return expression. Every entry path
+(`ProcessEvent`, Blueprint-to-Blueprint calls, event stubs into the ubergraph)
+runs this loop with the parameters already in `Stack.Locals`.
+
+- Hooking saves `Script[0]` and the `EX_Return` byte and writes opcode A over
+  the first and opcode B over the second.
+- Handler A (`exec` signature): `Stack.Code` already points past the opcode, as
+  the original opcode's handler expects. It finds the entry by `Stack.Node`,
+  runs the re-entry guard, records the pre-call event on a genuine entry, then
+  calls `GNatives[saved first opcode]`.
+- Handler B finds the entry, records the post-call event (return value and out
+  parameters are already in `Locals`; by-ref outs through the frame's
+  `OutParms`), pops the guard, then points `Stack.Code` at a static
+  `{EX_Return, EX_Nothing}` pair so the loop finishes normally.
+- An empty body (`Script` is exactly `04 0B 53`) gets only B, which reports pre
+  and post together.
+- Aborted execution leaves the loop before B: the post-call event is not
+  delivered and the guard record is pruned later.
+- Unhooking restores both bytes and leaves the entry inert with its saved
+  bytes, so a frame already past A or B still finds what it needs.
+
+#### Native Func swap
+
+The bridge saves `Func` and installs its thunk. `UFunction::Invoke` sets
+`Stack.CurrentNativeFunction` before calling `Func`, so the thunk finds its
+entry there, and it always calls the saved pointer.
+
+- `Stack.Node == function` (through `ProcessEvent`): `Locals` is the parameter
+  block, read before and after the call.
+- `Stack.Node != function` (from Blueprint bytecode): the parameters are still
+  unevaluated bytecode in the caller's frame. Pre delivers no parameters; post
+  delivers only the return value, read from `Result`
+  (`params_available = false`).
+- Unhooking restores `Func` only while it is still the thunk; if another hooker
+  swapped it later, the entry goes inert and the thunk passes calls through.
+- Refused: `FUNC_Native` not set, or `Func` null.
+
+#### Re-entry guard
+
+A Kismet loop whose first statement is at offset 0 jumps back to `Script[0]`
+and would run A again. Per thread, a small list of `(FFrame*, entry)` records:
+A first drops records whose frame lies below the current one (finished
+callees); a record for this frame and entry means re-entry, which dispatches
+the saved opcode without hooks; otherwise A pushes one. B pops it. The records
+live in a fixed per-thread array (handlers must not allocate on animation
+workers); a full array treats the call as genuine, so a later loop-back may
+report a spurious pre-call, and counts it.
+
+#### Opcode slots
+
+`GNatives` has `EX_Max` (0x100) entries; unassigned opcodes all hold the same
+undefined-opcode handler, the most frequent pointer in the table. At first use
+the bridge takes the most frequent pointer with at least 8 occurrences as
+"free", claims the two highest free indices as A and B, and writes its
+handlers there. If another writer took a slot meanwhile, it chooses again from
+the current table, a few times. No free pair: Blueprint hooks are unavailable
+(`hooks_bp = false`) and native hooks still work. Slots are never released.
+
+#### Bytecode assumptions
+
+The Kismet compiler emits exactly one `EX_Return`, followed by `EX_Nothing` and
+`EX_EndOfScript` (`04 0B 53`), and early returns jump to it. The bridge checks
+this per function at hook time and refuses a function without `Script`, with a
+different tail, with `EX_Return` at entry, or already carrying a hook opcode;
+such a function is never patched.
+
+#### Parameter schema
+
+Built once when a hook attaches, on the game thread, by two sides:
+
+- **Lua enumerates** with `ForEachProperty`, into struct properties to depth 3,
+  and sends per property its name, `GetOffset_Internal()`, `GetAddress()`,
+  parent index and, for enums, the value names.
+- **Native verifies and completes**: it walks `GetChildProperties()` and then
+  `FField::Next` at `HookLayout::ffield_next`, and requires the walk to
+  reproduce Lua's list exactly (count, names, offsets, addresses); a mismatch
+  refuses the hook with "property layout mismatch". It reads element size,
+  array dimension and flags through the exported accessors and the kind from
+  the field class name. The schema is immutable afterwards.
+
+At call time the handler makes no reflection calls: it reads bytes from
+`Locals` by offset into a compact payload. `FName` values become strings with
+`FName::ToString`, `FString` values are copied up to 4 KiB, and object values
+carry address, index and serial (serial 0 for never-referenced objects), plus
+the path built from outer names when `object_paths` is set. `params` selects
+top-level parameters or dotted struct fields (`"Struct.Field"`); unsupported
+kinds arrive as `nil`, and asking for one explicitly fails the hook.
+
+#### Native filters
+
+Evaluated in the handler before any copying, in this order, with plain memory
+reads at the probe-checked offsets (never UE4SS's dynamic-offset accessors):
+
+1. `object`: the frame object's index and serial equal a weak identity from
+   Lua.
+2. `object_names`: the frame object's FName (comparison index and number) is
+   in the set, resolved at hook time with `FNAME_Find`. Names that do not exist
+   yet can never match.
+3. `outer_class`: an outer up to 8 levels up has this class, or derives from it
+   unless `outer_class_exact`.
+
+#### Hook lifetime
+
+- One process-wide table, at most 1,024 distinct functions. Entries are never
+  freed while the DLL lives: inert after unhook, reused on rehook.
+- A path that does not resolve leaves the hook **pending** on the Lua side,
+  with the owner class's short name (after the last `.`, before `:`)
+  registered natively as a wake-up name. `NotifyUObjectCreated` queues a
+  wake-up notice (-3) when a created object has that name; Lua then retries in
+  `ExecuteInGameThread`, and also on a one-second timer while anything is
+  pending. A Blueprint function found right after its class appears can still
+  lack its `Script`; that retry stays pending.
+- `NotifyUObjectDeleted` on a hooked `UFunction` orphans its entry: nothing is
+  written back, and the session gets a notice (-4) that returns the hook to
+  pending, so the reloaded function attaches again.
+- Stopping a Lua session unhooks everything it owns; queued events for an
+  inactive session are discarded at drain.
+
+#### Layout probe
+
+The startup probe verifies `InternalIndex` and the object-item layout, and for
+hooks also `ClassPrivate` (0x10), `NamePrivate` (0x18) and `OuterPrivate`
+(0x20) against the exported accessors on the same sample. Hooks need it to
+pass, because filters and wake-ups read those offsets directly.
+
+#### Hook queue and delivery
+
+- Events carry entry, session, hook id, phase, sequence, capture frame and
+  time, whether they ran on the game thread, the object identity and the
+  payload. Producer queue `UE4SSLEB_MAX_QUEUED_HOOK_EVENTS` (default 8,192).
+- Per-hook limit `max_queued` (default 256): above it an event is dropped and
+  counted, so a hot hook cannot starve a rare one.
+- The drain takes a snapshot batch within `UE4SSLEB_MAX_HOOK_EVENTS_PER_PASS`
+  (64) and `UE4SSLEB_MAX_HOOK_DISPATCH_US` (500); the rest waits for the next
+  frame, in order. A callback that calls a hooked function sees that event
+  next frame. The fallback drain runs at `UE4SSLEB_HOOK_CHECKS_PER_SECOND`
+  (120).
+- `GetStats().ticks` counts engine-tick callbacks and increases after that
+  frame's drain, so Lua running anywhere in one frame reads the same value.
+
+#### Hook natives and messages
+
+Registered per Lua state; the Lua block in `lua/bridge_api.lua` is the only
+caller:
+
+```
+HooksEnabled() -> hooks, reason|nil, hooks_bp, hooks_native, hooks_sync, hooks_frame_delivery
+HookFunction(session, functionAddress, phaseMask, options, properties) -> hookId | nil, reason
+Unhook(session, hookId) -> bool, reason|nil
+HookStatus(session, hookId) -> state, reason|nil, calls, matched, delivered, dropped, reentries
+HookPendingName(session, token, shortClassName) -> bool
+HookPendingForget(session, token)
+HookSchema(functionAddress, properties) -> (name, kind, "offset:size:dim:flags")... | nil, reason
+GetHookStats() -> queued, high_water, rejected, deliveryIsTick, ticks, update_calls, entries, slotA, slotB
+```
+
+- Text (options and every name) is sent as `length, word...` with
+  `ceil(length / 8)` little-endian words.
+- `options` is `names=a|b|c; outer=<address>; exact=0|1; obj=<address>:<token>;
+  paths=0|1; maxq=n; params=A.B|C` (`sync=1` is refused). Unknown keys are
+  ignored; a malformed known key is an error.
+- `properties` is `count`, then per property in pre-order: parent index (-1 for
+  a parameter), address, offset, name, enum count and enum names (an empty name
+  for a gap in the values).
+- A native returns at most 20 values (`LUA_MINSTACK`; UE4SS exports no
+  `lua_checkstack`), which is why `GetCapabilities` and `HooksEnabled` are
+  separate natives.
+
+The session's one dispatcher closure carries hook messages too: Lua routes
+codes at or below -3 to the hooks block.
+
+```
+dispatcher(code, hookId, sequence, phase, gameThread, objAddress, objIndex, objSerial, objPath|nil,
+           paramsAvailable, n, name1, tag1, value1, ..., nameN, tagN, valueN)
+code: -10 event; -5 fault (hookId, reason); -4 back to pending (hookId, reason); -3 wake-up (hookId = pending token)
+tags: b bool, i integer, n number, s string, e enum ("n|Name"), o object ("address:index:serial[:path]"), x unsupported (nil)
+names: "Param", "Struct.Field", "Arr[i]", "out:Param", "ret", and "@frame" / "@age" for the capture frame and age
+```
+
+Events larger than a direct call fits are pushed in chunks through the
+session's transport helpers and flushed in one dispatcher call.
+
 ### Deliberate exclusions
 
 These apply to the bridge as a whole:

@@ -1,7 +1,7 @@
 #pragma once
 
 // Blueprint function hooks: the two-byte bytecode patch and the handlers that
-// run in its place (LEX_hooks.md §4.1).
+// run in its place (docs/BUILD.md, "Blueprint patch").
 //
 // Bytecode assumptions (Kismet compiler output, UE4/UE5 script VM):
 // - UStruct::Script is a heap TArray<uint8> holding the function's bytecode.
@@ -63,7 +63,7 @@ namespace UE4SSLuaEventBridge::Hooks
 template <typename Frame>
 struct FrameAccess;
 
-// Where handler B sends Code. Starts with {EX_Return, EX_Nothing} (§4.1); the
+// Where handler B sends Code. Starts with {EX_Return, EX_Nothing} ("Blueprint patch"); the
 // trailing EX_EndOfScript mirrors a real tail, so nothing reading past
 // EX_Nothing ever sees foreign memory. Never written; not const because
 // FFrame::Code is a non-const pointer.

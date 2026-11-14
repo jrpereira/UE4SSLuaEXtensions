@@ -1,6 +1,6 @@
 #pragma once
 
-// Payload writer and flattener (LEX_hooks.md §5.1, §7, §9.2). Portable.
+// Payload writer and flattener (docs/BUILD.md, "Parameter schema", "Hook natives and messages"). Portable.
 //
 // Record (little endian): tag(1) | field index(2) | length word(2) | value.
 //   length word = (element index << 13) | value length in bytes.

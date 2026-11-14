@@ -1,6 +1,6 @@
 #pragma once
 
-// Function-hook delivery (COORDINATOR/LEX/LEX_hooks.md §5–§7): what happens
+// Function-hook delivery (docs/BUILD.md, "Hook queue and delivery"): what happens
 // between the hook core's handlers and the session's Lua dispatcher.
 //
 // - The options a hook carries (parse_hook_options) and its parameter
@@ -64,7 +64,7 @@ inline constexpr uint32_t max_hook_queued_option = 1000000;
 
 // ------------------------------------------------------------------ options
 
-// The packed options text of HookFunction (§9.2, contract decision 3):
+// The packed options text of HookFunction (docs/BUILD.md, "Hook natives and messages"):
 // `names=a|b|c; outer=<addr>; exact=0|1; obj=<address>:<token>; paths=0|1;
 // maxq=n; params=A.B|C`, plus `sync=1`, which 1.1 refuses. Unknown keys are
 // ignored; a malformed known key is an error.
@@ -185,7 +185,7 @@ inline std::optional<std::string> parse_hook_options(std::string_view text, Hook
 
 // ---------------------------------------------------------------- selection
 
-// "Param", "Struct.Field": the names `params = {...}` uses (§5.1).
+// "Param", "Struct.Field": the names `params = {...}` uses ("Parameter schema").
 inline std::string field_path(const Schema& schema, uint16_t index)
 {
     std::string path = schema.fields[index].name;

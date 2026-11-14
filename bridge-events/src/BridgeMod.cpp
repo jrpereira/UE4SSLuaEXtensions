@@ -179,7 +179,7 @@ bool decode_packed_path(const Lua& lua, std::string& path, std::string& error)
 // ------------------------------------------------------------ function hooks
 // The glue between the hook core (HookTable.hpp, Core), the parameter code
 // (ParamSchema.hpp, ParamCopier.hpp, HookFilters.hpp), the delivery runtime
-// (HookRuntime.hpp) and the Lua natives below (LEX_hooks.md §6–§9).
+// (HookRuntime.hpp) and the Lua natives below (docs/BUILD.md, "Function hook design reference").
 
 namespace Hooks = UE4SSLuaEventBridge::Hooks;
 namespace HookLayout = RC::Unreal::HookLayout;
@@ -263,7 +263,7 @@ std::string name_text(uint32_t comparison_index, uint32_t number)
     return wide_to_utf8(name.ToString());
 }
 
-// "/Game/Map.Map:PersistentLevel.Actor": outer names only (§5.1). The
+// "/Game/Map.Map:PersistentLevel.Actor": outer names only ("Parameter schema"). The
 // outermost object is a package, its child follows a '.', the next level a ':'.
 std::string object_path(std::uintptr_t object)
 {
@@ -454,7 +454,7 @@ std::string lower_trimmed(std::string_view text)
     return out;
 }
 
-// [Hooks] Enabled in the mod's settings.ini (§8, written by ModCore Settings).
+// [Hooks] Enabled in the mod's settings.ini (written by ModCore Settings; docs/BUILD.md, "Hook design rules").
 // Only "0" turns hooks off: a missing file or an unreadable value keeps the
 // default, so configuration never blocks the bridge.
 bool read_hooks_setting()
@@ -2060,7 +2060,7 @@ private:
             [] { return UE4SSLuaEventBridge::DispatchBudget::Clock::now(); });
     }
 
-    // Inert until used (§3): the first hook, or the first pending hook,
+    // Inert until used ("Hook design rules"): the first hook, or the first pending hook,
     // installs the event sink and picks the drain. Game thread.
     static void ensure_hooks_started()
     {
@@ -2165,7 +2165,7 @@ private:
             report("unload: a hook delivery pass was still running after 1 s");
     }
 
-    // HookLayout's UObject offsets against UE4SS's accessors (§6.3), on the
+    // HookLayout's UObject offsets against UE4SS's accessors ("Layout probe"), on the
     // objects the lifetime probe can verify.
     static std::pair<std::size_t, std::size_t> probe_hook_layout()
     {

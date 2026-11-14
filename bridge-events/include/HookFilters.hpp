@@ -1,6 +1,6 @@
 #pragma once
 
-// Native hook filters (LEX_hooks.md §5.2). Evaluated in the handler before any
+// Native hook filters (docs/BUILD.md, "Native filters"). Evaluated in the handler before any
 // copying, in this order, short-circuiting at the first failure:
 //   1. object        one instance: index and serial equal
 //   2. name_keys     the frame object's FName (index and number) is in the set

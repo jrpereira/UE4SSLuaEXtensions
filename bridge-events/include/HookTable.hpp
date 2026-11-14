@@ -1,6 +1,6 @@
 #pragma once
 
-// The process-wide hook table (LEX_hooks.md §6.1) and the context the
+// The process-wide hook table (docs/BUILD.md, "Hook lifetime") and the context the
 // handlers run against.
 //
 // - One entry per hooked UFunction, keyed by its address. Entries are never
@@ -321,7 +321,7 @@ struct HookCall
     RC::Unreal::UObject* object; // the exec handler's Context argument
     Frame& frame;              // Locals, OutParms and Object through the frame's accessors
     void* result;              // native post: where Func wrote the return value (may be null); otherwise null
-    bool params_available;     // false on the Blueprint → native path (§4.2)
+    bool params_available;     // false on the Blueprint → native path ("Native Func swap")
 };
 
 // What the handlers run against: the table, the GNatives-like table A

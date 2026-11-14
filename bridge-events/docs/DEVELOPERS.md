@@ -774,7 +774,7 @@ functions and events included, without any process-wide UE4SS setting. A
 function nobody hooks costs nothing. Hook events are copied when the function
 runs and delivered to your callback later, on the game thread, once per frame.
 The callback sees a snapshot, not the live call: it cannot block, replace or
-edit the function (v1 observes only). Design: `COORDINATOR/LEX/LEX_hooks.md`.
+edit the function (v1 observes only).
 
 Gate on the capability first:
 

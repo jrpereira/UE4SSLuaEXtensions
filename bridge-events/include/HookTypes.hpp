@@ -2,8 +2,8 @@
 
 // Types the hook tracks share: core patching, parameter schemas and copying,
 // filters, the queue and the Lua wiring. Portable: no UE4SS header, so every
-// test suite compiles against it on Linux. This file is the day-0 contract of
-// COORDINATOR/LEX/LEX_hooks.md (§9); changes go through the coordinator.
+// test suite compiles against it on Linux. The natives and messages built on
+// it are described in docs/BUILD.md, "Hook natives and messages".
 
 #include <atomic>
 #include <cstddef>

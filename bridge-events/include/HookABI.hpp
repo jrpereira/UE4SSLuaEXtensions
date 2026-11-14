@@ -31,7 +31,7 @@ struct FOutParmRec;
 // Member offsets UE4SS reported for this target at startup (UE4SS.log,
 // 2026-10-14). They are read directly on hot paths; the startup probe checks
 // each one against the exported accessor before hooks become available
-// (LEX_hooks.md §6.3). InternalIndex (0x0C) and the FUObjectItem layout are
+// (docs/BUILD.md, "Layout probe"). InternalIndex (0x0C) and the FUObjectItem layout are
 // in UE4SSABI.hpp's FWeakObjectPtr.
 namespace HookLayout
 {
@@ -78,7 +78,7 @@ public:
 
 // FField::GetNext() is private in the pinned build. Walk the chain by reading
 // HookLayout::ffield_next; the schema builder cross-checks the walk against the
-// names Lua enumerated with ForEachProperty (LEX_hooks.md §5.1).
+// names Lua enumerated with ForEachProperty (docs/BUILD.md, "Parameter schema").
 class FField
 {
 public:

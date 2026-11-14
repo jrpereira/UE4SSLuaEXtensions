@@ -1,6 +1,6 @@
 #pragma once
 
-// Per-thread re-entry guard for the Blueprint entry handler (LEX_hooks.md §4.3).
+// Per-thread re-entry guard for the Blueprint entry handler (docs/BUILD.md, "Re-entry guard").
 //
 // Handler A replaces Script[0]. A Kismet loop whose first statement sits at
 // offset 0 jumps back there and would run A again in the same frame; the guard
