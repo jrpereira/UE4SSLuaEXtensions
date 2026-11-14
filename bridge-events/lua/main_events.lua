@@ -306,9 +306,22 @@ local function main()
         end
 
         ExecuteInGameThread(function()
+            -- Count only this check's own calls: other mods and Blueprints may
+            -- call GetObjectName during the wait, on other objects.
+            local driverAddress = address(driver)
+            if type(driverAddress) ~= "number" then
+                skip("hook delivery", "the library object has no address")
+                return finish()
+            end
+            local function own(call)
+                local object = type(call.params) == "table" and call.params.Object or nil
+                return type(object) == "table" and object.address == driverAddress
+            end
             local why
             h, why = Bridge.Hooks.Hook("/Script/Engine.KismetSystemLibrary:GetObjectName", {
+                params = { "Object" },
                 pre = function(call)
+                    if not own(call) then return end
                     pre = pre + 1
                     if call.phase ~= "pre" then ordered = false end
                     local last = lastSequence.pre
@@ -316,6 +329,7 @@ local function main()
                     lastSequence.pre = call.sequence
                 end,
                 post = function(call)
+                    if not own(call) then return end
                     post = post + 1
                     if call.phase ~= "post" then ordered = false end
                     local last = lastSequence.post
