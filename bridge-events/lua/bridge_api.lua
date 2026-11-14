@@ -1057,7 +1057,7 @@ end
 -- Function hooks (COORDINATOR/LEX/LEX_hooks.md §9).
 -- Native functions this block calls (registered per Lua state by BridgeMod.cpp):
 --   UE4SSLuaEventBridge_HooksEnabled() -> bool, reason|nil
---   UE4SSLuaEventBridge_HookFunction(session, functionAddress, classAddress, phaseMask,
+--   UE4SSLuaEventBridge_HookFunction(session, functionAddress, phaseMask,
 --       options..., schema...) -> hookId | nil, reason
 --   UE4SSLuaEventBridge_Unhook(session, hookId) -> bool, reason|nil
 --   UE4SSLuaEventBridge_HookStatus(session, hookId)
@@ -1373,14 +1373,10 @@ end
 local function __attachHook(record, functionObject)
     local functionAddress = __objectAddress(functionObject)
     if functionAddress == nil then return nil, "function did not provide a valid address" end
-    local outerOk, outer = pcall(function() return functionObject:GetOuter() end)
-    if not outerOk or not __validObject(outer) then return nil, "function has no live owner class" end
-    local classAddress = __objectAddress(outer)
-    if classAddress == nil then return nil, "owner class did not provide a valid address" end
     local schema, schemaError = __schemaArgs(functionObject)
     if schema == nil then return nil, schemaError end
 
-    local args = { __session, functionAddress, classAddress, record.phaseMask }
+    local args = { __session, functionAddress, record.phaseMask }
     __append(args, __packVariable(record.optionsText))
     __append(args, schema)
     local id, why = UE4SSLuaEventBridge_HookFunction(table.unpack(args, 1, #args))

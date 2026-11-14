@@ -51,8 +51,6 @@ struct HookEntry
 {
     uint32_t id{};                    // index in the table; HookEvent::entry
     const void* function{};           // the UFunction (table key)
-    std::uintptr_t owner_class{};     // informational; set by the caller
-    std::string owner_name;           // informational; set by the caller
     EntryKind kind{EntryKind::blueprint};
     EntryState state{EntryState::inert};
     ScriptPatch patch{};              // blueprint: bytes saved by the patch
@@ -61,7 +59,6 @@ struct HookEntry
     mutable std::atomic_bool off_thread{}; // a handler ran on another thread since the entry was created
     NativeFuncPtr saved_func{};       // native: Func before the thunk was installed
     bool thunk_in_chain{};            // native: unhook found another hooker on top, so the thunk stays in its chain
-    std::shared_ptr<const Schema> schema; // set by the caller at attach; immutable once set
     std::deque<Subscription> subscriptions;
     std::string reason;               // last restore problem, for diagnostics
 };
@@ -165,7 +162,6 @@ public:
             slot->hook = hook;
             slot->phases = 0;
             slot->filter = Filter{};
-            slot->fields.clear();
             slot->object_paths = false;
             slot->max_queued = default_max_queued_per_hook;
             slot->queued.store(0, std::memory_order_relaxed);
@@ -262,7 +258,6 @@ public:
             target.off_thread.store(false, std::memory_order_relaxed);
             target.saved_func = nullptr;
             target.thunk_in_chain = false;
-            target.schema.reset();
             target.reason.clear();
         }
 
@@ -321,7 +316,7 @@ private:
 template <typename Frame>
 struct HookCall
 {
-    const HookEntry& entry;    // subscriptions, schema; valid for the sink call only (shared lock held)
+    const HookEntry& entry;    // subscriptions; valid for the sink call only (shared lock held)
     Phase phase;
     RC::Unreal::UObject* object; // the exec handler's Context argument
     Frame& frame;              // Locals, OutParms and Object through the frame's accessors

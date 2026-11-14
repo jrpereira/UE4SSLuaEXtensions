@@ -145,7 +145,6 @@ struct Subscription
     uint64_t hook{};
     uint8_t phases{};                  // Phase bits
     Filter filter;
-    std::vector<uint16_t> fields;      // schema indices to copy; empty = every supported parameter
     bool object_paths{};
     uint32_t max_queued{default_max_queued_per_hook};
     std::atomic<uint32_t> queued{};

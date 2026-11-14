@@ -106,7 +106,7 @@ local function fixture(options)
             local args = table.pack(...)
             expect(args[1] == 5, "wrong session")
             if w.refuse then return nil, w.refuse end
-            local optionText, i = unpackText(args, 5)
+            local optionText, i = unpackText(args, 4)
             local count = args[i]; i = i + 1
             local properties = {}
             for n = 1, count do
@@ -119,7 +119,7 @@ local function fixture(options)
             end
             expect(i == args.n + 1, "trailing arguments")
             w.nextHook = w.nextHook + 1
-            w.hooks[w.nextHook] = { fn = args[2], class = args[3], mask = args[4],
+            w.hooks[w.nextHook] = { fn = args[2], mask = args[3],
                 options = optionText, properties = properties }
             return w.nextHook
         end
@@ -281,7 +281,7 @@ suite.run("property list and options encoding", function()
         object_paths = true, max_queued = 64,
     }))
     local hook = w.hooks[1]
-    expect(hook.fn == f.address and hook.class == f.owner.address and hook.mask == 3)
+    expect(hook.fn == f.address and hook.mask == 3)
     expect(hook.options == "names=Reticle|TopArrow;outer=" .. class.address
         .. ";exact=1;obj=28672:7001;paths=1;maxq=64;params=Count|Data.Dir", hook.options)
     local names = {}

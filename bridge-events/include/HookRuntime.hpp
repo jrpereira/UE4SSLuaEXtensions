@@ -464,6 +464,7 @@ public:
 
     std::vector<QueuedHookEvent> take_events()
     {
+        if (!ready_.pending()) return {};
         std::scoped_lock lock(queue_mutex_);
         ready_.drained();
         return drain_queue(queue_, spare_);
@@ -624,7 +625,8 @@ public:
     std::size_t drain(const DispatchBudget& budget, DeliverEvent deliver_event, DeliverNotice deliver_notice, Now now)
     {
         for (auto& notice : take_notices()) deliver_notice(notice);
-        if (backlog_.empty())
+        // Idle frames take no lock: nothing was queued since the last drain.
+        if (backlog_.empty() && ready_.pending())
         {
             auto spent = backlog_.release_buffer();
             spent.clear();

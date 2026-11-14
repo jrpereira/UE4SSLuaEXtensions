@@ -197,7 +197,6 @@ Subscription* subscribe(Runtime& runtime, HookTable& table, uint32_t entry, uint
     auto* subscription = writer.subscribe(entry, session, hook);
     subscription->phases = phases;
     subscription->filter = std::move(filter);
-    subscription->fields = selection;
     subscription->object_paths = object_paths;
     subscription->max_queued = max_queued;
     runtime.set_plan(subscription, std::move(plan));

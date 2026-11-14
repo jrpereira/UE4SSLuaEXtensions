@@ -2287,7 +2287,7 @@ private:
         return 6;
     }
 
-    // HookFunction(session, functionAddress, classAddress, phaseMask, options, properties)
+    // HookFunction(session, functionAddress, phaseMask, options, properties)
     //   -> hookId | nil, reason
     static int hook_function(const Lua& lua)
     {
@@ -2299,13 +2299,11 @@ private:
         LuaArgs args(lua);
         int64_t session_id{};
         int64_t function_address{};
-        int64_t class_address{};
         int64_t mask{};
         std::string options_text;
         std::vector<Hooks::LuaProperty> properties;
         std::string error;
-        if (!args.integer(session_id) || !args.integer(function_address) || !args.integer(class_address) ||
-            !args.integer(mask))
+        if (!args.integer(session_id) || !args.integer(function_address) || !args.integer(mask))
             return fail("HookFunction: missing arguments");
         if (!args.text(max_hook_options_length, true, options_text)) return fail("HookFunction: invalid options text");
         if (!read_property_list(args, properties, error)) return fail("HookFunction: " + error);
@@ -2389,16 +2387,8 @@ private:
                 runtime.request_idle_sweep(); // the entry may now be active without a subscription
                 return fail("hook table entry vanished");
             }
-            if (entry->owner_class == 0)
-            {
-                entry->owner_class = static_cast<std::uintptr_t>(class_address);
-                entry->owner_name = name_text(
-                    read_field<uint32_t>(reinterpret_cast<std::uintptr_t>(function), HookLayout::uobject_name_private), 0);
-            }
-            if (!entry->schema) entry->schema = schema;
             subscription->phases = static_cast<uint8_t>(mask);
             subscription->filter = std::move(filter);
-            subscription->fields = selection;
             subscription->object_paths = options.paths;
             subscription->max_queued = options.max_queued;
             runtime.set_plan(subscription, std::move(plan));
