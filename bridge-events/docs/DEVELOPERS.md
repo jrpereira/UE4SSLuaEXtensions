@@ -106,8 +106,8 @@ before the Enhanced Input queue's rate check. It is intended for work that must
 wait until the initial Lua-module loading batch has returned. The callback runs
 on UE4SS's update thread; schedule Unreal object work with
 `ExecuteInGameThread`. The returned function cancels a callback that has not yet
-run and returns whether cancellation succeeded. Registering after delivery is
-an error. Callback failures are logged and do not prevent other sessions or
+run and returns whether cancellation succeeded. Callbacks of one session run in
+the order they were registered. Registering after delivery is an error. Callback failures are logged and do not prevent other sessions or
 callbacks from running.
 
 ```lua

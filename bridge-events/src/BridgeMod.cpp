@@ -28,7 +28,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -65,7 +65,7 @@ struct LuaSession
     int32_t dispatcher_ref{};
     std::atomic_bool active{true};
     bool loop_start_delivered{};
-    std::unordered_set<uint64_t> loop_start_callbacks;
+    std::set<uint64_t> loop_start_callbacks; // tokens ascend: registration order
     // Function hooks: the transport helpers built from the dispatcher at Lua
     // start (hook_transport_source in BridgeMod.cpp).
     int32_t hook_push_ref{};
