@@ -48,7 +48,6 @@
 - With the engine tick, the bridge DLL stays loaded until the game exits:
   UE4SS cannot unregister the tick callback. Restarting the C++ mods then
   needs a game restart, as it already did once a hook had been used.
-  Lua-mod hot reload is unaffected.
 
 ## v1.2.2
 

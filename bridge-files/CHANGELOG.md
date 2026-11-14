@@ -11,8 +11,7 @@
   from UE4SS's update thread. Without the detour, callbacks run from the
   update callback as before.
 - With the engine tick, the bridge DLL stays loaded until the game exits:
-  UE4SS cannot unregister the tick callback. Lua-mod hot reload is
-  unaffected.
+  UE4SS cannot unregister the tick callback.
 - The default `Tail` delivery time limit drops from 2,000 to 500 microseconds
   per pass, since a pass now runs every frame on the game thread
   (`UE4SSLFB_MAX_DISPATCH_US` still overrides it).
