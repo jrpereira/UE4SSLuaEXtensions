@@ -882,7 +882,8 @@ ExecuteInGameThread(function()
     local h, err = UE4SSLuaEventBridge.Hooks.Hook(
         "/Game/UI/WBP_Warning.WBP_Warning_C:OnShowWarning", {
             params = { "IconType" },
-            pre = function(call) print("icon", call.params.IconType) end,
+            -- An enum arrives as { value = n, name = "..." }.
+            pre = function(call) print("icon", call.params.IconType.name) end,
         })
     if not h then print("hook failed: " .. err) end
 end)

@@ -119,22 +119,25 @@ do not establish live-game acceptance or performance.
 
 ## Minimal hook example
 
-Gate on the capability, hook by path, and unhook on shutdown. The path may name
-a class that is not loaded yet; the hook then stays `pending`. `call.params`
-holds copies of the parameters, not live objects:
+Gate on the capability, hook by path on the game thread, and unhook on
+shutdown. The path may name a class that is not loaded yet; the hook then stays
+`pending`. `call.params` holds copies of the parameters, not live objects:
 
 ```lua
 local Hooks = UE4SSLuaEventBridge.Hooks
 local caps = UE4SSLuaEventBridge.GetCapabilities()
 local hook
 if caps.hooks then
-    local err
-    hook, err = Hooks.Hook("/Script/Engine.PlayerController:ClientRestart", {
-        post = function(call)
-            print(string.format("%s %s #%d\n", call.phase, call.function_path, call.sequence))
-        end,
-    })
-    if not hook then print("hook refused: " .. tostring(err) .. "\n") end
+    -- Hooks.Hook must run on the game thread; a mod's main.lua does not.
+    ExecuteInGameThread(function()
+        local err
+        hook, err = Hooks.Hook("/Script/Engine.PlayerController:ClientRestart", {
+            post = function(call)
+                print(string.format("%s %s #%d\n", call.phase, call.function_path, call.sequence))
+            end,
+        })
+        if not hook then print("hook refused: " .. tostring(err) .. "\n") end
+    end)
 else
     print("function hooks unavailable: " .. tostring(caps.hooks_reason) .. "\n")
 end

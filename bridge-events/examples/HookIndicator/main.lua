@@ -25,7 +25,7 @@ local function start()
         pre = function(call)
             -- Runs on the game thread, later in the frame the function was called.
             print(string.format("icon %s on %s (sequence %d)",
-                tostring(call.params.IconType), tostring(call.object and call.object.path),
+                tostring(call.params.IconType.name), tostring(call.object and call.object.path),
                 call.sequence))
         end,
     })
