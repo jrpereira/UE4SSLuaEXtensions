@@ -635,11 +635,17 @@ function __scopeMethods:Bind(key, trigger, callback, options)
     end
     local action
     action, createError = __construct("InputAction", context)
-    if action == nil then return nil, createError end
+    if action == nil then
+        __recycleContext({ context = context })
+        return nil, createError
+    end
     local triggerObject
     local triggerClass = trigger == __tap and "InputTriggerTap" or "InputTriggerHold"
     triggerObject, createError = __construct(triggerClass, action)
-    if triggerObject == nil then return nil, createError end
+    if triggerObject == nil then
+        __recycleContext({ context = context })
+        return nil, createError
+    end
 
     local record = {
         context = context,
@@ -685,7 +691,10 @@ function __scopeMethods:Bind(key, trigger, callback, options)
     -- Ask Unreal to initialize its own weak identity; native Bind verifies it.
     local initialized, initializeError = __initializeWeakIdentity(action)
     if not initialized then
+        local removed, removeError = __removeContext(state, record)
+        if not removed then state.orphans[#state.orphans + 1] = record end
         return nil, "failed to initialize generated InputAction weak reference: " .. tostring(initializeError)
+            .. (removeError and "; " .. removeError or "")
     end
 
     local actionPath, pathError = __objectPath(action)

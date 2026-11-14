@@ -76,7 +76,12 @@ end
 
 local contextsConstructed = 0
 local lastAction
+local failConstruct -- a class name whose construction fails once
 function StaticConstructObject(class, outer, _name, flags)
+    if failConstruct == class.class_name then
+        failConstruct = nil
+        error("injected construction failure")
+    end
     -- Private contexts are rooted so a game-side mapping clear cannot collect them.
     if class.class_name == "InputMappingContext" then
         expect(flags == 0xC0, "private contexts must be transient and rooted")
@@ -354,6 +359,22 @@ local failedInit, failedInitError = initFailureScope:Bind("Q",Trigger.Tap,functi
 expect(failedInit == nil and failedInitError:find("weak reference",1,true))
 expect(nextHandle == beforeInitHandles and counters.contexts_added == beforeInitContexts)
 failWeakInitialization = false
+-- Every failed Bind returns its rooted context to the pool: the next Bind
+-- constructs no new one.
+local function bindReusesContext(label)
+    local before = contextsConstructed
+    local handle = assert(initFailureScope:Bind("Q",Trigger.Tap,function() end))
+    expect(contextsConstructed == before, label .. ": failed Bind must recycle its context")
+    assert(initFailureScope:Unbind(handle))
+end
+bindReusesContext("weak reference failure")
+for _, className in ipairs({ "InputAction", "InputTriggerTap" }) do
+    failConstruct = className
+    local failed, failedError = initFailureScope:Bind("Q",Trigger.Tap,function() end)
+    expect(failed == nil and failedError:find("failed to create transient " .. className, 1, true),
+        tostring(failedError))
+    bindReusesContext(className .. " construction failure")
+end
 assert(initFailureScope:Close())
 expect(weakInitializations > 0)
 local diagnosticScope = assert(UE4SSLuaEventBridge.Helpers.OpenInput({component_path="TestComponent", subsystem_path=subsystemPath}))
