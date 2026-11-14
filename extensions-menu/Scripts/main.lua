@@ -45,7 +45,7 @@ local ok, why = pcall(function()
     local cache = root .. '/cache'
     ensureCache(cache)
     local contributions = require('menu_contributions')
-    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion())) do
+    for _, entry in ipairs(menu.contributions(found, root, modsDirectory, readVersion(), read)) do
         local directory = menu.directory(cache, entry.id)
         ensureCache(directory)
         contributions.publisher(assert(rawget(_G, 'ModRef'), 'ModRef unavailable'),

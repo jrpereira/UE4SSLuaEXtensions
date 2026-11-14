@@ -6,7 +6,7 @@
   "categories": [
     "libraries"
   ],
-  "description": "Shows the UE4SS Lua extensions installed beside it on ModCore Settings' Modules tab: how many there are and a startup verification switch for each. It holds no code of its own beyond that.",
+  "description": "Lists the UE4SS Lua extensions installed beside it as one module in ModCore Settings: how many there are and a section with each one's settings. It holds no code of its own beyond that.",
   "dependencies": [
     {
       "id": "UE4SS",
