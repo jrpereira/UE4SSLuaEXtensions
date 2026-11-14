@@ -26,6 +26,9 @@ from release_notes import HEADING, extract_notes
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
 LINK = re.compile(r'(\]\()([^)\s]+)(\))')
+# A dependency version may carry update placeholders (AGENTS.md 7.5): X.Y.?+ follows the
+# dependency's latest minor, X.?.?+ its latest major. The package publishes 0 for each ?.
+PLACEHOLDER = re.compile(r'(0|[1-9][0-9]*)\.((0|[1-9][0-9]*)\.\?|\?\.\?)\+')
 
 
 def sha256(data):
@@ -254,6 +257,8 @@ def package_folders(manifest, collection_version, read_file, targets=None, commi
                 for key, value in described.items():
                     if key in ('version', 'version_source'):
                         continue
+                    if key == 'dependencies':
+                        value = [published_dependency(dependency) for dependency in value]
                     packaged[key] = value
                     # After the name, or after the id when the title comes from elsewhere.
                     if key == 'name' or (key == 'id' and 'name' not in described):
@@ -320,6 +325,16 @@ def assemble(manifest, collection_version, source_commit, products, output, date
     }
     Path(f'{target}.manifest.json').write_text(json.dumps(described, indent=2) + '\n', encoding='utf-8')
     return target
+
+
+def published_dependency(dependency):
+    """A mod.json dependency as published: each ? of an update placeholder becomes 0."""
+    version = dependency.get('version') if isinstance(dependency, dict) else None
+    if not isinstance(version, str) or '?' not in version:
+        return dependency
+    if not PLACEHOLDER.fullmatch(version):
+        raise ValueError(f'Invalid dependency version placeholder: {version}')
+    return dict(dependency, version=version.replace('?', '0'))
 
 
 def release_notes(manifest, collection_version, products, changelogs):

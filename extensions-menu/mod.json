@@ -11,6 +11,11 @@
     {
       "id": "UE4SS",
       "url": "https://github.com/UE4SS-RE/RE-UE4SS"
+    },
+    {
+      "id": "ModCoreSettings",
+      "version": "1.8.?+",
+      "url": "https://www.nexusmods.com/thebloodofdawnwalker/mods/590"
     }
   ],
   "links": {

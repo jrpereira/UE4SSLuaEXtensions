@@ -151,6 +151,18 @@ class PackageFolderTests(unittest.TestCase):
         self.assertNotIn('version_source', described)
         self.assertIn('Scripts/main.lua', folders[0]['files'])
 
+    def test_dependency_placeholders_publish_as_zero(self):
+        self.assertEqual(build.published_dependency({'id': 'A', 'version': '1.8.?+'}), {'id': 'A', 'version': '1.8.0+'})
+        self.assertEqual(build.published_dependency({'id': 'A', 'version': '2.?.?+'})['version'], '2.0.0+')
+        self.assertEqual(build.published_dependency({'id': 'A', 'version': '1.1.0+'})['version'], '1.1.0+')
+        self.assertEqual(build.published_dependency({'id': 'UE4SS'}), {'id': 'UE4SS'})
+        for broken in ('1.?.3+', '1.8.?', '?.1.0+'):
+            with self.assertRaisesRegex(ValueError, 'placeholder'):
+                build.published_dependency({'id': 'A', 'version': broken})
+        folders = build.package_folders(MANIFEST, '1.1.0', lambda path: (ROOT / path).read_bytes())
+        for dependency in json.loads(folders[0]['files']['mod.json'])['dependencies']:
+            self.assertNotIn('?', dependency.get('version', ''))
+
     def test_the_root_readme_lands_in_the_menu_folders_docs_with_links_to_the_extensions(self):
         targets = {'bridge-events/README.md': '0_ModCore_UE4SSLuaEventBridge/docs/README.md',
                    'bridge-events/docs/DEVELOPERS.md': '0_ModCore_UE4SSLuaEventBridge/docs/DEVELOPERS.md',
