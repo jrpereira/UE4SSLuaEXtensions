@@ -556,6 +556,12 @@ If Unreal still owns a binding or clone when the bridge unloads, the DLL retains
 a process-lifetime module reference to keep its vtable callable. Explicitly
 removing owned bindings avoids this retention when no engine-owned clones remain.
 
+Function hooks always cause this retention: once any hook has been used in the
+process, unloading the bridge keeps its DLL loaded, because the engine may still
+reach the hook code. Unhooking does not avoid it. A later restart of the C++
+mods then starts no Event Bridge (UE4SS.log says to restart the process) until
+the game itself restarts. Lua-only hot reload is not affected.
+
 When the game replaces an input component, close the old target, resolve the new
 component path, and bind again. Discovery, gameplay gates, and rebinding remain
 the consumer's responsibility.
@@ -873,7 +879,10 @@ or queue limit. Counters survive `Unhook`. `Schema` is a diagnostic: it lists
 what the bridge would copy for a resolved function.
 
 Hot reload unhooks everything the session owns when the Lua state stops. Call
-`Hooks.UnhookAll()` yourself when you tear down earlier.
+`Hooks.UnhookAll()` yourself when you tear down earlier. The bridge DLL itself
+stays loaded once any hook has been used: restarting the C++ mods leaves no
+Event Bridge until the game restarts (see
+[Session cleanup and rebinding](#session-cleanup-and-rebinding)).
 
 ### Example
 
