@@ -17,9 +17,11 @@ local function start()
         return
     end
 
-    -- A path that does not resolve yet is not an error: the hook stays pending
-    -- and attaches when the widget class loads, and again after a reload.
-    local icon, err = Hooks.Hook(ICON_CHANGED, {
+    -- Request, not Install: a path that does not resolve yet is not an error.
+    -- The request stays pending, attaches when the widget class loads, and
+    -- attaches again after a reload. A refusal that can never succeed (for
+    -- example a misspelled parameter) returns nil and the reason.
+    local icon, err = Hooks.Request(ICON_CHANGED, {
         params = { "IconType" },       -- copy only what you need
         object_paths = true,           -- also deliver each widget's path
         pre = function(call)
@@ -29,13 +31,13 @@ local function start()
                 call.sequence))
         end,
     })
-    if not icon then print("hook failed: " .. err) else handles[#handles + 1] = icon end
+    if not icon then print("hook refused: " .. err) else handles[#handles + 1] = icon end
 
     local cleared
-    cleared, err = Hooks.Hook(CLEARED, {
+    cleared, err = Hooks.Request(CLEARED, {
         post = function(call) print("indicator cleared", call.sequence) end,
     })
-    if not cleared then print("hook failed: " .. err) else handles[#handles + 1] = cleared end
+    if not cleared then print("hook refused: " .. err) else handles[#handles + 1] = cleared end
 end
 
 ExecuteInGameThread(start)
@@ -45,10 +47,11 @@ RegisterKeyBind(Key.F9, function()
     ExecuteInGameThread(function()
         for _, handle in ipairs(handles) do
             local s = handle:Status()
+            -- pending, active, failed (see s.reason) or removed
             print(s.state, "calls", s.calls, "delivered", s.delivered, "dropped", s.dropped)
         end
     end)
 end)
 
 -- Hooks are removed with the Lua state on hot reload; to remove them earlier:
---   Hooks.UnhookAll()
+--   Hooks.RemoveAll()   (or handle:Remove() for one)

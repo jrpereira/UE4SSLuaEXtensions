@@ -150,7 +150,7 @@ local function main()
 
         local Hooks = Bridge.Hooks
         if not check("Hooks table", type(Hooks) == "table") then return end
-        for _, name in ipairs({ "Hook", "Unhook", "UnhookAll", "Schema", "GetStats" }) do
+        for _, name in ipairs({ "Install", "Request", "Remove", "RemoveAll", "Schema", "GetStats" }) do
             check("Hooks." .. name .. " is a function", type(Hooks[name]) == "function")
         end
 
@@ -167,15 +167,18 @@ local function main()
         end
         local function noop() end
         local path = "/Script/Engine.PlayerController:ClientRestart"
-        refuses("Hook(nil)", Hooks.Hook, nil, { pre = noop })
-        refuses("Hook(number)", Hooks.Hook, 5, { pre = noop })
-        refuses("Hook(empty path)", Hooks.Hook, "", { pre = noop })
-        refuses("Hook(path, no options)", Hooks.Hook, path)
-        refuses("Hook(path, neither pre nor post)", Hooks.Hook, path, {})
-        refuses("Hook(pre is not a function)", Hooks.Hook, path, { pre = 5 })
-        refuses("Hook(delivery sync)", Hooks.Hook, path, { pre = noop, delivery = "sync" })
-        refuses("Hook(max_queued is a string)", Hooks.Hook, path, { pre = noop, max_queued = "many" })
-        refuses("Hook(params is not a table)", Hooks.Hook, path, { pre = noop, params = 5 })
+        for _, name in ipairs({ "Install", "Request" }) do
+            local fn = Hooks[name]
+            refuses(name .. "(nil)", fn, nil, { pre = noop })
+            refuses(name .. "(number)", fn, 5, { pre = noop })
+            refuses(name .. "(empty path)", fn, "", { pre = noop })
+            refuses(name .. "(path, no options)", fn, path)
+            refuses(name .. "(path, neither pre nor post)", fn, path, {})
+            refuses(name .. "(pre is not a function)", fn, path, { pre = 5 })
+            refuses(name .. "(delivery sync)", fn, path, { pre = noop, delivery = "sync" })
+            refuses(name .. "(max_queued is a string)", fn, path, { pre = noop, max_queued = "many" })
+            refuses(name .. "(params is not a table)", fn, path, { pre = noop, params = 5 })
+        end
         refuses("Schema(nil)", Hooks.Schema, nil)
     end)
 
@@ -184,8 +187,8 @@ local function main()
     local playerStage
 
     -- Hooks, engine stage. The synchronous part checks status, stats, the immediate and
-    -- the pending path, Unhook and UnhookAll. The asynchronous part hooks a harmless
-    -- native function, calls it, waits for the frame drain and checks that Unhook stops
+    -- the pending path, Remove and RemoveAll. The asynchronous part hooks a harmless
+    -- native function, calls it, waits for the frame drain and checks that Remove stops
     -- delivery. `done` runs after both, on any thread.
     local HOOK_DELIVERY_WAIT_MS = 5000
     local HOOK_QUIET_WAIT_MS = 2000
@@ -221,10 +224,10 @@ local function main()
                 skip("native hook on ClientRestart", "hooks_native is off")
             else
                 local calls = 0
-                local h, why = Hooks.Hook("/Script/Engine.PlayerController:ClientRestart", {
+                local h, why = Hooks.Install("/Script/Engine.PlayerController:ClientRestart", {
                     pre = function() calls = calls + 1 end,
                 })
-                if check("Hook on PlayerController:ClientRestart", h ~= nil, why) then
+                if check("Install on PlayerController:ClientRestart", h ~= nil, why) then
                     local status = h:Status()
                     check("Status is a table", type(status) == "table", status)
                     if type(status) == "table" then
@@ -240,43 +243,44 @@ local function main()
                             and type(slots.slots) == "table" and type(slots.slots.a) == "number"
                             and type(slots.slots.b) == "number", slots and slots.slots)
                     end
-                    check("Unhook", h:Unhook() == true)
+                    check("Remove", h:Remove() == true)
                     status = h:Status()
-                    check("Status after Unhook is unhooked", type(status) == "table" and status.state == "unhooked",
+                    check("Status after Remove is removed", type(status) == "table" and status.state == "removed",
                         type(status) == "table" and status.state)
-                    local again, againWhy = h:Unhook()
-                    check("Unhook twice is refused with a reason", again == false and type(againWhy) == "string",
-                        tostring(again) .. " " .. tostring(againWhy))
+                    check("Remove twice is a no-op", h:Remove() == true)
                     check("no callback ran for ClientRestart", calls == 0, calls)
                 end
             end
 
-            -- A path that stays pending: the class does not exist.
+            -- Install refuses a path that does not resolve; Request waits for it.
+            local missing, missingWhy = Hooks.Install("/Script/Nowhere.Nothing:Missing", { pre = function() end })
+            check("Install refuses a missing path", missing == nil and type(missingWhy) == "string",
+                tostring(missing) .. " " .. tostring(missingWhy))
             local pendingCalls = 0
-            local pending, pendingWhy = Hooks.Hook("/Script/Nowhere.Nothing:Missing", {
+            local pending, pendingWhy = Hooks.Request("/Script/Nowhere.Nothing:Missing", {
                 post = function() pendingCalls = pendingCalls + 1 end,
             })
-            if check("Hook on a missing path is accepted as pending", pending ~= nil, pendingWhy) then
+            if check("Request on a missing path is accepted as pending", pending ~= nil, pendingWhy) then
                 local status = pending:Status()
                 check("the missing path is pending", type(status) == "table" and status.state == "pending",
                     type(status) == "table" and (tostring(status.state) .. " " .. tostring(status.reason)))
-                check("Unhook removes a pending hook", pending:Unhook() == true)
+                check("Remove cancels a pending request", pending:Remove() == true)
                 local after = pending:Status()
-                check("a removed pending hook is unhooked", type(after) == "table" and after.state == "unhooked",
+                check("a cancelled request is removed", type(after) == "table" and after.state == "removed",
                     type(after) == "table" and after.state)
             end
 
-            -- UnhookAll leaves nothing active.
-            local first = Hooks.Hook("/Script/Nowhere.Nothing:MissingOne", { pre = function() end })
-            local second = Hooks.Hook("/Script/Nowhere.Nothing:MissingTwo", { post = function() end })
+            -- RemoveAll leaves nothing active.
+            local first = Hooks.Request("/Script/Nowhere.Nothing:MissingOne", { pre = function() end })
+            local second = Hooks.Request("/Script/Nowhere.Nothing:MissingTwo", { post = function() end })
             if first and second then
-                Hooks.UnhookAll()
+                Hooks.RemoveAll()
                 local a, b = first:Status(), second:Status()
-                check("UnhookAll unhooks both handles", type(a) == "table" and type(b) == "table"
-                    and a.state == "unhooked" and b.state == "unhooked",
+                check("RemoveAll removes both handles", type(a) == "table" and type(b) == "table"
+                    and a.state == "removed" and b.state == "removed",
                     type(a) == "table" and type(b) == "table" and (a.state .. " " .. b.state))
             else
-                fail("UnhookAll setup", "could not create two pending hooks")
+                fail("RemoveAll setup", "could not create two pending requests")
             end
 
             local lib = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
@@ -293,7 +297,7 @@ local function main()
 
         if not live then return done() end
 
-        -- Asynchronous part: delivery, then silence after Unhook. GetObjectName on the
+        -- Asynchronous part: delivery, then silence after Remove. GetObjectName on the
         -- library's default object is a pure native call with no side effects.
         local pre, post, lastSequence = 0, 0, {}
         local ordered, h = true, nil
@@ -318,7 +322,7 @@ local function main()
                 return type(object) == "table" and object.address == driverAddress
             end
             local why
-            h, why = Bridge.Hooks.Hook("/Script/Engine.KismetSystemLibrary:GetObjectName", {
+            h, why = Bridge.Hooks.Install("/Script/Engine.KismetSystemLibrary:GetObjectName", {
                 params = { "Object" },
                 pre = function(call)
                     if not own(call) then return end
@@ -337,10 +341,10 @@ local function main()
                     lastSequence.post = call.sequence
                 end,
             })
-            if not h then return finish("Hook on GetObjectName failed: " .. tostring(why)) end
+            if not h then return finish("Install on GetObjectName failed: " .. tostring(why)) end
             local callable = callOnce() and callOnce() and callOnce()
             if not callable then
-                h:Unhook()
+                h:Remove()
                 skip("hook delivery", "GetObjectName could not be called from Lua")
                 return finish()
             end
@@ -361,9 +365,9 @@ local function main()
                             local stats = Bridge.Hooks.GetStats()
                             check("GetStats.queued is back to zero", type(stats) == "table" and stats.queued == 0,
                                 type(stats) == "table" and stats.queued)
-                            check("Unhook after delivery", h:Unhook() == true)
+                            check("Remove after delivery", h:Remove() == true)
                         end)
-                        local preAtUnhook, postAtUnhook = pre, post
+                        local preAtRemove, postAtRemove = pre, post
                         callOnce() callOnce() callOnce()
                         local quiet = 0
                         LoopAsync(100, function()
@@ -371,9 +375,9 @@ local function main()
                             if quiet < HOOK_QUIET_WAIT_MS then return false end
                             ExecuteInGameThread(function()
                                 group("hook silence", function()
-                                    check("no pre callback after Unhook", pre == preAtUnhook, pre - preAtUnhook)
-                                    check("no post callback after Unhook", post == postAtUnhook, post - postAtUnhook)
-                                    Bridge.Hooks.UnhookAll()
+                                    check("no pre callback after Remove", pre == preAtRemove, pre - preAtRemove)
+                                    check("no post callback after Remove", post == postAtRemove, post - postAtRemove)
+                                    Bridge.Hooks.RemoveAll()
                                 end)
                                 done()
                             end)

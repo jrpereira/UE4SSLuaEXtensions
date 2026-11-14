@@ -195,7 +195,7 @@ suite.run("option validation messages", function()
         { {}, "at least one of pre or post must be a function" },
         { { pre = 1 }, "pre must be a function" },
         { { post = "x" }, "post must be a function" },
-        { { pre = noop, bogus = 1 }, "unsupported Hook option: bogus" },
+        { { pre = noop, bogus = 1 }, "unsupported hook option: bogus" },
         { { pre = noop, params = {} }, "params must be a non-empty array of strings" },
         { { pre = noop, params = { "a|b" } }, "params entries must be 1..256 byte strings without ; | =" },
         { { pre = noop, object_names = "Reticle" }, "object_names must be a non-empty array of strings" },
@@ -209,13 +209,13 @@ suite.run("option validation messages", function()
         { { pre = noop, delivery = "later" }, 'delivery must be "queued" or "sync"' },
     }
     for i, case in ipairs(cases) do
-        local handle, message = w.Hooks.Hook(PATH, case[1])
+        local handle, message = w.Hooks.Install(PATH, case[1])
         expect(handle == nil and message == case[2],
             "case " .. i .. ": expected " .. case[2] .. ", got " .. tostring(message))
     end
-    local handle, message = w.Hooks.Hook(PATH .. "x:y:z", { pre = noop })
+    local handle, message = w.Hooks.Install(PATH .. "x:y:z", { pre = noop })
     expect(handle == nil and message:find("target path", 1, true), tostring(message))
-    handle, message = w.Hooks.Hook(42, { pre = noop })
+    handle, message = w.Hooks.Install(42, { pre = noop })
     expect(handle == nil and message:find("path string or a live UFunction", 1, true), tostring(message))
     expect(next(w.hooks) == nil, "validation failures must not reach the native side")
 end)
@@ -223,14 +223,14 @@ end)
 suite.run("bad targets and Schema(nil) fail with nil, reason", function()
     local w = fixture()
     for _, target in ipairs({ 42, "" }) do
-        local h, why = w.Hooks.Hook(target, { pre = noop })
+        local h, why = w.Hooks.Install(target, { pre = noop })
         expect(h == nil and type(why) == "string", tostring(target))
     end
-    local h, why = w.Hooks.Hook(nil, { pre = noop })
+    local h, why = w.Hooks.Install(nil, { pre = noop })
     expect(h == nil and type(why) == "string")
-    h, why = w.Hooks.Hook(PATH, { pre = noop, params = 5 })
+    h, why = w.Hooks.Install(PATH, { pre = noop, params = 5 })
     expect(h == nil and type(why) == "string")
-    h, why = w.Hooks.Hook(PATH, { pre = noop, max_queued = "9" })
+    h, why = w.Hooks.Install(PATH, { pre = noop, max_queued = "9" })
     expect(h == nil and type(why) == "string")
     h, why = w.Hooks.Schema(nil)
     expect(h == nil and type(why) == "string")
@@ -239,10 +239,10 @@ end)
 suite.run("target must be a function and the call must be on the game thread", function()
     local w = fixture()
     w:add("/Game/X.X_C:NotFn", classObject("x"))
-    local handle, message = w.Hooks.Hook("/Game/X.X_C:NotFn", { pre = noop })
+    local handle, message = w.Hooks.Install("/Game/X.X_C:NotFn", { pre = noop })
     expect(handle == nil and message:find("not a UFunction", 1, true), tostring(message))
     w.gameThread = false
-    handle, message = w.Hooks.Hook(PATH, { pre = noop })
+    handle, message = w.Hooks.Install(PATH, { pre = noop })
     expect(handle == nil and message:find("game thread", 1, true), tostring(message))
 end)
 
@@ -258,7 +258,7 @@ suite.run("capabilities and unavailable natives", function()
     caps = old.api.GetCapabilities()
     expect(caps.hooks == false and caps.hooks_bp == false and caps.hooks_native == false)
     expect(caps.hooks_sync == false and caps.hooks_frame_delivery == false and caps.hooks_reason == nil)
-    local handle, message = old.Hooks.Hook(PATH, { pre = noop })
+    local handle, message = old.Hooks.Install(PATH, { pre = noop })
     expect(handle == nil and message:find("not available", 1, true), tostring(message))
     expect(old.Hooks.GetStats() == nil)
 
@@ -266,7 +266,7 @@ suite.run("capabilities and unavailable natives", function()
         "97b7e501", true, true, true, true, nil, false, "turned off", false, false, false, false } })
     expect(off.api.GetCapabilities().hooks_reason == "turned off")
     off.enabled = false
-    handle, message = off.Hooks.Hook(PATH, { pre = noop })
+    handle, message = off.Hooks.Install(PATH, { pre = noop })
     expect(handle == nil and message == "disabled by Enabled=0", tostring(message))
 end)
 
@@ -274,7 +274,7 @@ suite.run("property list and options encoding", function()
     local w = fixture()
     local f = standardFunction(w)
     local class = classObject("/Script/Engine.Actor")
-    local handle = assert(w.Hooks.Hook(PATH, {
+    local handle = assert(w.Hooks.Install(PATH, {
         pre = noop, post = noop, params = { "Count", "Data.Dir" },
         object_names = { "Reticle", "TopArrow" }, outer_class = class, outer_class_exact = true,
         object = { identity = function() return "7001", 0x7000 end },
@@ -306,7 +306,7 @@ suite.run("struct recursion stops at depth 3", function()
     local level2 = propertyOwner({ property("L3", 0, { struct = level3 }) })
     local level1 = propertyOwner({ property("L2", 0, { struct = level2 }) })
     w:add(PATH, functionObject(PATH, owner, { property("L1", 0, { struct = level1 }) }))
-    assert(w.Hooks.Hook(PATH, { pre = noop }))
+    assert(w.Hooks.Install(PATH, { pre = noop }))
     local names = {}
     for i, p in ipairs(w.hooks[1].properties) do names[i] = p.name end
     -- L1 (0) -> L2 (1) -> L3 (2) -> Leaf (3); a struct at depth 3 would not expand.
@@ -316,72 +316,152 @@ end)
 suite.run("wrapper target and native refusal", function()
     local w = fixture()
     local f = standardFunction(w)
-    local handle = assert(w.Hooks.Hook(f, { post = noop }))
+    local handle = assert(w.Hooks.Install(f, { post = noop }))
     expect(w.hooks[1].mask == 2 and handle:Status().state == "active")
     w.refuse = "property layout mismatch"
-    local refused, why = w.Hooks.Hook(PATH, { pre = noop })
+    local refused, why = w.Hooks.Install(PATH, { pre = noop })
     expect(refused == nil and why == "property layout mismatch", tostring(why))
 end)
 
-suite.run("pending becomes active on wake-up", function()
+suite.run("Install refuses a path that does not resolve", function()
     local w = fixture()
-    local handle = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local handle, why = w.Hooks.Install(PATH, { pre = noop })
+    expect(handle == nil and why == "not found: " .. PATH, tostring(why))
+    expect(next(w.pendingNames) == nil and #w.queue == 0 and #w.timers == 0, "no background work")
+end)
+
+suite.run("a missing Request waits for the wake-up with no timer", function()
+    local w = fixture()
+    local handle = assert(w.Hooks.Request(PATH, { pre = noop }))
     local status = handle:Status()
     expect(status.state == "pending" and status.reason:find(PATH, 1, true), tostring(status.reason))
     local token, className = next(w.pendingNames)
     expect(className == "WBP_Warn_C", tostring(className))
-    expect(#w.timers == 1 and w.timers[1].ms == 1000, "1 s retry timer")
+    expect(#w.timers == 0 and #w.queue == 0, "no periodic timer while pending")
 
     w.dispatch(-3, token)
-    expect(#w.queue == 1, "retry is scheduled on the game thread")
+    expect(#w.queue == 1, "the first retry runs on the next tick")
     w.dispatch(-3, token)
-    expect(#w.queue == 1, "wake-ups coalesce")
+    expect(#w.queue == 1, "wake-ups during a burst coalesce")
     w:drain()
     expect(handle:Status().state == "pending", "class not loaded yet")
 
     standardFunction(w)
-    w.dispatch(-3, token)
-    w:drain()
+    expect(#w.timers == 1 and w.timers[1].ms == 100, "second retry after 100 ms")
+    w:fireTimer()
     expect(handle:Status().state == "active" and w.hooks[1] ~= nil)
     expect(w.pendingNames[token] == nil, "wake-up name is released once attached")
+    expect(#w.timers == 0 and #w.queue == 0, "nothing more is scheduled")
 end)
 
-suite.run("pending retries on the one second timer only while pending", function()
+suite.run("a wake-up retries a bounded number of times, then waits", function()
     local w = fixture()
-    local handle = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local handle = assert(w.Hooks.Request(PATH, { pre = noop }))
+    local token = next(w.pendingNames)
+    w.dispatch(-3, token)
+    w:drain()
+    expect(#w.timers == 1 and w.timers[1].ms == 100)
     w:fireTimer()
-    expect(#w.timers == 1, "re-armed while pending")
+    expect(#w.timers == 1 and w.timers[1].ms == 1000, "third retry after 1 s")
+    w:fireTimer()
+    expect(#w.timers == 0 and #w.queue == 0, "the burst stops after three attempts")
+    expect(handle:Status().state == "pending" and w.pendingNames[token] == "WBP_Warn_C",
+        "still pending, wake-up still registered")
+
+    -- A later wake-up starts a new burst.
     standardFunction(w)
-    w:fireTimer()
+    w.dispatch(-3, token)
+    w:drain()
     expect(handle:Status().state == "active")
-    expect(#w.timers == 0, "no timer once nothing is pending")
+    -- A wake-up for an unknown token is ignored.
+    w.dispatch(-3, 999)
+    expect(#w.queue == 0)
 end)
 
-suite.run("a refused retry stays pending with the reason", function()
+suite.run("a transient refusal stays pending and retries in a burst", function()
     local w = fixture()
-    local handle = assert(w.Hooks.Hook(PATH, { pre = noop }))
     standardFunction(w)
     w.refuse = "script is not serialized"
-    w:fireTimer()
+    local handle = assert(w.Hooks.Request(PATH, { pre = noop }))
     local status = handle:Status()
     expect(status.state == "pending" and status.reason == "script is not serialized", tostring(status.reason))
+    expect(#w.queue == 1, "a found but refused function starts a burst at once")
+    w:drain()
+    expect(handle:Status().state == "pending")
     w.refuse = nil
     w:fireTimer()
     expect(handle:Status().state == "active")
 end)
 
-suite.run("orphan returns to pending and attaches again", function()
+suite.run("permanent refusals: nil, reason at call time, failed when found later", function()
+    for _, reason in ipairs({ "unknown parameter: Bogus", "property layout mismatch (offset)" }) do
+        local w = fixture()
+        standardFunction(w)
+        w.refuse = reason
+        local h, why = w.Hooks.Request(PATH, { pre = noop })
+        expect(h == nil and why == reason, "Request: " .. tostring(why))
+        h, why = w.Hooks.Install(PATH, { pre = noop })
+        expect(h == nil and why == reason, "Install: " .. tostring(why))
+        expect(next(w.pendingNames) == nil and #w.queue == 0)
+    end
+
+    local w = fixture()
+    local handle = assert(w.Hooks.Request(PATH, { pre = noop, params = { "Bogus" } }))
+    local token = next(w.pendingNames)
+    standardFunction(w)
+    w.refuse = "unknown parameter: Bogus"
+    w.dispatch(-3, token)
+    w:drain()
+    local status = handle:Status()
+    expect(status.state == "failed" and status.reason == "unknown parameter: Bogus", tostring(status.reason))
+    expect(#w.timers == 0 and #w.queue == 0, "a failed request stops retrying")
+    expect(w.pendingNames[token] == nil, "a failed request releases its wake-up")
+    expect(w.printed[#w.printed]:find("WARN", 1, true) and w.printed[#w.printed]:find(PATH, 1, true),
+        "pending -> failed is logged at WARN with the path")
+    w.dispatch(-3, token)
+    expect(#w.queue == 0, "no burst after failing")
+
+    -- Found later but not a UFunction.
+    local n = fixture()
+    local h2 = assert(n.Hooks.Request("/Game/X.X_C:NotFn", { pre = noop }))
+    n:add("/Game/X.X_C:NotFn", classObject("x"))
+    n.dispatch(-3, next(n.pendingNames))
+    n:drain()
+    expect(h2:Status().state == "failed" and h2:Status().reason:find("not a UFunction", 1, true))
+end)
+
+suite.run("an installed hook becomes orphaned when its function is deleted", function()
     local w = fixture()
     standardFunction(w)
-    local handle = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local handle = assert(w.Hooks.Install(PATH, { pre = noop }))
+    w.dispatch(-4, 1, "function deleted")
+    local status = handle:Status()
+    expect(status.state == "orphaned" and status.reason == "function deleted", tostring(status.reason))
+    expect(w.hooks[1] == nil and w.unhooked[1] == 1, "old native subscription released")
+    expect(next(w.pendingNames) == nil and #w.queue == 0 and #w.timers == 0, "no re-attach")
+    expect(w.printed[#w.printed]:find("WARN", 1, true) and w.printed[#w.printed]:find(PATH, 1, true),
+        "active -> orphaned is logged at WARN with the path")
+    standardFunction(w)
+    expect(handle:Status().state == "orphaned", "stays orphaned")
+    expect(handle:Remove() == true and handle:Status().state == "removed")
+end)
+
+suite.run("a request re-attaches after its function is deleted", function()
+    local w = fixture()
+    standardFunction(w)
+    local handle = assert(w.Hooks.Request(PATH, { pre = noop }))
     w.dispatch(-4, 1, "function deleted")
     local status = handle:Status()
     expect(status.state == "pending" and status.reason == "function deleted", tostring(status.reason))
     expect(w.hooks[1] == nil and w.unhooked[1] == 1, "old native subscription released")
-    expect(select(2, next(w.pendingNames)) == "WBP_Warn_C")
-    local second = standardFunction(w)
-    w.dispatch(-3, 0)
+    local token, className = next(w.pendingNames)
+    expect(className == "WBP_Warn_C")
+    w.objects[PATH] = nil
     w:drain()
+    expect(handle:Status().state == "pending", "the replacement is not loaded yet")
+    local second = standardFunction(w)
+    w.dispatch(-3, token)
+    w:fireTimer()
     expect(handle:Status().state == "active")
     expect(w.hooks[2] ~= nil and w.hooks[2].fn == second.address, "re-attached to the new function")
     -- Events for the old native id are ignored.
@@ -390,37 +470,59 @@ suite.run("orphan returns to pending and attaches again", function()
     expect(not called)
 end)
 
-suite.run("Unhook on pending and active hooks", function()
+suite.run("Remove is safe on every status", function()
     local w = fixture()
-    local pending = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local pending = assert(w.Hooks.Request(PATH, { pre = noop }))
     local token = next(w.pendingNames)
-    expect(pending:Unhook() == true)
-    expect(w.pendingNames[token] == nil and pending:Status().state == "unhooked")
-    local again, againWhy = pending:Unhook()
-    expect(again == false and againWhy == "hook is already unhooked", "second Unhook reports it")
-    w:fireTimer()
-    expect(#w.timers == 0 and next(w.hooks) == nil, "an unhooked pending hook never attaches")
+    expect(pending:Remove() == true)
+    expect(w.pendingNames[token] == nil and pending:Status().state == "removed")
+    expect(pending:Remove() == true, "a second Remove is a no-op")
+    w.dispatch(-3, token)
+    expect(#w.queue == 0 and next(w.hooks) == nil, "a removed request never attaches")
 
+    -- Removing during a burst cancels the scheduled attempts.
+    local bursting = assert(w.Hooks.Request(PATH, { pre = noop }))
+    w.dispatch(-3, next(w.pendingNames))
     standardFunction(w)
-    local active = assert(w.Hooks.Hook(PATH, { pre = noop }))
-    expect(active:Unhook() == true and w.hooks[1] == nil)
-    local status = active:Status()
-    expect(status.state == "unhooked" and status.calls == 10 and status.delivered == 6,
-        "counters survive unhook")
-    local ok, why = w.Hooks.Unhook({})
-    expect(ok == false and why:find("returned by Hooks.Hook", 1, true))
+    expect(bursting:Remove() == true)
+    w:drain()
+    expect(next(w.hooks) == nil and bursting:Status().state == "removed")
 
-    local failing = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local active = assert(w.Hooks.Install(PATH, { pre = noop }))
+    local id = next(w.hooks)
+    expect(active:Remove() == true and w.hooks[id] == nil)
+    local status = active:Status()
+    expect(status.state == "removed" and status.calls == 10 and status.delivered == 6,
+        "counters survive Remove")
+
+    local requested = assert(w.Hooks.Request(PATH, { pre = noop }))
+    expect(requested:Status().state == "active" and requested:Remove() == true)
+
+    local f = fixture()
+    local failed = assert(f.Hooks.Request(PATH, { pre = noop }))
+    standardFunction(f)
+    f.refuse = "unknown parameter: X"
+    f.dispatch(-3, next(f.pendingNames))
+    f:drain()
+    expect(failed:Status().state == "failed")
+    expect(failed:Remove() == true and failed:Status().state == "removed")
+    expect(failed:Remove() == true)
+
+    w.refuse = nil
+    local ok, why = w.Hooks.Remove({})
+    expect(ok == false and why:find("returned by Hooks.Install or Hooks.Request", 1, true))
+
+    local failing = assert(w.Hooks.Install(PATH, { pre = noop }))
     w.unhookFails = true
-    ok, why = failing:Unhook()
+    ok, why = failing:Remove()
     expect(ok == false and why == "injected unhook failure")
-    expect(failing:Status().state == "active", "failed Unhook keeps the hook")
+    expect(failing:Status().state == "active", "a failed Remove keeps the hook")
 end)
 
 suite.run("Status reports native counters", function()
     local w = fixture()
     standardFunction(w)
-    local handle = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local handle = assert(w.Hooks.Install(PATH, { pre = noop }))
     local s = handle:Status()
     expect(s.state == "active" and s.calls == 10 and s.matched == 8 and s.delivered == 6
         and s.dropped == 2 and s.reentries == 1)
@@ -430,7 +532,7 @@ suite.run("dispatch decodes every tag", function()
     local w = fixture()
     standardFunction(w)
     local seen
-    local handle = assert(w.Hooks.Hook(PATH, { pre = function(call) seen = call end }))
+    local handle = assert(w.Hooks.Install(PATH, { pre = function(call) seen = call end }))
     w.dispatch(-10, 1, 41, 1, true, 4096, 12, 99, "/Game/Obj.Obj_C_0", true, 9,
         "Flag", "b", true,
         "Count", "i", 7,
@@ -465,7 +567,7 @@ suite.run("capture frame and clock are call fields, not parameters", function()
     local w = fixture()
     standardFunction(w)
     local seen
-    assert(w.Hooks.Hook(PATH, { post = function(call) seen = call end }))
+    assert(w.Hooks.Install(PATH, { post = function(call) seen = call end }))
     local before = os.clock()
     w.dispatch(-10, 1, 7, 2, true, 0, 0, 0, nil, true, 3,
         "@frame", "i", 6337, "@age", "n", 0.25, "IconType", "e", "2|ERebelIndicatorIconType::Right")
@@ -479,7 +581,7 @@ suite.run("fixed arrays, empty enum names and null objects", function()
     local w = fixture()
     standardFunction(w)
     local seen
-    assert(w.Hooks.Hook(PATH, { post = function(call) seen = call end }))
+    assert(w.Hooks.Install(PATH, { post = function(call) seen = call end }))
     w.dispatch(-10, 1, 1, 2, true, 1, 1, 1, nil, true, 9,
         "Arr[0]", "i", 10, "Arr[1]", "i", 11, "Arr[2]", "i", 12,
         "S.Arr[1]", "n", 2.5, "S.Arr[0]", "n", 1.5,
@@ -503,7 +605,7 @@ suite.run("a struct at depth 3 is listed but not expanded", function()
     local l1 = propertyOwner({ property("L2", 0, { struct = l2 }) })
     w:add(PATH, functionObject(PATH, classObject("c"), {
         property("L1", 0, { struct = l1 }), property("After", 8) }))
-    assert(w.Hooks.Hook(PATH, { pre = noop }))
+    assert(w.Hooks.Install(PATH, { pre = noop }))
     local names, parents = {}, {}
     for i, p in ipairs(w.hooks[1].properties) do names[i], parents[i] = p.name, p.parent end
     expect(table.concat(names, ",") == "L1,L2,L3,Deep,After", table.concat(names, ","))
@@ -514,7 +616,7 @@ suite.run("post delivers out, result and params_available", function()
     local w = fixture()
     standardFunction(w)
     local seen
-    assert(w.Hooks.Hook(PATH, { post = function(call) seen = call end }))
+    assert(w.Hooks.Install(PATH, { post = function(call) seen = call end }))
     w.dispatch(-10, 1, 1, 2, true, 1, 1, 1, nil, true, 4,
         "Count", "i", 3,
         "out:Hit", "b", true,
@@ -537,7 +639,7 @@ suite.run("callback errors are logged and 32 in a row disable the hook", functio
     local w = fixture()
     standardFunction(w)
     local mode, calls = "fail", 0
-    local handle = assert(w.Hooks.Hook(PATH, { pre = function()
+    local handle = assert(w.Hooks.Install(PATH, { pre = function()
         calls = calls + 1
         if mode == "fail" then error("boom") end
     end }))
@@ -555,53 +657,53 @@ suite.run("callback errors are logged and 32 in a row disable the hook", functio
     local before = calls
     w.dispatch(-10, 1, 201, 1, true, 1, 1, 1, nil, true, 0)
     expect(calls == before, "a failed hook receives nothing")
-    expect(handle:Unhook() == true)
+    expect(handle:Remove() == true)
 end)
 
 suite.run("native fault disables the hook", function()
     local w = fixture()
     standardFunction(w)
-    local handle = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local handle = assert(w.Hooks.Install(PATH, { pre = noop }))
     w.dispatch(-5, 1, "queue overflow")
     local status = handle:Status()
     expect(status.state == "failed" and status.reason == "queue overflow", tostring(status.reason))
 end)
 
-suite.run("UnhookAll removes active and pending hooks", function()
+suite.run("RemoveAll removes active and pending hooks", function()
     local w = fixture()
     standardFunction(w)
-    local a = assert(w.Hooks.Hook(PATH, { pre = noop }))
-    local b = assert(w.Hooks.Hook("/Game/Other.Other_C:Fn", { pre = noop }))
-    local count, ok = w.Hooks.UnhookAll()
+    local a = assert(w.Hooks.Install(PATH, { pre = noop }))
+    local b = assert(w.Hooks.Request("/Game/Other.Other_C:Fn", { pre = noop }))
+    local count, ok = w.Hooks.RemoveAll()
     expect(count == 2 and ok == true)
-    expect(a:Status().state == "unhooked" and b:Status().state == "unhooked")
+    expect(a:Status().state == "removed" and b:Status().state == "removed")
     expect(next(w.hooks) == nil and next(w.pendingNames) == nil)
-    count, ok = w.Hooks.UnhookAll()
+    count, ok = w.Hooks.RemoveAll()
     expect(count == 0 and ok == true)
 
-    local c = assert(w.Hooks.Hook(PATH, { pre = noop }))
+    local c = assert(w.Hooks.Install(PATH, { pre = noop }))
     w.unhookFails = true
-    local failed, completed, why = w.Hooks.UnhookAll()
+    local failed, completed, why = w.Hooks.RemoveAll()
     expect(failed == 0 and completed == false and why:find("injected unhook failure", 1, true), tostring(why))
     w.unhookFails = false
-    expect(select(2, w.Hooks.UnhookAll()) == true and c:Status().state == "unhooked")
+    expect(select(2, w.Hooks.RemoveAll()) == true and c:Status().state == "removed")
 end)
 
-suite.run("session stop unhooks everything and raises on failure", function()
+suite.run("session stop removes everything and raises on failure", function()
     local w = fixture()
     standardFunction(w)
-    local active = assert(w.Hooks.Hook(PATH, { pre = noop }))
-    local pending = assert(w.Hooks.Hook("/Game/Other.Other_C:Fn", { pre = noop }))
+    local active = assert(w.Hooks.Install(PATH, { pre = noop }))
+    local pending = assert(w.Hooks.Request("/Game/Other.Other_C:Fn", { pre = noop }))
     expect(w.stop() == true)
-    expect(active:Status().state == "unhooked" and pending:Status().state == "unhooked")
+    expect(active:Status().state == "removed" and pending:Status().state == "removed")
     expect(next(w.hooks) == nil and next(w.pendingNames) == nil)
-    expect(select(2, w.Hooks.Hook(PATH, { pre = noop })):find("stopped", 1, true))
-    w:fireTimer()
-    expect(#w.timers == 0, "no retry after stop")
+    expect(select(2, w.Hooks.Install(PATH, { pre = noop })):find("stopped", 1, true))
+    w.dispatch(-3, 1)
+    expect(#w.timers == 0 and #w.queue == 0, "no retry after stop")
 
     local f = fixture()
     standardFunction(f)
-    assert(f.Hooks.Hook(PATH, { pre = noop }))
+    assert(f.Hooks.Install(PATH, { pre = noop }))
     f.unhookFails = true
     Kit.expectRaise("hook cleanup incomplete", f.stop)
     expect(f.printed[#f.printed]:find("injected unhook failure", 1, true))
@@ -609,7 +711,7 @@ end)
 
 suite.run("GetStats", function()
     local w = fixture()
-    assert(w.Hooks.Hook(PATH, { pre = noop }))
+    assert(w.Hooks.Request(PATH, { pre = noop }))
     local s = w.Hooks.GetStats()
     expect(s.queued == 3 and s.high_water == 9 and s.rejected == 1 and s.delivery == "tick"
         and s.ticks == 100 and s.update_calls == 0 and s.entries == 2

@@ -1081,11 +1081,17 @@ local __hookRecords = {}      -- Lua hook id -> record
 local __hookByNative = {}     -- native hook id -> record
 local __hookState = setmetatable({}, { __mode = "k" })
 local __nextHookId = 0
+local __hookByToken = {}      -- wake-up token -> pending request record
 local __nextPendingToken = 0
 local __hooksStopped = false
-local __hookRetryQueued = false
-local __hookTimerArmed = false
-local __hookRetryMs = 1000
+-- A request retries this many times after a wake-up, each delay (ms) after the
+-- previous attempt, then waits for the next wake-up. 0 means the next tick.
+local __requestRetryDelays = { 0, 100, 1000 }
+-- Refusals that a later attempt cannot change: the request fails instead of waiting.
+local __permanentRefusals = {
+    "unknown parameter", "unsupported kind", "layout mismatch", "not a UFunction",
+    "malformed hook option",
+}
 local __maxHookStrikes = 32
 local __maxHookProperties = 512
 local __maxStructDepth = 3
@@ -1094,6 +1100,18 @@ local __functionPath = "/Script/CoreUObject.Function"
 
 local function __hookLog(message)
     pcall(print, "[UE4SSLuaEventBridge] " .. message)
+end
+
+local function __hookWarn(message)
+    pcall(print, "[UE4SSLuaEventBridge] WARN " .. message)
+end
+
+local function __isPermanentRefusal(reason)
+    if type(reason) ~= "string" then return false end
+    for _, text in ipairs(__permanentRefusals) do
+        if reason:find(text, 1, true) then return true end
+    end
+    return false
 end
 
 local function __textOf(value)
@@ -1221,7 +1239,7 @@ local function __validateHookOptions(options)
     if type(options) ~= "table" then return nil, "options must be a table" end
     for name in pairs(options) do
         if not __hookOptionNames[name] then
-            return nil, "unsupported Hook option: " .. tostring(name)
+            return nil, "unsupported hook option: " .. tostring(name)
         end
     end
     local mask = 0
@@ -1310,7 +1328,9 @@ local function __zeroCounters()
 end
 
 local function __forgetPendingName(record)
-    if record.token ~= nil and UE4SSLuaEventBridge_HookPendingForget ~= nil then
+    if record.token == nil then return end
+    __hookByToken[record.token] = nil
+    if UE4SSLuaEventBridge_HookPendingForget ~= nil then
         pcall(UE4SSLuaEventBridge_HookPendingForget, __session, record.token)
     end
 end
@@ -1334,31 +1354,6 @@ local function __pendingCount()
         if record.state == "pending" then count = count + 1 end
     end
     return count
-end
-
-local __retryPending
-
-local function __armHookTimer()
-    if __hookTimerArmed or __hooksStopped or ExecuteInGameThreadWithDelay == nil then return end
-    __hookTimerArmed = true
-    ExecuteInGameThreadWithDelay(__hookRetryMs, function()
-        __hookTimerArmed = false
-        if __hooksStopped then return end
-        __retryPending()
-    end)
-end
-
-local function __makePending(record, reason)
-    record.state = "pending"
-    record.reason = reason
-    if record.token == nil then
-        __nextPendingToken = __nextPendingToken + 1
-        record.token = __nextPendingToken
-    end
-    if record.className ~= nil and UE4SSLuaEventBridge_HookPendingName ~= nil then
-        pcall(UE4SSLuaEventBridge_HookPendingName, __session, record.token, record.className)
-    end
-    __armHookTimer()
 end
 
 -- Returns the UFunction, or nil, reason, fatal.
@@ -1385,50 +1380,95 @@ local function __attachHook(record, functionObject)
     record.state = "active"
     record.reason = nil
     record.strikes = 0
+    record.burst = nil
     __hookByNative[id] = record
     __forgetPendingName(record)
     return true
 end
 
-__retryPending = function()
-    __hookRetryQueued = false
-    if __hooksStopped then return end
-    local pending = {}
-    for _, record in pairs(__hookRecords) do
-        if record.state == "pending" then pending[#pending + 1] = record end
+-- A pending request that can never attach: failed, logged, wake-up released.
+local function __failRequest(record, reason)
+    record.state, record.reason, record.burst = "failed", reason, nil
+    __forgetPendingName(record)
+    __hookWarn("hook request failed (" .. tostring(record.path) .. "): " .. tostring(reason))
+end
+
+-- Registers the request's class-name wake-up. No timer: the wake-up (-3)
+-- starts a bounded burst of retries (__startBurst).
+local function __makePending(record, reason)
+    record.state = "pending"
+    record.reason = reason
+    if record.token == nil then
+        __nextPendingToken = __nextPendingToken + 1
+        record.token = __nextPendingToken
     end
-    table.sort(pending, function(a, b) return a.id < b.id end)
-    for _, record in ipairs(pending) do
-        local ok, functionObject, why, fatal = pcall(__resolveHookFunction, record.path)
-        if not ok then
-            record.reason = tostring(functionObject)
-        elseif functionObject == nil then
-            if fatal then
-                record.state, record.reason = "failed", why
-                __forgetPendingName(record)
-            else
-                record.reason = why
-            end
-        else
-            local attached, attachOk, attachError = pcall(__attachHook, record, functionObject)
-            if not attached then
-                record.reason = tostring(attachOk)
-            elseif not attachOk then
-                record.reason = attachError
-            end
+    __hookByToken[record.token] = record
+    if record.className ~= nil and UE4SSLuaEventBridge_HookPendingName ~= nil then
+        pcall(UE4SSLuaEventBridge_HookPendingName, __session, record.token, record.className)
+    end
+end
+
+-- One attempt for a pending request. Returns true when the request is settled
+-- (active or failed), false when it is still pending.
+local function __tryRequest(record)
+    local ok, functionObject, why, fatal = pcall(__resolveHookFunction, record.path)
+    if not ok then
+        record.reason = tostring(functionObject)
+        return false
+    end
+    if functionObject == nil then
+        if fatal then
+            __failRequest(record, why)
+            return true
         end
+        record.reason = why
+        return false
     end
-    if __pendingCount() > 0 then __armHookTimer() end
+    local called, attached, attachError = pcall(__attachHook, record, functionObject)
+    if called and attached then return true end
+    local reason = called and attachError or tostring(attached)
+    if called and __isPermanentRefusal(reason) then
+        __failRequest(record, reason)
+        return true
+    end
+    record.reason = reason
+    return false
 end
 
-local function __scheduleRetry()
-    if __hookRetryQueued or __hooksStopped or ExecuteInGameThread == nil then return end
-    __hookRetryQueued = true
-    ExecuteInGameThread(__retryPending)
+local __scheduleAttempt
+
+-- Attempt `step` of a burst; schedules the next one while the request stays pending.
+local function __runAttempt(record, burst, step)
+    if __hooksStopped or record.state ~= "pending" or record.burst ~= burst then return end
+    if __tryRequest(record) then return end
+    if step < #__requestRetryDelays then
+        __scheduleAttempt(record, burst, step + 1)
+    else
+        record.burst = nil -- wait for the next wake-up
+    end
 end
 
-local function __unhookRecord(record)
-    if record.state == "unhooked" then return false, "hook is already unhooked" end
+__scheduleAttempt = function(record, burst, step)
+    local delay = __requestRetryDelays[step]
+    local run = function() __runAttempt(record, burst, step) end
+    if delay == 0 then
+        if ExecuteInGameThread == nil then record.burst = nil return end
+        ExecuteInGameThread(run)
+    else
+        if ExecuteInGameThreadWithDelay == nil then record.burst = nil return end
+        ExecuteInGameThreadWithDelay(delay, run)
+    end
+end
+
+-- Starts a bounded retry burst unless one is already running.
+local function __startBurst(record)
+    if __hooksStopped or record.state ~= "pending" or record.burst ~= nil then return end
+    record.burst = {}
+    __scheduleAttempt(record, record.burst, 1)
+end
+
+local function __removeRecord(record)
+    if record.state == "removed" then return true end
     if record.nativeId ~= nil then
         __snapshotCounters(record)
         local removed, why = UE4SSLuaEventBridge_Unhook(__session, record.nativeId)
@@ -1437,17 +1477,19 @@ local function __unhookRecord(record)
         record.nativeId = nil
     end
     __forgetPendingName(record)
-    record.state = "unhooked"
+    record.state = "removed"
     record.reason = nil
+    record.burst = nil
     __hookRecords[record.id] = nil
     return true
 end
 
 local function __faultRecord(record, reason)
-    if record.state == "unhooked" then return end
+    if record.state == "removed" then return end
     if record.state == "active" then __snapshotCounters(record) end
     record.state = "failed"
     record.reason = reason
+    record.burst = nil
     if record.nativeId ~= nil then
         local ok, removed = pcall(UE4SSLuaEventBridge_Unhook, __session, record.nativeId)
         if ok and removed then
@@ -1456,13 +1498,13 @@ local function __faultRecord(record, reason)
         end
     end
     __forgetPendingName(record)
-    __hookLog("hook disabled (" .. tostring(record.path or "function") .. "): " .. tostring(reason))
+    __hookWarn("hook disabled (" .. tostring(record.path or "function") .. "): " .. tostring(reason))
 end
 
-local function __newHookRecord(path, options, mask, optionsText)
+local function __newHookRecord(kind, path, options, mask, optionsText)
     __nextHookId = __nextHookId + 1
     local record = {
-        id = __nextHookId, path = path, pre = options.pre, post = options.post,
+        id = __nextHookId, kind = kind, path = path, pre = options.pre, post = options.post,
         phaseMask = mask, optionsText = optionsText, state = "pending",
         strikes = 0, counters = __zeroCounters(),
         className = path ~= nil and __ownerClassName(path) or nil,
@@ -1479,7 +1521,9 @@ function __HookHandle:Status()
     local state, reason = record.state, record.reason
     if record.state == "active" then
         local nativeState, nativeReason = __snapshotCounters(record)
-        if type(nativeState) == "string" then state, reason = nativeState, nativeReason or reason end
+        if nativeState == "active" or nativeState == "orphaned" then
+            state, reason = nativeState, nativeReason or reason
+        end
     end
     local counters = record.counters
     return {
@@ -1488,10 +1532,10 @@ function __HookHandle:Status()
     }
 end
 
-function __HookHandle:Unhook()
+function __HookHandle:Remove()
     local record = __hookState[self]
     if record == nil then return false, "not a hook handle" end
-    return __unhookRecord(record)
+    return __removeRecord(record)
 end
 
 local function __hooksReady()
@@ -1503,13 +1547,18 @@ local function __hooksReady()
     return true
 end
 
+-- Returns functionObject|nil, path, error|nil, missing|nil. A path that does
+-- not resolve yet returns nil, path, nil, "not found: ...".
 local function __hookTarget(target)
     if type(target) == "string" then
         if #target < 1 or #target > 1024 or __ownerClassName(target) == nil then
             return nil, nil, "target path must look like /Package.Class:Function"
         end
         local functionObject, why, fatal = __resolveHookFunction(target)
-        if functionObject == nil and fatal then return nil, nil, why end
+        if functionObject == nil then
+            if fatal then return nil, nil, why end
+            return nil, target, nil, why
+        end
         return functionObject, target
     end
     if target == nil or not __validObject(target) then
@@ -1519,52 +1568,86 @@ local function __hookTarget(target)
     return target, __functionPathOf(target)
 end
 
-local Hooks = {}
-
-function Hooks.Hook(target, options)
+-- Shared argument checks of Install and Request.
+local function __prepareHook(name, target, options)
     local ready, readyError = __hooksReady()
     if not ready then return nil, readyError end
     if __hooksStopped then return nil, "the hook session is stopped" end
     if UE4SSLuaEventBridge_IsInGameThread() ~= true then
-        return nil, "Hooks.Hook must run on the Unreal game thread"
+        return nil, "Hooks." .. name .. " must run on the Unreal game thread"
     end
     local mask, optionsText = __validateHookOptions(options)
     if mask == nil then return nil, optionsText end
-
-    local functionObject, path, targetError = __hookTarget(target)
+    local functionObject, path, targetError, missing = __hookTarget(target)
     if targetError ~= nil then return nil, targetError end
-    local record = __newHookRecord(path, options, mask, optionsText)
-    if functionObject == nil then
-        __hookRecords[record.id] = record
-        __makePending(record, "waiting for " .. path)
-        return record.handle
-    end
-    local attached, why = __attachHook(record, functionObject)
+    return { mask = mask, optionsText = optionsText, functionObject = functionObject,
+        path = path, missing = missing }
+end
+
+local Hooks = {}
+
+-- Attaches now or refuses with nil, reason. Never pending; a deleted function
+-- leaves the hook orphaned.
+function Hooks.Install(target, options)
+    local prepared, why = __prepareHook("Install", target, options)
+    if prepared == nil then return nil, why end
+    if prepared.functionObject == nil then return nil, prepared.missing end
+    local record = __newHookRecord("install", prepared.path, options, prepared.mask, prepared.optionsText)
+    local attached, attachError = __attachHook(record, prepared.functionObject)
     if not attached then
         __hookState[record.handle] = nil
-        return nil, why
+        return nil, attachError
     end
     __hookRecords[record.id] = record
     return record.handle
 end
 
-function Hooks.Unhook(handle)
-    local record = type(handle) == "table" and __hookState[handle] or nil
-    if record == nil then return false, "handle must be returned by Hooks.Hook" end
-    return __unhookRecord(record)
+-- A lasting request: attaches now if it can, otherwise waits for the owner
+-- class to load, and attaches again after a reload deletes the function.
+-- A refusal that can never succeed returns nil, reason.
+function Hooks.Request(target, options)
+    local prepared, why = __prepareHook("Request", target, options)
+    if prepared == nil then return nil, why end
+    local record = __newHookRecord("request", prepared.path, options, prepared.mask, prepared.optionsText)
+    if prepared.functionObject == nil then
+        __hookRecords[record.id] = record
+        __makePending(record, "waiting for " .. prepared.path)
+        return record.handle
+    end
+    local attached, attachError = __attachHook(record, prepared.functionObject)
+    if not attached then
+        if __isPermanentRefusal(attachError) or record.path == nil then
+            __hookState[record.handle] = nil
+            return nil, attachError
+        end
+        -- Found but refused for now (the class may still be loading): its
+        -- wake-up may already have passed, so start a bounded burst too.
+        __hookRecords[record.id] = record
+        __makePending(record, attachError)
+        __startBurst(record)
+        return record.handle
+    end
+    __hookRecords[record.id] = record
+    return record.handle
 end
 
-function Hooks.UnhookAll()
+function Hooks.Remove(handle)
+    local record = type(handle) == "table" and __hookState[handle] or nil
+    if record == nil then return false, "handle must be returned by Hooks.Install or Hooks.Request" end
+    return __removeRecord(record)
+end
+
+function Hooks.RemoveAll()
     local records = {}
     for _, record in pairs(__hookRecords) do records[#records + 1] = record end
     table.sort(records, function(a, b) return a.id < b.id end)
     local count, errors = 0, {}
     for _, record in ipairs(records) do
-        local called, removed, why = pcall(__unhookRecord, record)
+        local called, removed, why = pcall(__removeRecord, record)
         if called and removed then
             count = count + 1
         else
-            errors[#errors + 1] = tostring(called and why or removed or "failed to unhook")
+            errors[#errors + 1] = tostring(called and why or removed or "failed to remove")
         end
     end
     if #errors > 0 then return count, false, table.concat(errors, "; ") end
@@ -1625,7 +1708,7 @@ end
 
 bridge.Hooks = Hooks
 
--- Dispatcher: -10 event, -5 fault, -4 back to pending, -3 wake-up.
+-- Dispatcher: -10 event, -5 fault, -4 function deleted, -3 wake-up.
 local function __decodeHookValue(tag, value)
     if tag == "b" then return value == true or value == 1 end
     if tag == "i" then
@@ -1734,30 +1817,40 @@ __hookDispatch = function(code, hookId, ...)
     if code == -10 then
         return __deliverHookEvent(hookId, ...)
     elseif code == -3 then
-        return __scheduleRetry()
+        -- Wake-up: hookId is the pending token whose owner class name was created.
+        local record = __hookByToken[hookId]
+        if record ~= nil then __startBurst(record) end
     elseif code == -5 then
         local record = __hookByNative[hookId]
         if record ~= nil then __faultRecord(record, tostring((...) or "hook fault")) end
     elseif code == -4 then
         local record = __hookByNative[hookId]
         if record == nil or record.state ~= "active" then return end
+        local reason = tostring((...) or "function was deleted")
         __snapshotCounters(record)
         pcall(UE4SSLuaEventBridge_Unhook, __session, hookId)
         __hookByNative[hookId] = nil
         record.nativeId = nil
-        if record.path == nil or record.className == nil then
-            record.state, record.reason = "failed", "function was deleted and has no path to retry"
+        if record.kind ~= "request" then
+            record.state, record.reason = "orphaned", reason
+            __hookWarn("hook orphaned (" .. tostring(record.path or "function") .. "): " .. reason)
             return
         end
-        __makePending(record, tostring((...) or "function was deleted"))
+        if record.path == nil then
+            return __failRequest(record, "function was deleted and has no path to retry")
+        end
+        -- The replacement may already exist, or arrive with its class: wait
+        -- for the wake-up and also start a bounded burst now.
+        __makePending(record, reason)
+        __startBurst(record)
     end
 end
 
--- Called by the native Lua-stop path: unhooks everything the session owns and
+-- Called by the native Lua-stop path: removes every hook the session owns and
 -- raises on failure, like __UE4SSLuaEventBridge_StopHelperScopes.
 __UE4SSLuaEventBridge_StopHooks = function()
     __hooksStopped = true
-    local called, count, completed, stopError = pcall(Hooks.UnhookAll)
+    local called, count, completed, stopError = pcall(Hooks.RemoveAll)
     if not called then stopError = count end
     if not called or not completed then
         local message = "[UE4SSLuaEventBridge] Lua-stop hook cleanup incomplete: "

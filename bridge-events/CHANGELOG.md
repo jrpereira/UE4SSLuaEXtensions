@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- Breaking: `Hooks.Hook` is replaced by `Hooks.Install` and `Hooks.Request`,
+  and `h:Unhook()`, `Hooks.Unhook` and `Hooks.UnhookAll` by `h:Remove()`,
+  `Hooks.Remove` and `Hooks.RemoveAll`. There are no aliases. Arguments after
+  the target are unchanged. A removed handle reports `state = "removed"`
+  instead of `"unhooked"`.
+- `Hooks.Install` attaches now or returns `nil, reason`. It never waits and
+  does no background work. If a reload deletes the function, the hook becomes
+  `orphaned` and stays so.
+- `Hooks.Request` attaches now if it can, otherwise waits for the owner class
+  to load, and attaches again after a reload deletes the function. Pending
+  hooks no longer retry every second for as long as they are pending (each
+  retry cost about 33 ms on a miss in a loaded level). A request now retries
+  only after its class-name wake-up: on the next tick, then about 100 ms and
+  1 s later, and then it waits for the next wake-up.
+- Refusals that can never succeed (unknown parameter, unsupported parameter
+  kind, a target that is not a `UFunction`, a property layout mismatch) return
+  `nil, reason` from both calls. A pending request that meets one when its
+  class loads turns `failed` and stops retrying, instead of retrying every
+  second.
+- A request that turns `failed` and an installed hook that turns `orphaned`
+  are logged as a `WARN` line with the function path.
+- `h:Remove()` is safe on any status: pending, active, orphaned, failed or
+  already removed.
+
 ## v1.2.2
 
 ### Changes

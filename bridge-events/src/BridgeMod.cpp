@@ -1967,7 +1967,7 @@ private:
     std::atomic_bool hooks_setting_{true};
 
 public:
-    // Why Hooks.Hook is refused, or nothing when hooks are available.
+    // Why Hooks.Install and Hooks.Request are refused, or nothing when hooks are available.
     std::optional<std::string> hooks_unavailable_reason() const
     {
         if (!hooks_setting_.load(std::memory_order_acquire))
@@ -2256,7 +2256,7 @@ private:
         if (!args.text(max_hook_options_length, true, options_text)) return fail("HookFunction: invalid options text");
         if (!read_property_list(args, properties, error)) return fail("HookFunction: " + error);
         if (!active_mod) return fail("the bridge is not active");
-        if (!RC::Unreal::IsInGameThread()) return fail("Hooks.Hook must run on the Unreal game thread");
+        if (!RC::Unreal::IsInGameThread()) return fail("hooks must be installed on the Unreal game thread");
         if (const auto why = active_mod->hooks_unavailable_reason()) return fail(*why);
         auto* session = active_mod->session_for_id(static_cast<uint64_t>(session_id));
         if (!session) return fail("Lua session is not registered or is stopping");

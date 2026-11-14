@@ -203,7 +203,7 @@ The bridge installs no process-wide detour, not on `ProcessEvent`, not on
 small, reversible writes inside the one function being hooked, and a function
 nobody hooks costs nothing: no detour, no lookup, no extra branch. Nothing is
 read from the engine's native-function table, and nothing is written, until the
-first `Hooks.Hook()` call in the process.
+first `Hooks.Install()` or `Hooks.Request()` call in the process.
 
 - **Blueprint functions: two bytes.** A function's bytecode (`UStruct::Script`,
   a heap array) ends in exactly one `EX_Return`, followed by `EX_Nothing` and
@@ -243,13 +243,14 @@ first `Hooks.Hook()` call in the process.
 - **Lifetime.** Hook entries live in one process-wide table and are never freed
   while the DLL is resident. Unhooking restores both bytes (or the `Func`
   pointer) and leaves the entry inert so a frame already inside a handler
-  finishes normally. A hook on a class that is not loaded yet stays pending and
-  attaches when the class object appears. A deleted `UFunction` orphans its
-  entry (nothing is written back) and the hook returns to pending. Stopping a
-  Lua session unhooks every hook it owns.
+  finishes normally. A request (`Hooks.Request`) on a class that is not loaded
+  yet stays pending and attaches when the class object appears. A deleted
+  `UFunction` orphans its entry (nothing is written back); an installed hook
+  stays orphaned and a request returns to pending. Stopping a Lua session
+  unhooks every hook it owns.
 
 Settings: `mod_settings.ini` has a toggle, **Enable function hooks**
-(`[Hooks] Enabled`, default on). Off, `Hooks.Hook()` fails with a reason and
+(`[Hooks] Enabled`, default on). Off, `Hooks.Install()` and `Hooks.Request()` fail with a reason and
 `GetCapabilities().hooks_reason` says why.
 
 ### Function hook design reference
@@ -397,16 +398,20 @@ reads at the probe-checked offsets (never UE4SS's dynamic-offset accessors):
 
 - One process-wide table, at most 1,024 distinct functions. Entries are never
   freed while the DLL lives: inert after unhook, reused on rehook.
-- A path that does not resolve leaves the hook **pending** on the Lua side,
-  with the owner class's short name (after the last `.`, before `:`)
-  registered natively as a wake-up name. `NotifyUObjectCreated` queues a
-  wake-up notice (-3) when a created object has that name; Lua then retries in
-  `ExecuteInGameThread`, and also on a one-second timer while anything is
-  pending. A Blueprint function found right after its class appears can still
-  lack its `Script`; that retry stays pending.
+- For `Hooks.Request`, a path that does not resolve leaves the request
+  **pending** on the Lua side, with the owner class's short name (after the
+  last `.`, before `:`) registered natively as a wake-up name. No timer runs.
+  `NotifyUObjectCreated` queues a wake-up notice (-3) when a created object has
+  that name; Lua then retries that request a bounded number of times (next
+  tick, then about 100 ms and 1 s later) and waits for the next wake-up. A
+  Blueprint function found right after its class appears can still lack its
+  `Script`; those bounded retries cover it. Refusals that cannot change
+  (unknown parameter, unsupported kind, not a `UFunction`, layout mismatch)
+  turn the request `failed`. `Hooks.Install` never registers a wake-up.
 - `NotifyUObjectDeleted` on a hooked `UFunction` orphans its entry: nothing is
-  written back, and the session gets a notice (-4) that returns the hook to
-  pending, so the reloaded function attaches again.
+  written back, and the session gets a notice (-4). An installed hook becomes
+  `orphaned`; a request returns to pending, retries in a bounded burst and
+  waits for its class, so the reloaded function attaches again.
 - Stopping a Lua session unhooks everything it owns; queued events for an
   inactive session are discarded at drain.
 
@@ -466,7 +471,7 @@ codes at or below -3 to the hooks block.
 ```
 dispatcher(code, hookId, sequence, phase, gameThread, objAddress, objIndex, objSerial, objPath|nil,
            paramsAvailable, n, name1, tag1, value1, ..., nameN, tagN, valueN)
-code: -10 event; -5 fault (hookId, reason); -4 back to pending (hookId, reason); -3 wake-up (hookId = pending token)
+code: -10 event; -5 fault (hookId, reason); -4 function deleted (hookId, reason); -3 wake-up (hookId = pending token)
 tags: b bool, i integer, n number, s string, e enum ("n|Name"), o object ("address:index:serial[:path]"), x unsupported (nil)
 names: "Param", "Struct.Field", "Arr[i]", "out:Param", "ret", and "@frame" / "@age" for the capture frame and age
 ```

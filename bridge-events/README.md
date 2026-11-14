@@ -14,8 +14,9 @@ native function without turning on a process-wide UE4SS hook.
 - Inspect bindings and dispatch statistics on demand; enable tracing when needed.
 - Tune bounded dispatch queues and per-pass budgets for your workload.
 - Hook individual Blueprint and native functions, Blueprint events included
-  (`Hooks.Hook`), pre and post, with copied parameters, delivered to Lua once per
-  frame on the game thread. A hook on a class that is not loaded yet waits and
+  (`Hooks.Install` and `Hooks.Request`), pre and post, with copied parameters,
+  delivered to Lua once per frame on the game thread. `Install` attaches now or
+  says why not; `Request` also waits for a class that is not loaded yet and
   attaches when it appears. A function nobody hooks costs nothing.
 
 Supply exact live component and subsystem paths. Your mod owns target discovery
@@ -30,7 +31,7 @@ them from the product version.
 
 Function hooks (1.1.0) do not need `HookProcessInternal = 1` in
 `UE4SS-settings.ini`. Once your mods have moved their Blueprint hooks to
-`Hooks.Hook`, set `HookProcessInternal = 0`: UE4SS then stops looking up a
+`Hooks.Install` or `Hooks.Request`, set `HookProcessInternal = 0`: UE4SS then stops looking up a
 callback on every Blueprint function the game enters. Leave
 `HookProcessLocalScriptFunction` at 0 and `HookEngineTick` at UE4SS's default
 (on); the bridge delivers hook events from the engine tick, and falls back to a
@@ -111,19 +112,21 @@ do not establish live-game acceptance or performance.
 
 ## Minimal hook example
 
-Gate on the capability, hook by path on the game thread, and unhook on
-shutdown. The path may name a class that is not loaded yet; the hook then stays
-`pending`. `call.params` holds copies of the parameters, not live objects:
+Gate on the capability, install the hook by path on the game thread, and
+remove it on shutdown. `Hooks.Install` attaches now or returns `nil` and the
+reason; for a class that is not loaded yet, use `Hooks.Request`, which waits
+(`pending`) and attaches when the class loads. `call.params` holds copies of
+the parameters, not live objects:
 
 ```lua
 local Hooks = UE4SSLuaEventBridge.Hooks
 local caps = UE4SSLuaEventBridge.GetCapabilities()
 local hook
 if caps.hooks then
-    -- Hooks.Hook must run on the game thread; a mod's main.lua does not.
+    -- Hooks.Install must run on the game thread; a mod's main.lua does not.
     ExecuteInGameThread(function()
         local err
-        hook, err = Hooks.Hook("/Script/Engine.PlayerController:ClientRestart", {
+        hook, err = Hooks.Install("/Script/Engine.PlayerController:ClientRestart", {
             post = function(call)
                 print(string.format("%s %s #%d\n", call.phase, call.function_path, call.sequence))
             end,
@@ -134,8 +137,8 @@ else
     print("function hooks unavailable: " .. tostring(caps.hooks_reason) .. "\n")
 end
 
--- hook:Status().state is "active", "pending", "orphaned", "failed" or "unhooked".
--- When your mod reloads: hook:Unhook()  (or Hooks.UnhookAll()).
+-- hook:Status().state is "active", "orphaned", "failed" or "removed".
+-- When your mod reloads: hook:Remove()  (or Hooks.RemoveAll()).
 ```
 
 Hook callbacks observe a call after it was made (delivery is queued, once per

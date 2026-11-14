@@ -784,15 +784,24 @@ local caps = UE4SSLuaEventBridge.GetCapabilities()
 -- caps.hooks_sync (false in this version), caps.hooks_frame_delivery (engine-tick drain active)
 ```
 
-An older build returns `false` for all of these. `Hooks.Hook` must run on the
-game thread (`ExecuteInGameThread`).
+An older build returns `false` for all of these. `Hooks.Install` and
+`Hooks.Request` must run on the game thread (`ExecuteInGameThread`).
 
-### `Hooks.Hook(target, options)`
+### `Hooks.Install(target, options)` and `Hooks.Request(target, options)`
+
+Both take the same arguments and return a handle, or `nil, reason`:
+
+- `Hooks.Install` attaches now or refuses. It is never pending and does no
+  background work. If the function is later deleted (level or class reload),
+  the hook becomes `orphaned` and stays so; install again if you need it.
+- `Hooks.Request` is a lasting request. It attaches now if it can; otherwise it
+  stays `pending` and attaches when the owner class loads, and attaches again
+  after a reload deletes the function.
 
 ```lua
 local Hooks = UE4SSLuaEventBridge.Hooks
 
-local h, err = Hooks.Hook("/Game/UI/WBP_Warning.WBP_Warning_C:OnShowWarning", {
+local h, err = Hooks.Request("/Game/UI/WBP_Warning.WBP_Warning_C:OnShowWarning", {
     pre  = function(call) end,          -- either or both
     post = function(call) end,
     params = { "IconType" },            -- optional selection; dotted paths for struct fields
@@ -811,23 +820,32 @@ matches that instance only, not `"Indicator"` or `"Indicator_7"`. To follow one
 particular object rather than a name, use `object`.
 
 `target` is a path `"/Package.Class:Function"` or a live `UFunction` wrapper.
-A path that does not resolve yet becomes a **pending** hook: it is owned by the
-session and attaches by itself when the class appears (the owner class's short
-name is registered as a wake-up) and on a one-second retry while any hook is
-pending. If the function is later deleted (level or class reload) the hook goes
-back to pending and attaches to the new function. A path that resolves to
-something that is not a `UFunction` fails at once.
+`Install` refuses a path that does not resolve (`"not found: <path>"`).
+
+For `Request`, a path that does not resolve yet is **pending**: the session
+owns it, and the owner class's short name is registered as a wake-up. There is
+no periodic timer. When an object with that name is created, the request tries
+again on the next tick, then after about 100 ms and about 1 s, and then waits
+for the next wake-up. A function that is found but refused for a reason that
+may pass (for example, its bytecode is not loaded yet) gets the same bounded
+retries. After a reload deletes the function, the request goes back to
+`pending`, tries the same three times and waits for its class.
 
 Failures return `nil, message`: unknown option, wrong type, `delivery = "sync"`
 (`"sync delivery needs hooks_sync"`), hooks disabled (`[Hooks] Enabled=0`), or a
-native refusal such as `"property layout mismatch"`. A hook that stays refused
-while pending shows the last reason in `h:Status()`.
+native refusal such as `"property layout mismatch"`. Refusals that can never
+succeed (an unknown parameter, a parameter of an unsupported kind, a target that
+is not a `UFunction`, a property layout mismatch) return `nil, message` from
+both calls when they are found at call time. When a pending request finds one
+later, on class load, its handle turns `failed` with the reason, stops retrying
+and is logged as a `WARN` line with the path. A pending request shows the last
+transient reason in `h:Status().reason`.
 
 Parameters are copied by name. Supported kinds: bool, 8..64-bit integers,
 float, double, enum, `FName`, `FString` (up to 4 KiB), object pointers, structs
 of those (depth 3) and fixed arrays. Other kinds (arrays, maps, delegates,
 `FText`, soft pointers) arrive as `nil`; asking for one explicitly in `params`
-fails at `Hook`.
+is a refusal that can never succeed.
 
 ### The callback argument
 
@@ -858,16 +876,17 @@ game thread. Do not compare wrappers with `==`.
 
 A callback error is printed and the hook stays active. After 32 failures in a
 row the hook is disabled and `h:Status()` reports `state = "failed"`. A success
-resets the count.
+resets the count. An installed hook whose function is deleted is logged as a
+`WARN` line with the path when it becomes `orphaned`.
 
 ### Handle and library calls
 
 ```lua
-h:Status()   --> { state = "active"|"pending"|"orphaned"|"failed"|"unhooked", reason = s?,
-                   calls, matched, delivered, dropped, reentries }
-h:Unhook()   --> true | false, reason      -- also removes a pending hook; a repeat call returns false, reason
-Hooks.Unhook(h)
-Hooks.UnhookAll()   --> count, true | count, false, reason
+h:Status()   --> { state = "active"|"orphaned"|"failed"|"removed"  -- requests also "pending"
+                   , reason = s?, calls, matched, delivered, dropped, reentries }
+h:Remove()   --> true | false, reason      -- safe on any status; cancels a pending request
+Hooks.Remove(h)
+Hooks.RemoveAll()   --> count, true | count, false, reason
 Hooks.GetStats()    --> { queued, high_water, rejected, delivery = "tick"|"loop", ticks,
                           update_calls, entries, slots = { a, b }, pending }
 Hooks.Schema(target) --> { { name, kind, offset, size, dim, flags, fields = {...} }, ... } | nil, reason
@@ -875,11 +894,14 @@ Hooks.Schema(target) --> { { name, kind, offset, size, dim, flags, fields = {...
 
 `calls` counts handler entries before filters, `matched` the ones that passed
 them, `delivered` those that reached Lua, `dropped` those lost to the per-hook
-or queue limit. Counters survive `Unhook`. `Schema` is a diagnostic: it lists
+or queue limit. Counters survive `Remove`. `Remove` returns `true` for a
+pending, failed, orphaned or already removed handle; it returns `false, reason`
+only when the native side refuses to detach an active hook, which then stays
+active. `Schema` is a diagnostic: it lists
 what the bridge would copy for a resolved function.
 
-Hot reload unhooks everything the session owns when the Lua state stops. Call
-`Hooks.UnhookAll()` yourself when you tear down earlier. The bridge DLL itself
+Hot reload removes every hook the session owns when the Lua state stops. Call
+`Hooks.RemoveAll()` yourself when you tear down earlier. The bridge DLL itself
 stays loaded once any hook has been used: restarting the C++ mods leaves no
 Event Bridge until the game restarts (see
 [Session cleanup and rebinding](#session-cleanup-and-rebinding)).
@@ -888,7 +910,7 @@ Event Bridge until the game restarts (see
 
 ```lua
 ExecuteInGameThread(function()
-    local h, err = UE4SSLuaEventBridge.Hooks.Hook(
+    local h, err = UE4SSLuaEventBridge.Hooks.Install(
         "/Game/UI/WBP_Warning.WBP_Warning_C:OnShowWarning", {
             params = { "IconType" },
             -- An enum arrives as { value = n, name = "..." }.
