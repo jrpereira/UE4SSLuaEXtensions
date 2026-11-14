@@ -7,6 +7,7 @@
 #include <sstream>
 #include <BindingSnapshot.hpp>
 #include <LexReport.hpp>
+#include <ObjectReads.hpp>
 #include <cstring>
 #include <new>
 #include <string_view>
@@ -21,8 +22,6 @@
 extern "C" __declspec(dllimport) unsigned long UE4SSLEB_WINAPI GetCurrentThreadId();
 extern "C" __declspec(dllimport) void UE4SSLEB_WINAPI OutputDebugStringA(const char* output);
 
-extern "C" __declspec(dllimport) void* UE4SSLEB_WINAPI GetCurrentProcess();
-extern "C" __declspec(dllimport) int UE4SSLEB_WINAPI ReadProcessMemory(void*, const void*, void*, std::size_t, std::size_t*);
 
 #undef UE4SSLEB_WINAPI
 
@@ -627,19 +626,12 @@ std::pair<std::string, std::string> EnhancedInputBackend::inspect_target(LuaSess
     if (found == targets_.end() || found->second.session != &session || inactive_sessions_.contains(&session))
         return {{}, "Enhanced Input target is unknown, stopped, or belongs to another Lua session"};
     const auto read = [](const void* source, void* destination, std::size_t size) {
-        std::size_t copied{};
-        return source && ReadProcessMemory(GetCurrentProcess(), source, destination, size, &copied) && copied == size;
+        return safe_read(source, destination, size);
     };
-    const auto resolve = [&](const FWeakObjectPtr& weak) -> UObject* {
-        if (weak.object_serial_number == 0 || weak.object_index < 0) return nullptr;
-        const auto* item = RC::Unreal::FUObjectArray::IndexToObject(weak.object_index);
-        if (!item) return nullptr;
-        UObject* object{};
-        int32_t serial{};
-        const auto address = reinterpret_cast<std::uintptr_t>(item);
-        if (!read(reinterpret_cast<const void*>(address), &object, sizeof(object)) ||
-            !read(reinterpret_cast<const void*>(address + FWeakObjectPtr::object_item_serial_offset), &serial, sizeof(serial))) return nullptr;
-        return serial == weak.object_serial_number ? object : nullptr;
+    const auto resolve = [](const FWeakObjectPtr& weak) -> UObject* {
+        if (weak.object_serial_number == 0) return nullptr;
+        const auto slot = read_slot(weak.object_index);
+        return slot && slot->serial == weak.object_serial_number ? reinterpret_cast<UObject*>(slot->object) : nullptr;
     };
     auto* component = resolve(found->second.component);
     ABI::ActionEventBindingArray array{};

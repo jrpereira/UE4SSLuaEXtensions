@@ -12,6 +12,7 @@
 #include <LifetimeProbe.hpp>
 #include <LexImplementation.hpp>
 #include <LexReport.hpp>
+#include <ObjectReads.hpp>
 
 #include <array>
 #include <atomic>
@@ -50,9 +51,6 @@ extern "C" __declspec(dllimport) unsigned long UE4SSLEB_WINAPI GetEnvironmentVar
     const char* name, char* buffer, unsigned long size);
 
 extern "C" __declspec(dllimport) void UE4SSLEB_WINAPI OutputDebugStringA(const char* message);
-extern "C" __declspec(dllimport) void* UE4SSLEB_WINAPI GetCurrentProcess();
-extern "C" __declspec(dllimport) int UE4SSLEB_WINAPI ReadProcessMemory(
-    void*, const void*, void*, std::size_t, std::size_t*);
 
 #undef UE4SSLEB_WINAPI
 
@@ -207,12 +205,7 @@ constexpr std::size_t chunk_triplets = 5;
 // the mod object.
 std::atomic_bool hooks_started{};
 
-bool safe_read(const void* source, void* destination, std::size_t size)
-{
-    std::size_t copied{};
-    return source != nullptr && ReadProcessMemory(GetCurrentProcess(), source, destination, size, &copied) != 0 &&
-        copied == size;
-}
+using UE4SSLuaEventBridge::safe_read;
 
 // A member of a live object, at a fixed offset.
 template <typename T>
@@ -243,27 +236,9 @@ Hooks::ObjectIdentity live_identity(std::uintptr_t object)
 // The same for a parameter value, which may hold any pointer: every read is checked.
 Hooks::ObjectIdentity checked_identity(std::uintptr_t object)
 {
-    Hooks::ObjectIdentity identity{object, -1, 0};
-    int32_t index{};
-    if (object == 0 ||
-        !safe_read(reinterpret_cast<const void*>(object + RC::Unreal::FWeakObjectPtr::uobject_internal_index_offset),
-            &index, sizeof(index)) ||
-        index < 0)
-        return identity;
-    const auto* item = RC::Unreal::FUObjectArray::IndexToObject(index);
-    if (item == nullptr) return identity;
-    const auto item_address = reinterpret_cast<std::uintptr_t>(item);
-    std::uintptr_t indexed{};
-    int32_t serial{};
-    if (!safe_read(reinterpret_cast<const void*>(item_address + RC::Unreal::FWeakObjectPtr::object_item_object_offset),
-            &indexed, sizeof(indexed)) ||
-        indexed != object ||
-        !safe_read(reinterpret_cast<const void*>(item_address + RC::Unreal::FWeakObjectPtr::object_item_serial_offset),
-            &serial, sizeof(serial)))
-        return identity;
-    identity.index = index;
-    identity.serial = serial;
-    return identity;
+    const auto read = UE4SSLuaEventBridge::read_identity(object);
+    if (!read) return Hooks::ObjectIdentity{object, -1, 0};
+    return Hooks::ObjectIdentity{object, read->index, read->serial};
 }
 
 std::string wide_to_utf8(const std::wstring& text)
@@ -1439,31 +1414,9 @@ private:
         bool require_serial = true)
     {
         if (!address || (require_game_thread && !RC::Unreal::IsInGameThread())) return {};
-        const auto read = [](const void* source, void* destination, std::size_t size) {
-            std::size_t copied{};
-            return source && ReadProcessMemory(
-                GetCurrentProcess(), source, destination, size, &copied) && copied == size;
-        };
-        int32_t index{};
-        if (!read(
-                reinterpret_cast<const void*>(
-                    address + RC::Unreal::FWeakObjectPtr::uobject_internal_index_offset),
-                &index,
-                sizeof(index)) || index < 0) return {};
-        const auto* item = RC::Unreal::FUObjectArray::IndexToObject(index);
-        if (!item) return {};
-        RC::Unreal::UObject* indexed_object{};
-        int32_t serial{};
-        const auto item_address = reinterpret_cast<std::uintptr_t>(item);
-        if (!read(reinterpret_cast<const void*>(item_address), &indexed_object, sizeof(indexed_object)) ||
-            !read(
-                reinterpret_cast<const void*>(
-                    item_address + RC::Unreal::FWeakObjectPtr::object_item_serial_offset),
-                &serial,
-                sizeof(serial)) ||
-            reinterpret_cast<std::uintptr_t>(indexed_object) != address || serial < 0 ||
-            (require_serial && serial == 0)) return {};
-        return UE4SSLuaEventBridge::ObjectLifetimeIdentity{address, index, serial};
+        const auto read = UE4SSLuaEventBridge::read_identity(address);
+        if (!read || read->serial < 0 || (require_serial && read->serial == 0)) return {};
+        return UE4SSLuaEventBridge::ObjectLifetimeIdentity{address, read->index, read->serial};
     }
 
     // Returns how many live objects were checked and how many verified the
@@ -1473,11 +1426,6 @@ private:
     static std::pair<std::size_t, std::size_t> probe_lifetime_abi()
     {
         constexpr int32_t probe_index_limit = 4096;
-        const auto read = [](const void* source, void* destination, std::size_t size) {
-            std::size_t copied{};
-            return source && ReadProcessMemory(
-                GetCurrentProcess(), source, destination, size, &copied) && copied == size;
-        };
         std::size_t checked{};
         std::size_t verified{};
         try
@@ -1486,7 +1434,7 @@ private:
             {
                 const auto* item = RC::Unreal::FUObjectArray::IndexToObject(index);
                 RC::Unreal::UObject* object{};
-                if (!item || !read(item, &object, sizeof(object)) || !object) continue;
+                if (!item || !safe_read(item, &object, sizeof(object)) || !object) continue;
                 ++checked;
                 const auto address = reinterpret_cast<std::uintptr_t>(object);
                 const auto first = read_object_identity(address, false);
