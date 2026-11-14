@@ -127,7 +127,7 @@ function UE4SSLuaEventBridge_InspectInputComponent(session, target)
     return "snapshot target=" .. target
 end
 function UE4SSLuaEventBridge_IsInGameThread() return gameThread end
-function UE4SSLuaEventBridge_GetDispatchStats() return 7,42,3,5 end
+function UE4SSLuaEventBridge_GetDispatchStats() return 7,42,3,5,"tick" end
 function UE4SSLuaEventBridge_OpenInputComponent(_session, ...)
     counters.targets_opened = counters.targets_opened + 1
     return counters.targets_opened
@@ -396,6 +396,7 @@ end
 local beforeContexts=countEntries(subsystem.active)
 local stats=bridge.GetDispatchStats()
 expect(stats.queued==7 and stats.queue_high_water==42 and stats.rejected_events==3 and stats.rejected_traces==5)
+expect(stats.delivery=="tick")
 local beforeBindings=countEntries(nativeTokens)
 for _=1,500 do
     local scope=assert(Helpers.OpenInput({component_path='TestComponent',subsystem_path=subsystemPath}))

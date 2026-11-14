@@ -2,7 +2,8 @@
 
 // The event bridge's hook part of the pinned UE4SS 97b7e501 ABI: UFunction and
 // bytecode access, FFrame accessors, the property reflection that builds
-// parameter schemas, and the engine-tick callback. Primitives that live inside
+// parameter schemas. The engine-tick callback, shared with the file bridge, is
+// in UE4SSLuaABI.hpp. Primitives that live inside
 // classes UE4SSABI.hpp already defines (UObjectBase, UStruct, FName, TArray) are
 // declared there. Imports resolve through shared/ue4ss-abi/UE4SS-97b7e501.def.
 // Portable types (schemas, events, limits) are in HookTypes.hpp.
@@ -142,20 +143,7 @@ UE4SS_IMPORT void* FindOutParamValueAddress(FFrame& stack, FProperty* property);
 
 // UE4SS's pointer to the engine's FNativeFuncPtr GNatives[EX_Max].
 UE4SS_IMPORT extern UE4SSLuaEventBridge::Hooks::NativeFuncPtr* GNatives_Internal;
-
-namespace Hook
-{
-// Runs on the game thread after UEngine::Tick. Requires the engine-tick detour
-// (UE4SSRuntime::IsEngineTickAvailable()); there is no matching unregister for
-// this overload, so the callback checks an inert flag first.
-UE4SS_IMPORT void RegisterEngineTickPostCallback(std::function<void(UEngine*, float)> callback);
 }
-}
-
-struct UE4SSRuntime
-{
-    UE4SS_IMPORT static bool IsEngineTickAvailable();
-};
 }
 
 #endif

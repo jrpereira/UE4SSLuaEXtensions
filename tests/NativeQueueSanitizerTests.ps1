@@ -9,6 +9,7 @@ try {
         QueueBuffersTests = 'shared/dispatch/tests/QueueBuffersTests.cpp'
         NativeBackendLifecycleTests = 'bridge-events/tests/NativeBackendLifecycleWinTests.cpp'
         NativeHooksLifecycleTests = 'bridge-events/tests/NativeHooksLifecycleWinTests.cpp'
+        NativeDeliveryThreadsTests = 'bridge-events/tests/NativeDeliveryThreadsWinTests.cpp'
     }
     foreach ($suite in $sources.Keys) {
         $source = $sources[$suite]
@@ -20,5 +21,5 @@ try {
         & (Resolve-Path -LiteralPath $executable).Path
         if ($LASTEXITCODE -ne 0) { throw "AddressSanitizer $suite failed" }
     }
-    Write-Output 'AddressSanitizer native queue, backend and hook lifecycle tests passed'
+    Write-Output 'AddressSanitizer native queue, backend, hook lifecycle and delivery thread tests passed'
 } finally { Pop-Location }

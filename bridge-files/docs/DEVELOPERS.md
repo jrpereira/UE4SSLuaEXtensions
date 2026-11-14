@@ -251,8 +251,12 @@ local subscription = assert(files.Tail(inbox, function(line, info)
 end, { from = "start" }))
 ```
 
-- The callback runs from the bridge's update callback, **not on the game
-  thread**. Schedule Unreal work with `ExecuteInGameThread`.
+- With UE4SS's engine-tick detour (the normal case) the callback runs on the
+  **game thread**, from the bridge's engine-tick callback, once per frame, the
+  same thread as every UE4SSLuaEventBridge callback. Without the detour
+  (`HookEngineTick = 0`) it runs from the bridge's update callback, not on the
+  game thread; schedule Unreal work with `ExecuteInGameThread` there. UE4SS.log
+  says which one at startup.
 - Delivery is budgeted per pass and usually arrives within a frame or so of
   the writer's write. The file is the buffer: a slow reader falls behind but
   doesn't lose lines, unless the file is truncated or replaced first.
@@ -386,8 +390,12 @@ defaults:
 At least one line is delivered per pass that has data, and a slow callback can
 still exceed the time allowance; the budget isn't preemptive.
 
-File reads are capped too, so polling many busy files can't stall UE4SS's
-update thread. Each pass (20 per second by default) reads at most 256 KiB in
+With the engine tick the delivery budget applies to every frame, so it costs
+frame time.
+
+Files are read from UE4SS's update thread, not the game thread, and the reads
+are capped too, so polling many busy files can't stall it. Each polling pass
+(20 per second by default) reads at most 256 KiB in
 total across all subscriptions and at most 64 KiB from any one file, visiting
 subscriptions round-robin so one busy file can't starve the rest. These are
 tuning values, not capacity limits: nothing fails when they are reached, and

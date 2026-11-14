@@ -76,8 +76,9 @@ local text = files.ReadText("mod/state.json")
 local saves = files.AddPath("savegames", { mode = "rw", extensions = { "sav" } })
 ```
 
-File operations don't need the game thread. `Tail` callbacks run from the
-bridge's update callback, not on the game thread. The examples are untested in
+File operations don't need the game thread. `Tail` callbacks run on the game
+thread from the engine tick (or, without UE4SS's engine-tick detour, from the
+bridge's update callback, not on the game thread). The examples are untested in
 the game until the first in-game acceptance run.
 
 ## Documentation

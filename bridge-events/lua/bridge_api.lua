@@ -175,22 +175,21 @@ local bridge = {
     API_VERSION = 7,
     GetVersion = UE4SSLuaEventBridge_GetVersion,
     GetDispatchStats = function()
-        local queued, highWater, rejected, tracesRejected = UE4SSLuaEventBridge_GetDispatchStats()
+        local queued, highWater, rejected, tracesRejected, delivery = UE4SSLuaEventBridge_GetDispatchStats()
         if queued == nil then return nil, "bridge unavailable" end
         return {queued=queued, queue_high_water=highWater, rejected_events=rejected,
-            rejected_traces=tracesRejected}
+            rejected_traces=tracesRejected, delivery=delivery}
     end,
     GetCapabilities = function()
         local api, enhancedInput, explicitTarget, helpers, dynamicInput,
             triggerTap, triggerHold, detailedErrors, debugTracing, target, bindingSnapshot,
-            targetDeliveryFaults, loopStart, objectLifetimes, objectLifetimesReason =
+            targetDeliveryFaults, loopStart, objectLifetimes, objectLifetimesReason, frameDelivery =
             UE4SSLuaEventBridge_GetCapabilities()
         -- Hook fields come from their own native: one native returns at most
         -- 20 values (LUA_MINSTACK).
-        local hooks, hooksReason, hooksBp, hooksNative, hooksSync, hooksFrameDelivery
+        local hooks, hooksReason, hooksBp, hooksNative, hooksSync
         if UE4SSLuaEventBridge_HooksEnabled ~= nil then
-            hooks, hooksReason, hooksBp, hooksNative, hooksSync, hooksFrameDelivery =
-                UE4SSLuaEventBridge_HooksEnabled()
+            hooks, hooksReason, hooksBp, hooksNative, hooksSync = UE4SSLuaEventBridge_HooksEnabled()
         end
         return {
             api = api,
@@ -210,12 +209,12 @@ local bridge = {
             object_lifetimes_reason = objectLifetimes ~= true and objectLifetimesReason or nil,
             weak_handles = objectLifetimes == true,
             loss_opt_in = objectLifetimes == true,
+            frame_delivery = frameDelivery == true,
             hooks = hooks == true,
             hooks_reason = hooks ~= true and hooksReason or nil,
             hooks_bp = hooksBp == true,
             hooks_native = hooksNative == true,
             hooks_sync = hooksSync == true,
-            hooks_frame_delivery = hooksFrameDelivery == true,
         }
     end,
     SetTargetDeliveryFaultHandler = function(target, callback)

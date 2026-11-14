@@ -27,6 +27,28 @@
   are logged as a `WARN` line with the function path.
 - `h:Remove()` is safe on any status: pending, active, orphaned, failed or
   already removed.
+- Fix a race that could corrupt a mod's Lua state: input callbacks ran on
+  UE4SS's event-loop thread while function-hook callbacks for the same mod ran
+  on the game thread, with nothing keeping the two apart. Every bridge
+  callback now runs on one thread.
+- With UE4SS's engine-tick detour (the default), input, delivery-fault, trace
+  and `onLoopStart` callbacks run on the game thread, once per frame from the
+  engine tick, in the same frame as the input and after the frame's hook
+  events. Callbacks may touch UObjects directly; `ExecuteInGameThread`
+  wrappers keep working, one frame later. Without the detour every callback,
+  hooks included, runs from the event loop as before.
+- `onLoopStart` callbacks still wait until the whole Lua-mod batch has
+  started; with the engine tick they arrive on the next frame after that.
+- Breaking: `GetCapabilities().hooks_frame_delivery` is replaced by
+  `frame_delivery`, which covers every callback. `GetDispatchStats()` adds
+  `delivery = "tick"|"loop"`.
+- `UE4SSLEB_MAX_DISPATCH_US` defaults to 500 microseconds instead of 2,000,
+  since the input pass now runs every frame. `UE4SSLEB_QUEUE_CHECKS_PER_SECOND`
+  applies only without the engine tick.
+- With the engine tick, the bridge DLL stays loaded until the game exits:
+  UE4SS cannot unregister the tick callback. Restarting the C++ mods then
+  needs a game restart, as it already did once a hook had been used.
+  Lua-mod hot reload is unaffected.
 
 ## v1.2.2
 

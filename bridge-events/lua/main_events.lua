@@ -87,6 +87,13 @@ local function main()
         check("GetDispatchStats fields", type(stats) == "table" and type(stats.queued) == "number"
             and type(stats.queue_high_water) == "number" and type(stats.rejected_events) == "number"
             and type(stats.rejected_traces) == "number")
+        if stats and stats.delivery == nil then
+            log("NOTE delivery is not decided yet: Lua mods started before Unreal initialization")
+        else
+            check("GetDispatchStats delivery matches frame_delivery", stats ~= nil
+                and (stats.delivery == "tick" or stats.delivery == "loop")
+                and (stats.delivery == "tick") == (caps.frame_delivery == true), stats and stats.delivery)
+        end
         if stats and (stats.rejected_events or 0) > 0 then
             log("NOTE rejected_events=" .. stats.rejected_events .. ": input was lost earlier in this process")
         end
@@ -136,8 +143,8 @@ local function main()
         check("capability hooks_bp is a boolean", type(caps.hooks_bp) == "boolean", caps.hooks_bp)
         check("capability hooks_native is a boolean", type(caps.hooks_native) == "boolean", caps.hooks_native)
         check("capability hooks_sync is false in this version", caps.hooks_sync == false, caps.hooks_sync)
-        check("capability hooks_frame_delivery is a boolean", type(caps.hooks_frame_delivery) == "boolean",
-            caps.hooks_frame_delivery)
+        check("capability frame_delivery is a boolean", type(caps.frame_delivery) == "boolean",
+            caps.frame_delivery)
         check("capability hooks_reason is a string or nil",
             caps.hooks_reason == nil or type(caps.hooks_reason) == "string", caps.hooks_reason)
         if caps.hooks == false then
@@ -205,9 +212,9 @@ local function main()
                 return
             end
             live = true
-            check("hooks_frame_delivery matches GetStats().delivery", (function()
+            check("frame_delivery matches Hooks.GetStats().delivery", (function()
                 local stats = Hooks.GetStats()
-                return type(stats) == "table" and (stats.delivery == "tick") == caps.hooks_frame_delivery
+                return type(stats) == "table" and (stats.delivery == "tick") == caps.frame_delivery
             end)(), "see GetStats().delivery")
 
             local stats = Hooks.GetStats()
@@ -478,6 +485,8 @@ local function main()
         Bridge.onLoopStart(function()
             loopStarted = true
             check("onLoopStart callback ran", true)
+            check("onLoopStart runs on the game thread exactly when frame_delivery",
+                UE4SSLuaEventBridge_IsInGameThread() == (Bridge.GetCapabilities().frame_delivery == true))
             check("a cancelled callback did not run", cancelled == false)
             ExecuteInGameThread(function() group("engine stage", engineStage) end)
         end)
@@ -592,6 +601,7 @@ local function main()
 
             local tap, tapError = input:Bind(LISTEN_KEY, Trigger.Tap, function(event)
                 listening.tap = listening.tap + 1
+                listening.tapGameThread = UE4SSLuaEventBridge_IsInGameThread()
                 log("NOTE tap delivered: key=" .. tostring(event.key) .. " phase=" .. tostring(event.phase))
             end, { threshold_seconds = 0.2 })
             check("Bind Tap", tap ~= nil, tapError)
@@ -621,7 +631,13 @@ local function main()
             if waited < LISTEN_SECONDS then return false end
             ExecuteInGameThread(function()
                 group("helper delivery and close", function()
-                    if listening.tap > 0 then pass("Tap delivered") else skip("Tap delivery", "no tap observed") end
+                    if listening.tap > 0 then
+                        pass("Tap delivered")
+                        check("input callbacks run on the game thread exactly when frame_delivery",
+                            listening.tapGameThread == (Bridge.GetCapabilities().frame_delivery == true))
+                    else
+                        skip("Tap delivery", "no tap observed")
+                    end
                     if listening.hold > 0 then pass("Hold delivered") else skip("Hold delivery", "no hold observed") end
                     check("Close", input:Close() == true)
                     check("Close twice", input:Close() == true)

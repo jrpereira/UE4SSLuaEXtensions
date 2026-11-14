@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- With UE4SS's engine-tick detour (the default), `Tail` callbacks run on the
+  game thread, once per frame from the engine tick, the thread that also runs
+  every UE4SSLuaEventBridge callback, so a mod that uses both bridges never
+  has two of their callbacks in its Lua state at once. Files are still read
+  from UE4SS's update thread. Without the detour, callbacks run from the
+  update callback as before.
+- With the engine tick, the bridge DLL stays loaded until the game exits:
+  UE4SS cannot unregister the tick callback. Lua-mod hot reload is
+  unaffected.
+
 ## v1.0.1
 
 First release of UE4SSLuaFileBridge, file and folder access for UE4SS Lua mods

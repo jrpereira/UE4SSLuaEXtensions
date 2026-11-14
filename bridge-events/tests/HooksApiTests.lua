@@ -83,7 +83,7 @@ local function fixture(options)
         pendingNames = {}, forgotten = {}, unhooked = {}, gameThread = true,
         nextHook = 0, refuse = nil, unhookFails = false, enabled = true,
         capabilities = options.capabilities or { 6, true, true, true, true, true, true, true, true,
-            "97b7e501", true, true, true, true, nil, true, nil, true, true, false, true },
+            "97b7e501", true, true, true, true, nil, true, true, nil, true, true, false },
     }
     local env = setmetatable({ __UE4SSLuaEventBridge_SessionId = 5 }, { __index = _G })
     env.print = function(text) w.printed[#w.printed + 1] = text end
@@ -93,14 +93,14 @@ local function fixture(options)
     env.ExecuteInGameThreadWithDelay = function(ms, fn) w.timers[#w.timers + 1] = { ms = ms, fn = fn } end
     env.UE4SSLuaEventBridge_GetVersion = function() return "test" end
     env.UE4SSLuaEventBridge_IsInGameThread = function() return w.gameThread end
-    -- Positions 1-15 come from GetCapabilities, 16-21 from HooksEnabled.
+    -- Positions 1-16 come from GetCapabilities, 17-21 from HooksEnabled.
     env.UE4SSLuaEventBridge_GetCapabilities = function()
-        return table.unpack(w.capabilities, 1, 15)
+        return table.unpack(w.capabilities, 1, 16)
     end
     if not options.oldNative then
         env.UE4SSLuaEventBridge_HooksEnabled = function()
-            if not w.enabled then return false, "disabled by Enabled=0", false, false, false, false end
-            return table.unpack(w.capabilities, 16, 21)
+            if not w.enabled then return false, "disabled by Enabled=0", false, false, false end
+            return table.unpack(w.capabilities, 17, 21)
         end
         env.UE4SSLuaEventBridge_HookFunction = function(...)
             local args = table.pack(...)
@@ -250,20 +250,21 @@ suite.run("capabilities and unavailable natives", function()
     local w = fixture()
     local caps = w.api.GetCapabilities()
     expect(caps.hooks == true and caps.hooks_bp == true and caps.hooks_native == true)
-    expect(caps.hooks_sync == false and caps.hooks_frame_delivery == true and caps.hooks_reason == nil)
+    expect(caps.hooks_sync == false and caps.hooks_reason == nil)
+    expect(caps.frame_delivery == true and caps.hooks_frame_delivery == nil)
     expect(caps.object_lifetimes == true, "existing fields unchanged")
 
     local old = fixture({ capabilities = { 6, true, true, true, true, true, true, true, true,
         "97b7e501", true, true, true, true } , oldNative = true })
     caps = old.api.GetCapabilities()
     expect(caps.hooks == false and caps.hooks_bp == false and caps.hooks_native == false)
-    expect(caps.hooks_sync == false and caps.hooks_frame_delivery == false and caps.hooks_reason == nil)
+    expect(caps.hooks_sync == false and caps.frame_delivery == false and caps.hooks_reason == nil)
     local handle, message = old.Hooks.Install(PATH, { pre = noop })
     expect(handle == nil and message:find("not available", 1, true), tostring(message))
     expect(old.Hooks.GetStats() == nil)
 
     local off = fixture({ capabilities = { 6, true, true, true, true, true, true, true, true,
-        "97b7e501", true, true, true, true, nil, false, "turned off", false, false, false, false } })
+        "97b7e501", true, true, true, true, nil, false, false, "turned off", false, false, false } })
     expect(off.api.GetCapabilities().hooks_reason == "turned off")
     off.enabled = false
     handle, message = off.Hooks.Install(PATH, { pre = noop })

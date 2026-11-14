@@ -52,9 +52,10 @@ native, Lua and documentation tracks together. One point is still pending; see
   calls from a Lua thread it didn't register; there every operation returns
   `nil, "invalid", message` (`AddPath` raises). Call the bridge outside the
   coroutine and pass results in.
-- **Callbacks** (`Tail`) run on the mod's root Lua state, from the bridge's
-  update callback, not on the game thread; schedule Unreal work with
-  `ExecuteInGameThread`.
+- **Callbacks** (`Tail`) run on the mod's root Lua state, on the game thread
+  from the bridge's engine-tick callback when UE4SS's engine-tick detour exists
+  (the normal case), otherwise from the bridge's update callback, not on the
+  game thread, where Unreal work must be scheduled with `ExecuteInGameThread`.
 - **Isolation.** Every Lua environment (each mod's Lua state) receives its own
   `UE4SSLuaFileBridge`. Environments, streams and subscriptions belong to the Lua
   environment that created them and are closed when it stops or reloads. After
@@ -706,9 +707,11 @@ Folder missing: `not_found`.
 
 **Delivery.** The bridge checks subscribed files from its update callback, using
 the dispatch schedule and budget code it shares with UE4SSLuaEventBridge, and
-calls `fn` on the mod's root Lua state, from the bridge's update callback (not
-the game thread), within the per-pass dispatch budget. Text left over when
-the budget runs out is delivered on the next pass, in order. The file itself is
+calls `fn` on the mod's root Lua state within the per-pass dispatch budget:
+on the game thread, once per frame from its engine-tick callback, when UE4SS's
+engine-tick detour exists (the thread of every UE4SSLuaEventBridge callback),
+otherwise from the update callback itself, not on the game thread. Text left
+over when the budget runs out is delivered on the next pass, in order. The file itself is
 the buffer: the bridge reads only what it delivers, so a slow subscriber falls
 behind but loses nothing (unless the file is truncated or rotated first). Expect
 delivery in the next frame or so after the writer's flush. A line longer than

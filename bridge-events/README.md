@@ -34,9 +34,9 @@ Function hooks (1.1.0) do not need `HookProcessInternal = 1` in
 `Hooks.Install` or `Hooks.Request`, set `HookProcessInternal = 0`: UE4SS then stops looking up a
 callback on every Blueprint function the game enters. Leave
 `HookProcessLocalScriptFunction` at 0 and `HookEngineTick` at UE4SS's default
-(on); the bridge delivers hook events from the engine tick, and falls back to a
-slower event-loop drain without it (`GetCapabilities().hooks_frame_delivery`
-tells you which). Mods that still use UE4SS `RegisterHook` on Blueprint
+(on); the bridge delivers hook events, input and every other callback from the
+engine tick on the game thread, and falls back to a slower event-loop drain
+without it (`GetCapabilities().frame_delivery` tells you which). Mods that still use UE4SS `RegisterHook` on Blueprint
 functions keep needing `HookProcessInternal = 1`.
 
 ## Installation layout

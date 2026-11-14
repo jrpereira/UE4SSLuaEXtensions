@@ -9,6 +9,7 @@
 #include <FileBridgePaths.hpp>
 #include <FileBridgePolicy.hpp>
 #include <FileBridgeRecords.hpp>
+#include <FileBridgeTailDelivery.hpp>
 #include <FileBridgeText.hpp>
 #include <LexImplementation.hpp>
 #include <LexReport.hpp>
@@ -17,6 +18,7 @@
 
 #include <dispatch/DispatchBacklog.hpp>
 #include <dispatch/DispatchBudget.hpp>
+#include <dispatch/LuaDispatchGate.hpp>
 #include <dispatch/QueueDispatchSchedule.hpp>
 
 #include <algorithm>
@@ -173,6 +175,19 @@ struct Pending
 class FileBridgeMod;
 FileBridgeMod* active_bridge{};
 
+// Which thread delivers Tail callbacks (dispatch/LuaDispatchGate.hpp). Never
+// destroyed: the engine-tick callback can still reach it after the mod object
+// is gone (the DLL then stays loaded).
+UE4SSXB::LuaDispatchGate& lua_gate()
+{
+    static auto* gate = new UE4SSXB::LuaDispatchGate();
+    return *gate;
+}
+
+// Set once the engine-tick post-callback is registered. It has no
+// unregister, so the DLL then stays loaded until the game exits.
+std::atomic_bool tick_registered{};
+
 std::string session_gone()
 {
     return "Lua session is not registered or is stopping";
@@ -203,6 +218,7 @@ public:
 
     ~FileBridgeMod() override
     {
+        stop_delivery();
         std::vector<std::shared_ptr<Session>> all;
         {
             std::scoped_lock lock(sessions_mutex_);
@@ -212,15 +228,41 @@ public:
         active_bridge = nullptr;
     }
 
+    // Decides the delivery for the process, once: Tail callbacks run from the
+    // engine tick (game thread) if UE4SS's detour exists, the thread that
+    // also runs the event bridge's callbacks, else from on_update.
+    void on_unreal_init() override
+    {
+        auto& gate = lua_gate();
+        if (gate.mode() != UE4SSXB::LuaDelivery::undecided) return;
+        const bool tick = RC::UE4SSRuntime::IsEngineTickAvailable();
+        const auto wanted = tick ? UE4SSXB::LuaDelivery::tick : UE4SSXB::LuaDelivery::loop;
+        if (gate.decide(wanted) != wanted) return;
+        if (tick && !tick_registered.exchange(true, std::memory_order_acq_rel))
+        {
+            RC::Unreal::Hook::RegisterEngineTickPostCallback([](RC::Unreal::UEngine*, float) { on_engine_tick(); });
+        }
+        report(tick ? "Tail delivery: callbacks run once per frame from the engine tick (game thread)"
+                    : "Tail delivery: the engine tick is unavailable, so callbacks run from the event loop");
+    }
+
+    // Event-loop thread: file IO at the queue-check rate, and in loop mode
+    // the delivery as well.
     void on_update() override
     {
         if (!schedule_.due(UE4SSXB::QueueDispatchSchedule::Clock::now())) return;
-        if (backlog_.empty()) collect_tail_deliveries();
-        using Budget = UE4SSXB::DispatchBudget;
-        const Budget budget(Budget::Clock::now(), max_deliveries_, std::chrono::microseconds(max_dispatch_us_));
-        UE4SSXB::dispatch_budgeted(backlog_, budget, [&](Pending pending) { return deliver(pending); },
-            [] { return Budget::Clock::now(); });
-        if (!backlog_.empty()) budget_exhausted_passes_.fetch_add(1, std::memory_order_relaxed);
+        if (tail_.wants_batch()) (void)tail_.offer(collect_tail_deliveries());
+        if (lua_gate().mode() != UE4SSXB::LuaDelivery::loop) return;
+        const UE4SSXB::LuaDispatchGate::Pass pass(lua_gate(), UE4SSXB::LuaDelivery::loop);
+        if (pass) deliver_tail();
+    }
+
+    // Unload: no more passes, then a bounded wait for one already running.
+    // False keeps the DLL loaded: the engine-tick callback has no unregister.
+    [[nodiscard]] bool prepare_for_unload()
+    {
+        stop_delivery();
+        return !tick_registered.load(std::memory_order_acquire);
     }
 
     void on_lua_start(RC::StringViewType mod_name, Lua& lua, Lua& main_lua, Lua& async_lua, Lua* hook_lua) override
@@ -326,6 +368,10 @@ public:
             }
         }
         close_session(*session);
+        // A pass on the consumer thread may be inside this session's Lua
+        // state; it checks `active` before each call. Wait for it, bounded.
+        if (!lua_gate().wait_idle(std::chrono::milliseconds(250)))
+            report("Lua stop: a Tail delivery pass was still running after 250 ms");
         // The Session record stays until bridge destruction; ids are never reused.
     }
 
@@ -449,8 +495,8 @@ private:
     std::atomic<int64_t> next_stream_id_{1};
     std::atomic<int64_t> next_subscription_id_{1};
 
-    UE4SSXB::QueueDispatchSchedule schedule_{UE4SSXB::default_queue_checks_per_second};
-    UE4SSXB::DispatchBacklog<Pending> backlog_;
+    UE4SSXB::QueueDispatchSchedule schedule_{UE4SSXB::default_queue_checks_per_second}; // on_update only
+    Core::TailHandoff<Pending> tail_;
     const uint32_t max_deliveries_{Win32::environment_limit(
         "UE4SSLFB_MAX_EVENTS_PER_PASS", Contract::default_max_deliveries_per_pass, 1000000)};
     const uint32_t max_dispatch_us_{Win32::environment_limit(
@@ -460,6 +506,34 @@ private:
     int64_t last_polled_subscription_{0}; // on_update only
 
     void register_natives(Lua& lua);
+
+    // The engine-tick post-callback (game thread), registered once at Unreal
+    // initialization; the gate's inert flag (from unload) ends it.
+    static void on_engine_tick()
+    {
+        const UE4SSXB::LuaDispatchGate::Pass pass(lua_gate(), UE4SSXB::LuaDelivery::tick);
+        if (!pass) return;
+        if (auto* bridge = active_bridge) bridge->deliver_tail();
+    }
+
+    // Consumer thread: the offered Tail batch, within the per-pass budget.
+    void deliver_tail()
+    {
+        using Budget = UE4SSXB::DispatchBudget;
+        const Budget budget(Budget::Clock::now(), max_deliveries_, std::chrono::microseconds(max_dispatch_us_));
+        bool exhausted = false;
+        tail_.deliver(budget, [&](Pending& pending) { return deliver(pending); },
+            [] { return Budget::Clock::now(); }, exhausted);
+        if (exhausted) budget_exhausted_passes_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    static void stop_delivery()
+    {
+        auto& gate = lua_gate();
+        gate.set_inert();
+        if (!gate.wait_idle(std::chrono::milliseconds(1000)))
+            report("unload: a Tail delivery pass was still running after 1 s");
+    }
 
     void empty_temp_folders()
     {
@@ -556,7 +630,7 @@ private:
     // Reads at most Contract::tail_read_bytes_per_pass in total, at most
     // tail_read_bytes_per_subscription from each file, going round-robin by
     // subscription id from where the previous pass stopped.
-    void collect_tail_deliveries()
+    std::vector<Pending> collect_tail_deliveries()
     {
         std::vector<std::pair<std::shared_ptr<Session>, std::shared_ptr<Subscription>>> all;
         {
@@ -568,7 +642,7 @@ private:
                 for (auto& [__, subscription] : session->subscriptions) all.emplace_back(session, subscription);
             }
         }
-        if (all.empty()) return;
+        if (all.empty()) return {};
         std::sort(all.begin(), all.end(), [](const auto& a, const auto& b) { return a.second->id < b.second->id; });
         std::size_t start = 0;
         while (start < all.size() && all[start].second->id <= last_polled_subscription_) ++start;
@@ -602,9 +676,7 @@ private:
                     std::string(Contract::to_string(failed.code)) + "\t" + failed.message, 0, 0});
             }
         }
-        if (batch.empty()) return;
-        (void)backlog_.release_buffer();
-        backlog_.load(std::move(batch));
+        return batch;
     }
 
     bool deliver(Pending& pending)
@@ -1309,8 +1381,10 @@ UE4SSLEB_ModHandle start_implementation()
 
 UE4SSLEB_UninstallResult uninstall_implementation(UE4SSLEB_ModHandle mod)
 {
-    delete static_cast<FileBridgeMod*>(mod);
-    return UE4SSLEB_UNINSTALL_CAN_UNLOAD;
+    auto* bridge = static_cast<FileBridgeMod*>(mod);
+    const bool retain_module = bridge && !bridge->prepare_for_unload();
+    delete bridge;
+    return retain_module ? UE4SSLEB_UNINSTALL_RETAIN_MODULE : UE4SSLEB_UNINSTALL_CAN_UNLOAD;
 }
 
 static_assert(UE4SSLEB_IMPLEMENTATION_MAGIC == Contract::implementation_magic,

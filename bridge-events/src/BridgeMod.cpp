@@ -12,6 +12,7 @@
 #include <LifetimeProbe.hpp>
 #include <LexImplementation.hpp>
 #include <LexReport.hpp>
+#include <LuaDelivery.hpp>
 #include <ObjectReads.hpp>
 
 #include <array>
@@ -62,8 +63,7 @@ struct LuaSession
     RC::LuaMadeSimple::Lua* lua{};
     int32_t dispatcher_ref{};
     std::atomic_bool active{true};
-    bool loop_start_delivered{};
-    std::set<uint64_t> loop_start_callbacks; // tokens ascend: registration order
+    LoopStart loop_start; // guarded by the bridge's session_mutex_
     // Function hooks: the transport helpers built from the dispatcher at Lua
     // start (hook_transport_source in BridgeMod.cpp).
     int32_t hook_push_ref{};
@@ -390,12 +390,23 @@ UE4SSLuaEventBridge::DispatchBudget hook_budget()
         UE4SSLuaEventBridge::DispatchBudget::Clock::now(), events, std::chrono::microseconds(micros));
 }
 
-// The tick drain if UE4SS's engine-tick detour is there, else the event loop.
-bool hook_delivery_is_tick()
+// The Lua consumer (LuaDelivery.hpp): its gate and the loop-mode schedule.
+// Never destroyed: the engine-tick callback can still reach it after the mod
+// object is gone (the DLL then stays loaded).
+UE4SSLuaEventBridge::LuaConsumer& lua_consumer()
 {
-    if (hooks_started.load(std::memory_order_acquire))
-        return hook_runtime().delivery() == Hooks::HookDelivery::tick;
-    return RC::UE4SSRuntime::IsEngineTickAvailable();
+    static auto* consumer = new UE4SSLuaEventBridge::LuaConsumer(configured_queue_check_rate());
+    return *consumer;
+}
+
+// Set once the engine-tick post-callback is registered. It has no
+// unregister, so the DLL then stays loaded until the game exits.
+std::atomic_bool tick_registered{};
+
+// Every bridge-to-Lua call runs from the engine tick (game thread).
+bool delivery_is_tick()
+{
+    return lua_consumer().gate().mode() == UE4SSLuaEventBridge::LuaDelivery::tick;
 }
 
 const char* field_kind_name(Hooks::FieldKind kind)
@@ -740,6 +751,67 @@ constexpr std::string_view hook_transport_source = R"(return function(dispatch)
     return push, flush
 end)";
 
+// Pushes the Lua pass's calls (LuaDelivery.hpp) onto a session's dispatcher.
+// Consumer thread only; each call raises on a Lua error.
+struct LuaSink
+{
+    using Session = UE4SSLuaEventBridge::LuaSession;
+
+    static bool live(const Session* session)
+    {
+        return session && session->active.load(std::memory_order_acquire) && session->lua;
+    }
+
+    static void input(Session& session, const UE4SSLuaEventBridge::EnhancedInputSubscription& subscription,
+        const UE4SSLuaEventBridge::EnhancedInputEvent& event)
+    {
+        const auto& lua = *session.lua;
+        lua.registry().get_function_ref(session.dispatcher_ref);
+        lua.set_integer(static_cast<int64_t>(subscription.callback_token));
+        lua.set_integer(static_cast<int64_t>(event.subscription));
+        lua.set_string(subscription.action_path_utf8);
+        lua.set_string(subscription.phase_name);
+        lua.set_float(event.elapsed_processed);
+        lua.set_float(event.elapsed_triggered);
+        lua.set_number(event.x);
+        lua.set_number(event.y);
+        lua.set_number(event.z);
+        lua.set_integer(static_cast<int64_t>(event.value_type));
+        lua.set_integer(static_cast<int64_t>(event.sequence));
+        lua.call_function(11, 0);
+    }
+
+    static void fault(Session& session, uint64_t target, UE4SSLuaEventBridge::DeliveryFault reason)
+    {
+        const auto& lua = *session.lua;
+        lua.registry().get_function_ref(session.dispatcher_ref);
+        lua.set_integer(-1); // Reserved out-of-band delivery-fault message.
+        lua.set_integer(static_cast<int64_t>(target));
+        lua.set_string(UE4SSLuaEventBridge::delivery_fault_reason(reason));
+        lua.call_function(3, 0);
+    }
+
+    static void trace(Session& session, const std::string& line)
+    {
+        const auto& lua = *session.lua;
+        lua.registry().get_function_ref(session.dispatcher_ref);
+        lua.set_integer(0);
+        lua.set_string(line);
+        lua.call_function(2, 0);
+    }
+
+    static void loop_start(Session& session, uint64_t token)
+    {
+        const auto& lua = *session.lua;
+        lua.registry().get_function_ref(session.dispatcher_ref);
+        lua.set_integer(-2);
+        lua.set_integer(static_cast<int64_t>(token));
+        lua.call_function(2, 0);
+    }
+
+    static void report(std::string_view message, std::string_view detail) { ::report(message, detail); }
+};
+
 class UE4SSLuaEventBridgeMod final :
     public RC::CppUserModBase,
     public RC::Unreal::FUObjectCreateListener,
@@ -760,156 +832,57 @@ public:
     {
         stop_lifecycle_service();
         stop_hooks_for_unload();
+        stop_lua_delivery();
         (void)backend_.shutdown();
         active_mod = nullptr;
     }
 
-    // False keeps the DLL loaded: so does any function hook ever started,
-    // since opcode slots, native thunks and the engine-tick callback point
-    // into this module for the rest of the process.
+    // False keeps the DLL loaded: so does the engine-tick callback, which has
+    // no unregister, and any function hook ever started, since opcode slots
+    // and native thunks point into this module for the rest of the process.
     [[nodiscard]] bool prepare_for_unload()
     {
         stop_lifecycle_service();
         stop_hooks_for_unload();
+        stop_lua_delivery();
         const bool backend_released = backend_.shutdown();
-        return backend_released && !hooks_started.load(std::memory_order_acquire);
+        return backend_released && !hooks_started.load(std::memory_order_acquire) &&
+            !tick_registered.load(std::memory_order_acquire);
     }
 
     void on_unreal_init() override {
         backend_.set_queue_limit(configured_limit("UE4SSLEB_MAX_QUEUED_EVENTS", 65536, 1000000));
         backend_.initialize();
         start_lifetime_service();
+        start_lua_delivery();
     }
 
+    // Event-loop thread. In tick mode no Lua call: it only marks new sessions
+    // ready for their loop-start callbacks (LuaDelivery.hpp).
     void on_update() override
     {
-        if (hooks_started.load(std::memory_order_acquire))
-        {
-            hook_runtime().update(HookClock::now(), hook_budget(),
-                [this](Hooks::QueuedHookEvent& queued) { return deliver_hook_event(queued); },
-                [this](const Hooks::HookNotice& notice) { deliver_hook_notice(notice); },
-                [] { return UE4SSLuaEventBridge::DispatchBudget::Clock::now(); });
-        }
-        flush_loop_start_callbacks();
-        if (!queue_schedule_.due(UE4SSLuaEventBridge::QueueDispatchSchedule::Clock::now())) return;
-        flush_delivery_faults();
-        using Budget = UE4SSLuaEventBridge::DispatchBudget;
-        const Budget budget(Budget::Clock::now(), max_events_per_pass_, std::chrono::microseconds(max_dispatch_us_));
-        if (pending_events_.empty())
-        {
-            backend_.recycle_events(pending_events_.release_buffer());
-            pending_events_.load(backend_.take_events());
-        }
-        UE4SSLuaEventBridge::dispatch_budgeted(pending_events_, budget, [&](auto event) {
-            backend_.consumer_events_remaining(pending_events_.size());
-            flush_delivery_faults();
-            const auto& subscription = event.owner;
-            auto* session = subscription ? subscription->session : nullptr;
-            if (!subscription)
-            {
-                return false;
-            }
-            if (session)
-            {
-                backend_.trace(*session, subscription->debug, "event_dequeued",
-                               subscription->phase_name, event.sequence);
-            }
-            if (!subscription->active.load() || !subscription->delivery_valid())
-            {
-                if (session)
-                {
-                    backend_.trace(
-                        *session,
-                        subscription->debug,
-                        "callback_skipped",
-                        subscription->phase_name,
-                        event.sequence,
-                        "binding_inactive");
-                }
-                return false;
-            }
-            if (!session || !session->active.load() || !session->lua)
-            {
-                if (session)
-                {
-                    backend_.trace(
-                        *session,
-                        subscription->debug,
-                        "callback_skipped",
-                        subscription->phase_name,
-                        event.sequence,
-                        "lua_session_inactive");
-                }
-                return false;
-            }
+        lua_consumer().update(UE4SSLuaEventBridge::LuaConsumer::Clock::now(),
+            [this] { mark_sessions_ready(); },
+            [this] {
+                if (!hooks_started.load(std::memory_order_acquire)) return;
+                hook_runtime().update(HookClock::now(), hook_budget(),
+                    [this](Hooks::QueuedHookEvent& queued) { return deliver_hook_event(queued); },
+                    [this](const Hooks::HookNotice& notice) { deliver_hook_notice(notice); },
+                    [] { return UE4SSLuaEventBridge::DispatchBudget::Clock::now(); });
+            },
+            [this](bool input_due) { deliver_lua_pass(input_due); });
+    }
 
-            try
-            {
-                backend_.trace(
-                    *session,
-                    subscription->debug,
-                    "lua_callback_started",
-                    subscription->phase_name,
-                    event.sequence);
-                const auto& lua = *session->lua;
-                lua.registry().get_function_ref(session->dispatcher_ref);
-                lua.set_integer(static_cast<int64_t>(subscription->callback_token));
-                lua.set_integer(static_cast<int64_t>(event.subscription));
-                lua.set_string(subscription->action_path_utf8);
-                lua.set_string(subscription->phase_name);
-                lua.set_float(event.elapsed_processed);
-                lua.set_float(event.elapsed_triggered);
-                lua.set_number(event.x);
-                lua.set_number(event.y);
-                lua.set_number(event.z);
-                lua.set_integer(static_cast<int64_t>(event.value_type));
-                lua.set_integer(static_cast<int64_t>(event.sequence));
-                lua.call_function(11, 0);
-                backend_.trace(
-                    *session,
-                    subscription->debug,
-                    "lua_callback_completed",
-                    subscription->phase_name,
-                    event.sequence);
-            }
-            catch (const std::exception& callback_error)
-            {
-                backend_.trace(
-                    *session,
-                    subscription->debug,
-                    "lua_callback_failed",
-                    subscription->phase_name,
-                    event.sequence,
-                    callback_error.what());
-                // The binding is disabled below; say so even without tracing.
-                report("input callback for " + subscription->action_path_utf8 + " (" +
-                           subscription->phase_name + ") failed; binding disabled: ",
-                       callback_error.what());
-                // Lua callbacks run on UE4SS's event-loop thread. Deactivate
-                // immediately, then let the next game-thread bridge operation
-                // detach the native binding.
-                backend_.report_delivery_fault(*subscription, UE4SSLuaEventBridge::DeliveryFault::CallbackError);
-                backend_.deactivate(*session, subscription->id);
-                flush_delivery_faults();
-            }
-            catch (...)
-            {
-                backend_.trace(
-                    *session,
-                    subscription->debug,
-                    "lua_callback_failed",
-                    subscription->phase_name,
-                    event.sequence,
-                    "unknown_lua_exception");
-                report("input callback for " + subscription->action_path_utf8 + " (" +
-                       subscription->phase_name + ") failed; binding disabled: unknown exception");
-                backend_.report_delivery_fault(*subscription, UE4SSLuaEventBridge::DeliveryFault::CallbackError);
-                backend_.deactivate(*session, subscription->id);
-                flush_delivery_faults();
-            }
-            return true; // Failed callback attempts also consume the count allowance.
-        }, [] { return Budget::Clock::now(); });
-        flush_debug_traces();
+    // The Lua pass (LuaDelivery.hpp) on the consumer thread: loop-start
+    // callbacks, then, when due, delivery faults, input events and traces.
+    void deliver_lua_pass(bool input_due)
+    {
+        const auto now = [] { return UE4SSLuaEventBridge::DispatchBudget::Clock::now(); };
+        lua_pass_.loop_start(take_due_loop_starts());
+        if (!input_due) return;
+        lua_pass_.faults();
+        lua_pass_.input(now);
+        lua_pass_.traces(now);
     }
 
     void on_lua_start(RC::StringViewType mod_name, Lua& lua, Lua& main_lua, Lua& async_lua, Lua* hook_lua) override
@@ -1050,8 +1023,7 @@ public:
         lifetimes_.stop_session(session->id);
         {
             std::scoped_lock lock(session_mutex_);
-            session->loop_start_callbacks.clear();
-            session->loop_start_delivered = true;
+            session->loop_start.stop();
         }
 
         if (RC::Unreal::IsInGameThread())
@@ -1095,6 +1067,10 @@ public:
             backend_.deactivate_all(*session);
         }
         stop_session_hooks(session->id, RC::Unreal::IsInGameThread());
+        // A pass on the consumer thread may be inside this session's Lua
+        // state; it checks `active` before each call. Wait for it, bounded.
+        if (!lua_consumer().gate().wait_idle(std::chrono::milliseconds(250)))
+            report("Lua stop: a Lua delivery pass was still running after 250 ms");
         session_index_.unbind(session);
         // Keep the inactive record until bridge destruction. Queued events
         // and in-flight child-state calls can still hold its raw address, and
@@ -1150,11 +1126,6 @@ public:
     }
 
 private:
-    UE4SSLuaEventBridge::QueueDispatchSchedule queue_schedule_{configured_queue_check_rate()};
-    const uint32_t max_events_per_pass_{configured_limit("UE4SSLEB_MAX_EVENTS_PER_PASS", 256, 1000000)};
-    const uint32_t max_dispatch_us_{configured_limit("UE4SSLEB_MAX_DISPATCH_US", 2000, 1000000)};
-    UE4SSLuaEventBridge::DispatchBacklog<UE4SSLuaEventBridge::EnhancedInputEvent> pending_events_;
-    UE4SSLuaEventBridge::DispatchBacklog<UE4SSLuaEventBridge::EnhancedInputTrace> pending_traces_;
     UE4SSLuaEventBridge::LifecycleRegistry lifetimes_;
     std::atomic_bool listeners_registered_{};
     std::atomic_bool lifetime_abi_ready_{};
@@ -1201,95 +1172,28 @@ private:
         lifetimes_.shutdown();
     }
 
-    void flush_loop_start_callbacks()
+    // Event-loop thread: sessions started since the last on_update are ready
+    // for their loop-start callbacks (the whole Lua-mod batch has started).
+    void mark_sessions_ready()
     {
-        std::vector<std::pair<UE4SSLuaEventBridge::LuaSession*, uint64_t>> pending;
-        {
-            std::scoped_lock lock(session_mutex_);
-            for (auto& [_, owned] : sessions_)
-            {
-                auto* session = owned.get();
-                if (!session || !session->active.load(std::memory_order_acquire) ||
-                    session->loop_start_delivered) continue;
-                session->loop_start_delivered = true;
-                for (const auto token : session->loop_start_callbacks)
-                    pending.emplace_back(session, token);
-                session->loop_start_callbacks.clear();
-            }
-        }
-        for (const auto& [session, token] : pending)
-        {
-            if (!session->active.load(std::memory_order_acquire) || !session->lua) continue;
-            try
-            {
-                const auto& lua = *session->lua;
-                lua.registry().get_function_ref(session->dispatcher_ref);
-                lua.set_integer(-2);
-                lua.set_integer(static_cast<int64_t>(token));
-                lua.call_function(2, 0);
-            }
-            catch (const std::exception& error)
-            {
-                report("loop-start callback failed: ", error.what());
-            }
-            catch (...)
-            {
-                report("loop-start callback failed: unknown exception");
-            }
-        }
+        std::scoped_lock lock(session_mutex_);
+        for (auto& [_, owned] : sessions_)
+            if (owned && !owned->loop_start.ready) owned->loop_start.mark_ready();
     }
 
-    void flush_delivery_faults()
+    // Consumer thread: the loop-start callbacks due now, per session in
+    // registration order.
+    std::vector<std::pair<UE4SSLuaEventBridge::LuaSession*, uint64_t>> take_due_loop_starts()
     {
-        while (auto fault = backend_.take_delivery_fault()) {
-            auto* session = fault->session;
-            if (!session || !session->active.load(std::memory_order_acquire) || !session->lua) continue;
-            try {
-                const auto& lua = *session->lua;
-                lua.registry().get_function_ref(session->dispatcher_ref);
-                lua.set_integer(-1); // Reserved out-of-band delivery-fault message.
-                lua.set_integer(static_cast<int64_t>(fault->target));
-                lua.set_string(UE4SSLuaEventBridge::delivery_fault_reason(fault->reason));
-                lua.call_function(3, 0);
-            } catch (...) {
-                report("delivery fault handler failed; target remains disabled");
-            }
-        }
-    }
-
-    void flush_debug_traces()
-    {
-        using Budget = UE4SSLuaEventBridge::DispatchBudget;
-        const Budget budget(Budget::Clock::now(), 32, std::chrono::microseconds(250));
-        if (pending_traces_.empty())
+        std::vector<std::pair<UE4SSLuaEventBridge::LuaSession*, uint64_t>> due;
+        std::scoped_lock lock(session_mutex_);
+        for (auto& [_, owned] : sessions_)
         {
-            backend_.recycle_traces(pending_traces_.release_buffer());
-            pending_traces_.load(backend_.take_traces());
+            auto* session = owned.get();
+            if (!session || !session->active.load(std::memory_order_acquire)) continue;
+            for (const auto token : session->loop_start.take_due()) due.emplace_back(session, token);
         }
-        std::size_t processed{};
-        while (!pending_traces_.empty() && budget.permits(processed, Budget::Clock::now()))
-        {
-            auto trace = pending_traces_.pop();
-            ++processed;
-            auto* session = trace.session;
-            if (!session || !session->active.load(std::memory_order_acquire) || !session->lua)
-            {
-                continue;
-            }
-            try
-            {
-                const auto& lua = *session->lua;
-                lua.registry().get_function_ref(session->dispatcher_ref);
-                lua.set_integer(0);
-                lua.set_string(trace.line);
-                lua.call_function(2, 0);
-            }
-            catch (...)
-            {
-                // The native trace writer already emitted the same line to
-                // OutputDebugString. Logging must not affect input dispatch.
-            }
-        }
+        return due;
     }
 
     static int get_version(const Lua& lua)
@@ -1306,7 +1210,10 @@ private:
         lua.set_integer(static_cast<int64_t>(stats.high_water));
         lua.set_integer(static_cast<int64_t>(stats.rejected));
         lua.set_integer(static_cast<int64_t>(stats.traces_rejected));
-        return 4;
+        // "tick" or "loop" (LuaDelivery.hpp); nil until Unreal initialization decides it.
+        if (const auto* delivery = UE4SSXB::delivery_name(lua_consumer().gate().mode())) lua.set_string(delivery);
+        else lua.set_nil();
+        return 5;
     }
 
     static int get_capabilities(const Lua& lua)
@@ -1332,10 +1239,12 @@ private:
         if (reason) lua.set_string(*reason);
         else lua.set_nil();
         // Additive object_lifetimes_reason: why lifetimes are unavailable, nil when available.
+        lua.set_bool(delivery_is_tick());
+        // frame_delivery: every bridge callback runs from the engine tick (game thread).
         // Lua guarantees a C function only LUA_MINSTACK (20) free slots and
         // UE4SS exports no lua_checkstack: return at most 20 values. Function
         // hook capabilities come from HooksEnabled.
-        return 15;
+        return 16;
     }
 
     static int is_in_game_thread(const Lua& lua)
@@ -1375,19 +1284,19 @@ private:
             return 2;
         }
         std::scoped_lock lock(active_mod->session_mutex_);
-        if (session->loop_start_delivered)
+        if (!session->loop_start.accepts())
         {
             lua.set_bool(false);
             lua.set_string("loop-start notification has already been delivered");
             return 2;
         }
-        if (session->loop_start_callbacks.size() >= 4096)
+        if (session->loop_start.callbacks.size() >= UE4SSLuaEventBridge::LoopStart::capacity)
         {
             lua.set_bool(false);
             lua.set_string("loop-start callback capacity exceeded");
             return 2;
         }
-        session->loop_start_callbacks.insert(static_cast<uint64_t>(token));
+        session->loop_start.callbacks.insert(static_cast<uint64_t>(token));
         lua.set_bool(true);
         return 1;
     }
@@ -1402,7 +1311,7 @@ private:
             return 1;
         }
         std::scoped_lock lock(active_mod->session_mutex_);
-        lua.set_bool(session->loop_start_callbacks.erase(static_cast<uint64_t>(token)) != 0);
+        lua.set_bool(session->loop_start.callbacks.erase(static_cast<uint64_t>(token)) != 0);
         return 1;
     }
 
@@ -1976,6 +1885,8 @@ public:
             return std::string{"the bridge is unloading"};
         if (auto why = probe_.hooks_reason()) return why;
         if (!lifetime_service_ready()) return std::string{"object lifetimes are unavailable"};
+        if (lua_consumer().gate().mode() == UE4SSLuaEventBridge::LuaDelivery::undecided)
+            return std::string{"the bridge has not finished starting"};
         return std::nullopt;
     }
 
@@ -2041,38 +1952,71 @@ public:
     }
 
 private:
-    // The engine-tick post-callback (game thread), registered at the first
-    // hook with the plain overload; it has no unregister, so the runtime's
-    // inert flag (set_inert, from unload) ends it.
+    // The engine-tick post-callback (game thread), registered once at Unreal
+    // initialization when the engine tick exists. The only Lua consumer in
+    // tick mode: the hook drain, then the Lua pass. It has no unregister, so
+    // the gate's inert flag (set_inert, from unload) ends it.
     static void on_engine_tick()
     {
-        hook_runtime().tick(hook_budget(),
+        lua_consumer().tick(
             [] {
-                if (hook_runtime().take_idle_sweep()) sweep_idle_entries();
+                if (!hooks_started.load(std::memory_order_acquire)) return;
+                hook_runtime().tick(hook_budget(),
+                    [] {
+                        if (hook_runtime().take_idle_sweep()) sweep_idle_entries();
+                    },
+                    [](Hooks::QueuedHookEvent& queued) {
+                        auto* mod = active_mod;
+                        return mod ? mod->deliver_hook_event(queued) : Hooks::EventOutcome::discarded;
+                    },
+                    [](const Hooks::HookNotice& notice) {
+                        if (auto* mod = active_mod) mod->deliver_hook_notice(notice);
+                    },
+                    [] { return UE4SSLuaEventBridge::DispatchBudget::Clock::now(); });
             },
-            [](Hooks::QueuedHookEvent& queued) {
-                auto* mod = active_mod;
-                return mod ? mod->deliver_hook_event(queued) : Hooks::EventOutcome::discarded;
-            },
-            [](const Hooks::HookNotice& notice) {
-                if (auto* mod = active_mod) mod->deliver_hook_notice(notice);
-            },
-            [] { return UE4SSLuaEventBridge::DispatchBudget::Clock::now(); });
+            [](bool input_due) {
+                if (auto* mod = active_mod) mod->deliver_lua_pass(input_due);
+            });
     }
 
-    // Inert until used ("Hook design rules"): the first hook, or the first pending hook,
-    // installs the event sink and picks the drain. Game thread.
+    // Decides the delivery for the process (LuaDelivery.hpp), once: the
+    // engine tick if UE4SS's detour exists, else on_update. UE4SS registers
+    // its own post-callback from the same initialization path.
+    static void start_lua_delivery()
+    {
+        auto& gate = lua_consumer().gate();
+        if (gate.mode() != UE4SSLuaEventBridge::LuaDelivery::undecided) return;
+        const bool tick = RC::UE4SSRuntime::IsEngineTickAvailable();
+        const auto wanted = tick ? UE4SSLuaEventBridge::LuaDelivery::tick : UE4SSLuaEventBridge::LuaDelivery::loop;
+        if (gate.decide(wanted) != wanted) return;
+        if (tick && !tick_registered.exchange(true, std::memory_order_acq_rel))
+        {
+            RC::Unreal::Hook::RegisterEngineTickPostCallback([](RC::Unreal::UEngine*, float) { on_engine_tick(); });
+        }
+        report(tick ? "Lua delivery: every callback runs once per frame from the engine tick (game thread)"
+                    : "Lua delivery: the engine tick is unavailable, so callbacks run from the event loop "
+                      "(UE4SSLEB_QUEUE_CHECKS_PER_SECOND)");
+    }
+
+    // Unload: no more passes, then a bounded wait for one already running.
+    static void stop_lua_delivery()
+    {
+        auto& gate = lua_consumer().gate();
+        gate.set_inert();
+        if (!gate.wait_idle(std::chrono::milliseconds(1000)))
+            report("unload: a Lua delivery pass was still running after 1 s");
+    }
+
+    // Inert until used ("Hook design rules"): the first hook, or the first
+    // pending hook, installs the event sink. The drain follows the delivery
+    // decided at Unreal initialization. Game thread.
     static void ensure_hooks_started()
     {
         if (hooks_started.load(std::memory_order_acquire)) return;
         auto& runtime = hook_runtime();
         Hooks::Core::set_event_sink(&LiveRuntime::sink, &runtime);
-        const bool tick = RC::UE4SSRuntime::IsEngineTickAvailable();
+        const bool tick = delivery_is_tick();
         runtime.set_delivery(tick ? Hooks::HookDelivery::tick : Hooks::HookDelivery::loop);
-        if (tick)
-        {
-            RC::Unreal::Hook::RegisterEngineTickPostCallback([](RC::Unreal::UEngine*, float) { on_engine_tick(); });
-        }
         hooks_started.store(true, std::memory_order_release);
         report(tick ? "function hooks started: events are delivered once per frame from the engine tick"
                     : "function hooks started: the engine tick is unavailable, so events are delivered from "
@@ -2217,8 +2161,8 @@ private:
         return reinterpret_cast<UFunction*>(static_cast<std::uintptr_t>(address));
     }
 
-    // HooksEnabled() -> hooks, reason|nil, hooks_bp, hooks_native, hooks_sync,
-    // hooks_frame_delivery (the hook fields of GetCapabilities).
+    // HooksEnabled() -> hooks, reason|nil, hooks_bp, hooks_native, hooks_sync
+    // (the hook fields of GetCapabilities).
     static int hooks_enabled(const Lua& lua)
     {
         const auto reason = active_mod
@@ -2231,8 +2175,7 @@ private:
         lua.set_bool(hooks && blueprint_hooks_possible());
         lua.set_bool(hooks);
         lua.set_bool(false);
-        lua.set_bool(hooks && hook_delivery_is_tick());
-        return 6;
+        return 5;
     }
 
     // HookFunction(session, functionAddress, phaseMask, options, properties)
@@ -2535,7 +2478,7 @@ private:
             lua.set_integer(0);
             lua.set_integer(0);
             lua.set_integer(0);
-            lua.set_bool(hook_delivery_is_tick());
+            lua.set_bool(delivery_is_tick());
             lua.set_integer(0);
             lua.set_integer(0);
             lua.set_integer(0);
@@ -2559,6 +2502,10 @@ private:
     }
 
     UE4SSLuaEventBridge::EnhancedInputBackend backend_;
+    LuaSink lua_sink_;
+    UE4SSLuaEventBridge::LuaPass<UE4SSLuaEventBridge::EnhancedInputBackend, LuaSink> lua_pass_{backend_, lua_sink_,
+        configured_limit("UE4SSLEB_MAX_EVENTS_PER_PASS", UE4SSLuaEventBridge::default_max_events_per_pass, 1000000),
+        configured_limit("UE4SSLEB_MAX_DISPATCH_US", UE4SSLuaEventBridge::default_max_dispatch_us, 1000000)};
     std::atomic_uint64_t next_session_id_{1};
     std::mutex session_mutex_;
     std::unordered_map<uint64_t, std::unique_ptr<UE4SSLuaEventBridge::LuaSession>> sessions_;

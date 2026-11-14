@@ -237,12 +237,16 @@
 // reads at most what the budget allows (tuning: `tail_read_bytes_per_pass`
 // across all subscriptions, at most `tail_read_bytes_per_subscription` from
 // one file, round-robin by subscription id from where the last pass stopped),
-// splits lines, and calls the session's
-// dispatcher on the session's root `lua` state:
+// splits lines, and hands the batch to the Lua consumer (TailHandoff,
+// FileBridgeTailDelivery.hpp), which calls the session's dispatcher on the
+// session's root `lua` state:
 //     dispatcher(kind, token, text, offset, flags)
-// This is the same thread, root state and lock discipline that bridge-events
-// uses for its dispatcher today (M15): on_update, no bridge lock held during
-// call_function.
+// The consumer is the thread every bridge-events callback uses (M15): with
+// UE4SS's engine-tick detour, decided in on_unreal_init, an engine-tick
+// post-callback on the game thread; without it, on_update itself. No bridge
+// lock is held during call_function. on_lua_stop off the consumer thread
+// waits (bounded) for a running pass after closing the session, and unload
+// sets the gate inert; the DLL stays loaded once the tick callback exists.
 //   kind = data    text is a line (no terminator) or a chunk; offset is its
 //                  byte offset; flags has DeliveryFlag bits (reset, partial;
 //                  Lua maps them to info.reset and info.partial, M2).
@@ -316,6 +320,7 @@ inline constexpr int64_t tail_max_line_bytes = 1024 * 1024;
 inline constexpr int64_t tail_identity_check_ms = 250;
 // Tuning (not capacity limits): Tail file reads per dispatch pass (20 passes
 // per second by default), so polling can't stall UE4SS's update thread.
+// Delivery budget: per pass, which is every frame with the engine tick.
 inline constexpr int64_t tail_read_bytes_per_pass = 256 * 1024;
 inline constexpr int64_t tail_read_bytes_per_subscription = 64 * 1024;
 inline constexpr uint32_t default_max_deliveries_per_pass = 256;

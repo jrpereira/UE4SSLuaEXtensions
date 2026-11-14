@@ -44,9 +44,26 @@ constructs, configures, registers, or removes an Unreal object. An off-thread
 call returns an error without partially changing the input scope.
 
 Native input execution never enters Lua. It copies event data into a queue,
-and the bridge dispatches Lua callbacks later from its UE4SS update callback.
-If a callback needs to change bindings, it must schedule that work with
-`ExecuteInGameThread`.
+and the bridge calls Lua later from one thread per process, so no two bridge
+callbacks ever run in one Lua state at the same time:
+
+- With UE4SS's engine-tick detour (the normal case, `frame_delivery == true`),
+  every bridge callback (input, delivery faults, traces, `onLoopStart`, function
+  hooks) runs on the game thread from one engine-tick post-callback: once per
+  frame, after the world and widget ticks and before Slate paints, in the same
+  frame as the input. Callbacks may touch UObjects and call game-thread-only
+  bridge operations directly; `ExecuteInGameThread` wrappers keep working, one
+  frame later.
+- Without it (`HookEngineTick = 0`, `frame_delivery == false`), every bridge
+  callback runs on UE4SS's event-loop thread from `on_update`. Schedule object
+  work and binding changes with `ExecuteInGameThread`. These callbacks may then
+  overlap UE4SS's own game-thread Lua (`RegisterHook`, `ExecuteInGameThread`).
+
+The delivery is decided once, at Unreal initialization, and UE4SS.log says
+which one. In either mode the bridge's callbacks can still overlap UE4SS's own
+off-game-thread Lua (`RegisterKeyBind` on the event-loop thread, `LoopAsync`
+and `ExecuteAsync` on its async thread); UE4SS has that overlap with its own
+game-thread Lua too.
 
 The bridge installs no `ProcessEvent` hook. Helpers do invoke ordinary
 reflected Enhanced Input functions through UE4SS to create and register their
@@ -79,9 +96,15 @@ The current API reports:
     object_lifetimes_reason = nil, -- a string when object_lifetimes is false
     weak_handles = true,
     loss_opt_in = true,
+    frame_delivery = true,
     target_ue4ss_commit = "97b7e501",
 }
 ```
+
+`frame_delivery` is `true` when every bridge callback runs from the engine tick
+on the game thread, `false` when they run from `on_update` on the event-loop
+thread (see [Requirements and execution model](#requirements-and-execution-model)).
+`GetDispatchStats().delivery` says the same as `"tick"` or `"loop"`.
 
 Gate optional features on `GetCapabilities()`. `GetVersion()` identifies the
 product release; `API_VERSION` identifies the API contract. A version number
@@ -101,11 +124,13 @@ verified, or that the object array shut down. The probe outcome is also written 
 ## Loop start and object lifetimes
 
 `onLoopStart(callback)` registers a one-shot callback for the owning Lua
-session. It runs from the first native `on_update` after that session starts,
-before the Enhanced Input queue's rate check. It is intended for work that must
-wait until the initial Lua-module loading batch has returned. The callback runs
-on UE4SS's update thread; schedule Unreal object work with
-`ExecuteInGameThread`. The returned function cancels a callback that has not yet
+session. It runs once the first native `on_update` after that session started
+has passed: Lua mods start on that thread, so by then the whole Lua-mod batch
+has started. It is intended for work that must wait until the initial
+Lua-module loading batch has returned. With `frame_delivery` the callback runs
+on the game thread from the next engine tick after that `on_update`; without
+it, from that `on_update` itself on the event-loop thread, where Unreal object
+work must be scheduled with `ExecuteInGameThread`. The returned function cancels a callback that has not yet
 run and returns whether cancellation succeeded. Callbacks of one session run in
 the order they were registered. Registering after delivery is an error. Callback failures are logged and do not prevent other sessions or
 callbacks from running.
@@ -289,7 +314,8 @@ Use a dedicated primitive target for inputs that must stop after delivery loss.
 ```lua
 local target = assert(bridge.OpenInputComponent(componentPath))
 local ok, err = bridge.SetTargetDeliveryFaultHandler(target, function(fault)
-    -- Runs on the UE4SS update thread, not the native input producer.
+    -- Runs on the bridge's Lua thread (the game thread with frame_delivery),
+    -- never inside the native input producer.
     -- Clear consumer held/display state and invalidate its local lifecycle epoch.
     resetInputState(fault.reason)
     -- Schedule owned mapping/context cleanup on the game thread.
@@ -556,11 +582,18 @@ If Unreal still owns a binding or clone when the bridge unloads, the DLL retains
 a process-lifetime module reference to keep its vtable callable. Explicitly
 removing owned bindings avoids this retention when no engine-owned clones remain.
 
-Function hooks always cause this retention: once any hook has been used in the
-process, unloading the bridge keeps its DLL loaded, because the engine may still
-reach the hook code. Unhooking does not avoid it. A later restart of the C++
-mods then starts no Event Bridge (UE4SS.log says to restart the process) until
-the game itself restarts. Lua-only hot reload is not affected.
+The engine-tick delivery always causes this retention: with `frame_delivery`
+the bridge registers its engine-tick callback at Unreal initialization, and
+UE4SS has no way to unregister it, so unloading the bridge keeps its DLL
+loaded. Function hooks cause it too, in either mode: once any hook has been
+used in the process, the engine may still reach the hook code, and unhooking
+does not avoid it. A later restart of the C++ mods then starts no Event Bridge
+(UE4SS.log says to restart the process) until the game itself restarts.
+Lua-only hot reload is not affected: sessions still stop and start.
+
+A Lua stop off the game thread marks the session inactive and then waits, for
+at most 250 ms, for a delivery pass already running on the game thread, so no
+callback runs in a Lua state that is being torn down.
 
 When the game replaces an input component, close the old target, resolve the new
 component path, and bind again. Discovery, gameplay gates, and rebinding remain
@@ -628,7 +661,7 @@ are rendered as `"-"`.
 | `native_delegate_entered` | The bridge's native action delegate began |
 | `event_queued` | A copied event was accepted for later Lua delivery |
 | `event_rejected` | Delivery was refused; inspect `reason` |
-| `event_dequeued` | The UE4SS update callback removed the event from the queue |
+| `event_dequeued` | The bridge's Lua pass removed the event from the queue |
 | `lua_callback_started` | The bridge began its protected Lua dispatcher call |
 | `lua_callback_completed` | The Lua dispatcher returned successfully |
 | `lua_callback_failed` | The Lua dispatcher raised an error |
@@ -707,7 +740,7 @@ out-of-range values use the defaults.
 |---|---:|---|---|
 | `UE4SSLEB_QUEUE_CHECKS_PER_SECOND` | 20 | 1–1,000 | Invalid; uses default |
 | `UE4SSLEB_MAX_EVENTS_PER_PASS` | 256 | 0–1,000,000 | No callback-count limit |
-| `UE4SSLEB_MAX_DISPATCH_US` | 2,000 | 0–1,000,000 | No time limit |
+| `UE4SSLEB_MAX_DISPATCH_US` | 500 | 0–1,000,000 | No time limit |
 | `UE4SSLEB_MAX_QUEUED_EVENTS` | 65,536 | 0–1,000,000 | Unbounded producer queue |
 
 For a PowerShell launcher:
@@ -719,13 +752,16 @@ $env:UE4SSLEB_QUEUE_CHECKS_PER_SECOND = '40'
 
 An already-running Steam process may not inherit a newly set launcher variable.
 
-UE4SS still invokes on_update at its own cadence. Each invocation reads a monotonic
-clock and returns before touching either queue when the next pass is not due.
-The bridge creates no timer thread, sleeps, or catch-up bursts.
+With `frame_delivery` an input pass runs every frame from the engine tick, and
+its allowances cost frame time; `UE4SSLEB_QUEUE_CHECKS_PER_SECOND` does not
+apply. Without it, UE4SS still invokes on_update at its own cadence; each
+invocation reads a monotonic clock and returns before touching either queue
+when the next pass is not due, at most `UE4SSLEB_QUEUE_CHECKS_PER_SECOND`
+times a second. The bridge creates no timer thread, sleeps, or catch-up bursts.
 
 Each eligible pass continues the oldest batch in order, subject to existing
 inactive-session/subscription and callback-error handling. The default allowance
-is 256 live callback attempts or 2,000 microseconds per pass. Canceled bindings
+is 256 live callback attempts or 500 microseconds per pass. Canceled bindings
 and stopped sessions consume time but do not consume the callback-count allowance.
 A failed callback attempt still counts. The first-progress allowance applies to
 one examined entry, so an all-canceled batch cannot bypass the time limit. Remaining events stay in the batch
@@ -756,7 +792,7 @@ Trace buffering is capped at 1,024 lines. Each pass separately allows 32 lines o
 Excess diagnostics increment `rejected_traces`. Native debugger tracing remains
 synchronous when enabled; keep debug tracing off for gameplay measurements.
 
-The 50 ms interval is between pass starts, not a sleep after completion. Actual
+Without `frame_delivery`, the 50 ms interval is between pass starts, not a sleep after completion. Actual
 delivery can take longer because of UE4SS scheduling and slow callbacks. A slow
 pass does not trigger repeated catch-up passes. Sustained overload can still
 increase event latency or cause explicit rejections. Fewer checks do not by themselves prove lower frame times. Test the new limits under the intended workload before deployment.
@@ -781,7 +817,7 @@ Gate on the capability first:
 ```lua
 local caps = UE4SSLuaEventBridge.GetCapabilities()
 -- caps.hooks (bool), caps.hooks_reason (why not), caps.hooks_bp, caps.hooks_native,
--- caps.hooks_sync (false in this version), caps.hooks_frame_delivery (engine-tick drain active)
+-- caps.hooks_sync (false in this version), caps.frame_delivery (engine-tick delivery active)
 ```
 
 An older build returns `false` for all of these. `Hooks.Install` and
@@ -902,8 +938,8 @@ what the bridge would copy for a resolved function.
 
 Hot reload removes every hook the session owns when the Lua state stops. Call
 `Hooks.RemoveAll()` yourself when you tear down earlier. The bridge DLL itself
-stays loaded once any hook has been used: restarting the C++ mods leaves no
-Event Bridge until the game restarts (see
+stays loaded once any hook has been used (and always with `frame_delivery`):
+restarting the C++ mods leaves no Event Bridge until the game restarts (see
 [Session cleanup and rebinding](#session-cleanup-and-rebinding)).
 
 ### Example
@@ -934,11 +970,12 @@ defaults.
 | `UE4SSLEB_MAX_HOOK_DISPATCH_US` | 500 | Time allowance per frame drain, in microseconds |
 | `UE4SSLEB_HOOK_CHECKS_PER_SECOND` | 120 | Fallback drain rate (1-1,000), used only when the engine-tick detour is unavailable |
 
-Hook events are drained from an engine-tick callback on the game thread, so a
-slow callback costs frame time; the allowances bound the bridge's own work only.
-Without the engine-tick detour (`HookEngineTick = 0`) delivery falls back to the
-event-loop thread, `hooks_frame_delivery` is `false` and `GetStats().delivery`
-is `"loop"`: Lua callbacks may then overlap UE4SS's game-thread Lua. Per-hook
+Hook events are drained from the engine-tick callback on the game thread,
+before the input pass of the same frame, so a slow callback costs frame time;
+the allowances bound the bridge's own work only. Without the engine-tick detour
+(`HookEngineTick = 0`) delivery falls back to the event-loop thread with every
+other bridge callback, `frame_delivery` is `false` and `GetStats().delivery` is
+`"loop"`: Lua callbacks may then overlap UE4SS's game-thread Lua. Per-hook
 `max_queued` (default 256) stops one hot hook from starving the rest. Watch
 `dropped` in `h:Status()` and `rejected` in `GetStats()` to see a backlog.
 Once your Blueprint hooks use this API, `HookProcessInternal = 0` is safe again.

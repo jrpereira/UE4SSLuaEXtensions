@@ -1,13 +1,14 @@
 #pragma once
 
 // The part of the pinned UE4SS 97b7e501 ABI every extension uses: Lua access,
-// UE4SS.log output and CppUserModBase, whose virtual table must match UE4SS's
-// exactly. Imports resolve through UE4SS-97b7e501.def in this folder, which
+// UE4SS.log output, CppUserModBase, whose virtual table must match UE4SS's
+// exactly, and the engine-tick post-callback that delivers to Lua. Imports resolve through UE4SS-97b7e501.def in this folder, which
 // lists every UE4SS symbol any extension imports.
 
 #ifdef _WIN32
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -139,8 +140,23 @@ public:
 
 namespace Unreal
 {
+class UEngine;
+
 UE4SS_IMPORT bool IsInGameThread();
+
+namespace Hook
+{
+// Runs on the game thread after UEngine::Tick. Requires the engine-tick detour
+// (UE4SSRuntime::IsEngineTickAvailable()); there is no matching unregister for
+// this overload, so the callback checks an inert flag first.
+UE4SS_IMPORT void RegisterEngineTickPostCallback(std::function<void(UEngine*, float)> callback);
 }
+}
+
+struct UE4SSRuntime
+{
+    UE4SS_IMPORT static bool IsEngineTickAvailable();
+};
 }
 
 #endif

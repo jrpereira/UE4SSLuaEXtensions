@@ -168,8 +168,18 @@ index/serial pair locally using the verified object-array offsets.
    and stores a shared subscription record.
 3. Native `Execute` copies the event value into a bridge-owned queue. It never
    re-enters Lua.
-4. `on_update` drains the queue and invokes one dispatcher closure in the
-   owning Lua state.
+4. The Lua consumer drains the queue and invokes one dispatcher closure in the
+   owning Lua state. Every bridge-to-Lua call of the process (input, delivery
+   faults, traces, loop-start callbacks, hook events and notices) runs on one
+   thread, so no two ever share a Lua state (`include/LuaDelivery.hpp`). With
+   UE4SS's engine-tick detour, decided once in `on_unreal_init`, that thread is
+   the game thread: one engine-tick post-callback, registered there, drains the
+   hooks and then runs the Lua pass every frame, and `on_update` makes no Lua
+   call; it only marks sessions started since its last pass ready for their
+   loop-start callbacks, because Lua mods start on its thread. Without the
+   detour, `on_update` runs all of it at `UE4SSLEB_QUEUE_CHECKS_PER_SECOND`.
+   A `LuaDispatchGate` (`shared/dispatch`) marks each pass in flight; Lua stop
+   off the consumer thread and unload wait for it, bounded.
 5. The dispatcher looks up the individual callback in Lua-owned tables.
 6. Unbind, target close, and unbind-all deactivate the subscription before
    detaching its native binding on the game thread.
@@ -190,7 +200,7 @@ module residency for avoiding a dangling vtable after `FreeLibrary`.
 
 Debug trace records use a separate queue in the same shared dispatch state.
 Native stages capture their event sequence and thread information before the
-record is queued. `on_update` prints those records through the owning Lua
+record is queued. The Lua pass prints those records through the owning Lua
 session's existing dispatcher, independently of the developer callback.
 `OutputDebugString` receives the same line immediately as a debugger fallback.
 Trace queues stop accepting records during backend shutdown and are cleared
@@ -235,11 +245,11 @@ first `Hooks.Install()` or `Hooks.Request()` call in the process.
   bytes into a bounded hook queue of their own, and return. They do no
   reflection calls and never enter Lua.
 - **Delivery.** The hook queue is drained on the game thread, once per frame, from
-  an engine-tick post-callback registered at the first hook, with a frame-time
-  budget. Without the engine-tick detour (`HookEngineTick = 0`) the drain falls
-  back to `on_update` on the event-loop thread; `hooks_frame_delivery` and
-  `GetStats().delivery` say which one is active. Input events keep their own
-  queue and drain.
+  the bridge's engine-tick post-callback, with a frame-time budget, before the
+  frame's input pass. Without the engine-tick detour (`HookEngineTick = 0`) the
+  drain falls back to `on_update` on the event-loop thread with every other
+  bridge callback; `frame_delivery` and `GetStats().delivery` say which one is
+  active. Input events keep their own queue and budget.
 - **Lifetime.** Hook entries live in one process-wide table and are never freed
   while the DLL is resident. Unhooking restores both bytes (or the `Func`
   pointer) and leaves the entry inert so a frame already inside a handler
@@ -280,15 +290,26 @@ these headings.
 - The hook table is read-mostly: handlers take a shared lock for a lookup by
   `UFunction*`; hooking and unhooking take it exclusively on the game thread.
 - Hook events and notices are drained on the game thread once per frame, from
-  an engine-tick post-callback registered at the first hook (the plain
-  `std::function<void(UEngine*, float)>` overload; the callback checks an inert
-  flag that `prepare_for_unload` sets, and the DLL stays resident). It runs
-  after the world and widget ticks and before Slate paints, so a call made
-  during this frame's tick is delivered before the frame is drawn.
+  the engine-tick post-callback that `on_unreal_init` registers when the detour
+  exists (the plain `std::function<void(UEngine*, float)>` overload). The same
+  callback then runs the input Lua pass ("Ownership and event delivery"). It
+  has no unregister: it checks the `LuaDispatchGate`'s inert flag, which
+  `prepare_for_unload` sets, and the DLL stays resident for the rest of the
+  process whenever the engine tick exists, hooks used or not. It runs after the
+  world and widget ticks and before Slate paints, so a call made during this
+  frame's tick is delivered before the frame is drawn.
+- Registering at the first hook instead would need a handover between a running
+  `on_update` pass and the first tick, and would save only the DLL's
+  unloadability, so the bridge registers at startup.
+- Session stop and unload wait for a running pass with the gate's bounded
+  `wait_idle` (and the hook runtime's `wait_for_drain`), never under a lock:
+  UE4SS fires `on_lua_stop` while holding its own Lua action mutex, which a
+  callback inside the pass may be waiting for.
 - Without the engine-tick detour (`HookEngineTick = 0`, or its scan failed) the
-  drain falls back to `on_update` on the event-loop thread. There the bridge's
-  Lua calls can overlap UE4SS's game-thread Lua, as input delivery already can;
-  `hooks_frame_delivery = false` reports it.
+  drain falls back to `on_update` on the event-loop thread with input delivery.
+  There the bridge's Lua calls can overlap UE4SS's game-thread Lua;
+  `frame_delivery = false` reports it. UE4SS takes no lock around its own
+  game-thread Lua, so a bridge-private lock could not prevent that.
 
 #### Blueprint patch
 
@@ -443,7 +464,7 @@ Registered per Lua state; the Lua block in `lua/bridge_api.lua` is the only
 caller:
 
 ```
-HooksEnabled() -> hooks, reason|nil, hooks_bp, hooks_native, hooks_sync, hooks_frame_delivery
+HooksEnabled() -> hooks, reason|nil, hooks_bp, hooks_native, hooks_sync
 HookFunction(session, functionAddress, phaseMask, options, properties) -> hookId | nil, reason
 Unhook(session, hookId) -> bool, reason|nil
 HookStatus(session, hookId) -> state, reason|nil, calls, matched, delivered, dropped, reentries
@@ -591,6 +612,26 @@ Windows CTest includes this suite. CI also runs it alongside the queue test
 under MSVC AddressSanitizer. The production native code runs against controlled stubs for UE object
 discovery, allocation, thread identity, and object-array lifetime. See
 [validation boundaries](#validation-boundary) for the integration limits.
+
+### Lua delivery thread coverage
+
+`LuaDeliveryTests` (portable) and `LuaDispatchGateTests` (shared/dispatch)
+drive the consumer glue (`LuaConsumer`, `LuaPass`, `LoopStart`) and the gate
+from two threads, an injected engine tick and `on_update`, against fake
+sessions whose Lua side counts its entry depth. Input events, delivery faults,
+traces, loop-start callbacks and the real `HookRuntime`'s notices are queued
+while both run. The tests check that no two calls overlap, that `on_update`
+makes no Lua call in tick mode and the tick none in loop mode, that loop-start
+callbacks wait for `on_update`'s barrier and keep registration order, that a
+Lua stop during a running pass waits for it, and that an inert gate ends every
+pass.
+
+On Windows, `NativeDeliveryThreadsTests` repeats the two-thread run with the
+production `EnhancedInputBackend.cpp` (the stubs of the backend suite) and the
+real hook runtime: the game thread executes the native delegates, queues hook
+work and runs the tick while `on_update` runs alongside. CI runs it under MSVC
+AddressSanitizer with the other native suites. The File Bridge counterpart is
+`bridge-files/tests/TailDeliveryTests.cpp`.
 
 ### Target delivery-fault coverage
 
