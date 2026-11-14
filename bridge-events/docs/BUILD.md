@@ -260,7 +260,7 @@ first `Hooks.Install()` or `Hooks.Request()` call in the process.
   unhooks every hook it owns.
 
 Settings: `mod_settings.ini` has a toggle, **Enable function hooks**
-(`[Hooks] Enabled`, default on). Off, `Hooks.Install()` and `Hooks.Request()` fail with a reason and
+(`[Settings] EnableHooks`, default on). Off, `Hooks.Install()` and `Hooks.Request()` fail with a reason and
 `GetCapabilities().hooks_reason` says why.
 
 ### Function hook design reference
@@ -274,7 +274,7 @@ these headings.
   no table is allocated until the first hook (or pending hook) in the process.
   The object listeners that already run for lifetimes add one atomic fast path
   (`hooks_started`, then the pending-name count).
-- **Kill switch.** `[Hooks] Enabled` in the mod's `settings.ini` (written by
+- **Kill switch.** `[Settings] EnableHooks` in the mod's `settings.ini` (written by
   ModCore Settings, default on) is read at Lua start. Off, hooking fails with a
   reason and `hooks_reason` says why. Configuration never blocks launch.
 - **Separate queue.** Hook events have their own bounded queue, drain, budget

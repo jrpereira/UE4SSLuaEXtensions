@@ -4,6 +4,10 @@
 
 ### Changes
 
+- Breaking: `settings.ini` keeps both switches in one `[Settings]` section:
+  `EnableHooks` replaces `[Hooks] Enabled` and `EnableVerifications` replaces
+  `[Verifications] LoadTime`. Old keys are ignored, so hooks stay on and
+  verifications stay off until switched on again.
 - Breaking: `Hooks.Hook` is replaced by `Hooks.Install` and `Hooks.Request`,
   and `h:Unhook()`, `Hooks.Unhook` and `Hooks.UnhookAll` by `h:Remove()`,
   `Hooks.Remove` and `Hooks.RemoveAll`. There are no aliases. Arguments after

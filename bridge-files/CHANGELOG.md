@@ -4,6 +4,9 @@
 
 ### Changes
 
+- Breaking: the verification switch in `settings.ini` is now `[Settings]
+  EnableVerifications`, replacing `[Verifications] LoadTime`. The old key is
+  ignored, so verifications stay off until switched on again.
 - With UE4SS's engine-tick detour (the default), `Tail` callbacks run on the
   game thread, once per frame from the engine tick, the thread that also runs
   every UE4SSLuaEventBridge callback, so a mod that uses both bridges never

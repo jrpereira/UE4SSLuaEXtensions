@@ -1,6 +1,6 @@
 -- UE4SSLuaFileBridge load-time verifications. Ships as Scripts/main.lua in the
 -- bridge's own mod folder and runs only when the MCS setting "Enable load-time
--- verifications" is on (settings.ini: [Verifications] LoadTime=1); it is off by
+-- verifications" is on (settings.ini: [Settings] EnableVerifications=1); it is off by
 -- default. Results go to UE4SS.log as PASS, FAIL and SKIP lines, followed by a
 -- SUMMARY line once the asynchronous Tail checks finish. The harness (settings
 -- gate, logging, groups) is the shared Scripts/lex_verify.lua.

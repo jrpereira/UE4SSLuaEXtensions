@@ -141,7 +141,7 @@ class ProductChecks(unittest.TestCase):
         self.assertIn('require("lex_verify")', script.read_text(encoding='utf-8'))
         settings = (EXTENSION.folder / 'packaging/mod_settings.ini').read_text(encoding='utf-8')
         self.assertIn(f'Id={EXTENSION.product}\n', settings)
-        self.assertIn('ConfigSection=Verifications\nConfigKey=LoadTime\n', settings)
+        self.assertIn('ConfigSection=Settings\nConfigKey=EnableVerifications\n', settings)
         self.assertIn('Default=0\n', settings)
 
     def test_changelog_sections_are_extractable(self):

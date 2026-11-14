@@ -107,10 +107,10 @@ function M.sourceManifest(extension, text)
     end
     local lines = {}
     block(lines, 'Mod', {{'Id', extension.contributor}, {'Name', extension.title}})
-    block(lines, 'Setting.' .. prefix .. 'LoadTimeVerifications', {{'Id', prefix .. 'LoadTimeVerifications'},
+    block(lines, 'Setting.' .. prefix .. 'EnableVerifications', {{'Id', prefix .. 'EnableVerifications'},
         {'Type', 'toggle'}, {'Label', 'Enable load-time verifications'}, {'Description', DESCRIPTION},
         {'Group', 'Diagnostics'}, {'PresetValues', '0|1'}, {'PresetLabels', 'Off|On'}, {'Default', '0'},
-        {'ConfigFile', 'settings.ini'}, {'ConfigSection', 'Verifications'}, {'ConfigKey', 'LoadTime'}})
+        {'ConfigFile', 'settings.ini'}, {'ConfigSection', 'Settings'}, {'ConfigKey', 'EnableVerifications'}})
     return table.concat(lines, '\n')
 end
 

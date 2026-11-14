@@ -7,7 +7,7 @@
 --   local V = Verify.new("[UE4SSLuaFileBridge verify] ")
 --   V.run(function() ... V.check("name", condition) ... end)
 --
--- Verify.enabled() reads [Verifications] LoadTime from the mod's settings.ini
+-- Verify.enabled() reads [Settings] EnableVerifications from the mod's settings.ini
 -- (written by the MCS toggle). A missing file or an unreadable value means
 -- off: configuration never blocks an extension.
 
@@ -30,9 +30,9 @@ function Verify.enabled()
         local name = line:match("^%[(.-)%]$")
         if name then
             section = name:lower()
-        elseif section == "verifications" then
+        elseif section == "settings" then
             local key, raw = line:match("^([^=]-)%s*=%s*(.*)$")
-            if key and key:lower() == "loadtime" then value = raw end
+            if key and key:lower() == "enableverifications" then value = raw end
         end
     end
     file:close()

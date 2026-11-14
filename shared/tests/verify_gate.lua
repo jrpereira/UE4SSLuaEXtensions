@@ -1,6 +1,6 @@
 -- Offline checks of an extension's load-time verifications (lua/main_*.lua,
 -- shipped as Scripts/main.lua with the shared Scripts/lex_verify.lua): the
--- MCS setting gates them, they are off unless settings.ini says LoadTime=1, and
+-- MCS setting gates them, they are off unless settings.ini says EnableVerifications=1, and
 -- a failure inside them never escapes main.lua. The in-game checks themselves
 -- need the game. Run from the repository root:
 --
@@ -94,15 +94,15 @@ do
     end
 
     test(label .. "off without settings.ini", function() off(nil) end)
-    test(label .. "off when LoadTime=0", function() off("[Verifications]\nLoadTime=0\n") end)
-    test(label .. "off for an unreadable value", function() off("[Verifications]\nLoadTime=yes\n") end)
-    test(label .. "off when the key is in another section", function() off("[Other]\nLoadTime=1\n") end)
+    test(label .. "off when EnableVerifications=0", function() off("[Settings]\nEnableVerifications=0\n") end)
+    test(label .. "off for an unreadable value", function() off("[Settings]\nEnableVerifications=yes\n") end)
+    test(label .. "off when the key is in another section", function() off("[Other]\nEnableVerifications=1\n") end)
     test(label .. "off for an empty file", function() off("") end)
 
     for _, settings in ipairs({
-        "[Verifications]\nLoadTime=1\n",
-        "[verifications]\r\n  loadtime = 1 \r\n",
-        "[General]\nScale=2\n\n[Verifications]\nLoadTime=1.0",
+        "[Settings]\nEnableVerifications=1\n",
+        "[settings]\r\n  enableverifications = 1 \r\n",
+        "[General]\nScale=2\n\n[Settings]\nEnableVerifications=1.0",
     }) do
         test(label .. "on for " .. string.format("%q", settings), function()
             local touched, ok, printed = run(script, settings)

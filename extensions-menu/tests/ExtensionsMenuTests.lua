@@ -51,23 +51,23 @@ assert(Menu.slotAddress(sounds) == 'UE4SSLuaEXtensions:Sounds' and sounds.contri
 
 -- The source page is the extension's own mod_settings.ini under the contributor's Mod Id.
 local ini = '[Mod]\r\nId=UE4SSLuaEventBridge\r\nName=UE4SS Lua Event Bridge\r\n\r\n'
-    .. '[Setting.A]\r\nId=LoadTimeVerifications\r\nType=toggle\r\nConfigFile=settings.ini\r\n\r\n'
-    .. '[Setting.B]\r\nId=FunctionHooks\r\nType=toggle\r\nVisibleWhen=LoadTimeVerifications\r\n'
+    .. '[Setting.A]\r\nId=EnableVerifications\r\nType=toggle\r\nConfigFile=settings.ini\r\n\r\n'
+    .. '[Setting.B]\r\nId=EnableHooks\r\nType=toggle\r\nVisibleWhen=EnableVerifications\r\n'
     .. 'VisibleValues=1\r\n'
 local source = Menu.sourceManifest(events, ini)
 assert(source:find('[Mod]\nId=UE4SSLuaEXtensions.Events\nName=UE4SS Lua Event Bridge\n', 1, true), 'Mod Id replaced')
 assert(not source:find('Id=UE4SSLuaEventBridge', 1, true) and not source:find('\r', 1, true))
 -- Ids are unique on the shared page: each takes the extension's prefix, rules naming them too.
-assert(table.concat(Menu.settingIds(source), ',') == 'Events_LoadTimeVerifications,Events_FunctionHooks', 'every setting, in order')
-assert(source:find('[Setting.Events_A]\nId=Events_LoadTimeVerifications\nType=toggle\nConfigFile=settings.ini\n', 1, true))
-assert(source:find('VisibleWhen=Events_LoadTimeVerifications\n', 1, true), 'rules follow the ids')
+assert(table.concat(Menu.settingIds(source), ',') == 'Events_EnableVerifications,Events_EnableHooks', 'every setting, in order')
+assert(source:find('[Setting.Events_A]\nId=Events_EnableVerifications\nType=toggle\nConfigFile=settings.ini\n', 1, true))
+assert(source:find('VisibleWhen=Events_EnableVerifications\n', 1, true), 'rules follow the ids')
 -- Without that file, the verification switch alone, with the extension's storage.
 for _, extension in ipairs(Menu.extensions) do
     local fallback = Menu.sourceManifest(extension)
     assert(fallback:find('Id=' .. extension.contributor .. '\n', 1, true))
-    assert(fallback:find('ConfigFile=settings.ini\nConfigSection=Verifications\nConfigKey=LoadTime', 1, true), 'storage')
+    assert(fallback:find('ConfigFile=settings.ini\nConfigSection=Settings\nConfigKey=EnableVerifications', 1, true), 'storage')
     assert(fallback:find('Type=toggle', 1, true) and fallback:find('Default=0', 1, true), 'off by default')
-    assert(table.concat(Menu.settingIds(fallback), ',') == extension.slot .. '_LoadTimeVerifications')
+    assert(table.concat(Menu.settingIds(fallback), ',') == extension.slot .. '_EnableVerifications')
 end
 
 -- Publishing: this folder's page comes first and is listed as its mod; each extension's hidden
@@ -92,8 +92,8 @@ for n, extension in ipairs(both) do
     local row = contribution.rows[1]
     assert(row.page == extension.contributor and row.slot == Menu.slotAddress(extension))
 end
-assert(table.concat(list[2].contribution.rows[1].settings, ',') == 'Events_LoadTimeVerifications,Events_FunctionHooks', 'read from the file')
-assert(table.concat(list[3].contribution.rows[1].settings, ',') == 'Files_LoadTimeVerifications', 'fallback without the file')
+assert(table.concat(list[2].contribution.rows[1].settings, ',') == 'Events_EnableVerifications,Events_EnableHooks', 'read from the file')
+assert(table.concat(list[3].contribution.rows[1].settings, ',') == 'Files_EnableVerifications', 'fallback without the file')
 for _, entry in ipairs(list) do
     assert(Contributions.validate(entry.id, entry.contribution), 'valid for ' .. entry.id)
 end

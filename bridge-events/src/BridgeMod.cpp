@@ -465,7 +465,7 @@ std::string lower_trimmed(std::string_view text)
     return out;
 }
 
-// [Hooks] Enabled in the mod's settings.ini (written by ModCore Settings; docs/BUILD.md, "Hook design rules").
+// [Settings] EnableHooks in the mod's settings.ini (written by ModCore Settings; docs/BUILD.md, "Hook design rules").
 // Only "0" turns hooks off: a missing file or an unreadable value keeps the
 // default, so configuration never blocks the bridge.
 bool read_hooks_setting()
@@ -490,8 +490,8 @@ bool read_hooks_setting()
             continue;
         }
         const auto equals = text.find('=');
-        if (section != "hooks" || equals == std::string::npos) continue;
-        if (lower_trimmed(std::string_view(text).substr(0, equals)) == "enabled")
+        if (section != "settings" || equals == std::string::npos) continue;
+        if (lower_trimmed(std::string_view(text).substr(0, equals)) == "enablehooks")
             value = lower_trimmed(std::string_view(text).substr(equals + 1));
     }
     return !(value && *value == "0");
@@ -1880,7 +1880,7 @@ public:
     std::optional<std::string> hooks_unavailable_reason() const
     {
         if (!hooks_setting_.load(std::memory_order_acquire))
-            return std::string{"function hooks are turned off in the bridge's settings ([Hooks] Enabled=0)"};
+            return std::string{"function hooks are turned off in the bridge's settings ([Settings] EnableHooks=0)"};
         if (hooks_started.load(std::memory_order_acquire) && hook_runtime().inert())
             return std::string{"the bridge is unloading"};
         if (auto why = probe_.hooks_reason()) return why;
