@@ -28,7 +28,7 @@ The Nexus download is one ZIP holding all three extensions. Extract it into the 
 ├── 0_ModCore_UE4SSLuaFileBridge/
 └── 0_ModCore_UE4SSLuaSoundBridge/[/code]
 
-[font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] lists the installed extensions in ModCore Settings' mod list as one module, ModCore Lua Extensions. Its page shows how many extensions are installed, then a section for each one holding that extension's own settings (from its mod_settings.ini). The extensions are then not listed as separate mods. This folder needs ModCore Settings 1.8.0 or later. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
+[font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] lists the installed extensions in ModCore Settings' mod list as one module, ModCore Lua Extensions. Its page shows how many extensions are installed, then a section for each one holding that extension's own settings (from its mod_settings.ini). The extensions are then not listed as separate mods. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
 
 Each extension folder's [font=Courier New]docs[/font] subfolder holds the README, developer guide, examples and license for mod authors.
 
