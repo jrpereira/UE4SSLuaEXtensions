@@ -797,6 +797,10 @@ local h, err = Hooks.Hook("/Game/UI/WBP_Warning.WBP_Warning_C:OnShowWarning", {
 })
 ```
 
+`object_names` compares the whole FName, number included: `"Indicator_1"`
+matches that instance only, not `"Indicator"` or `"Indicator_7"`. To follow one
+particular object rather than a name, use `object`.
+
 `target` is a path `"/Package.Class:Function"` or a live `UFunction` wrapper.
 A path that does not resolve yet becomes a **pending** hook: it is owned by the
 session and attaches by itself when the class appears (the owner class's short

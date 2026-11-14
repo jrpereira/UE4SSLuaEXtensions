@@ -54,7 +54,7 @@ public:
     }
     bool passes(const Filter& filter, std::uintptr_t object) override
     {
-        if (!filter.object && filter.name_indices.empty() && filter.outer_class == 0) return true;
+        if (!filter.object && filter.name_keys.empty() && filter.outer_class == 0) return true;
         const auto found = objects.find(object);
         if (found == objects.end()) return false;
         View view(found->second);
@@ -77,7 +77,7 @@ private:
         explicit View(const FakeObject& object) : object_(object) {}
         int32_t index() const override { return object_.index; }
         int32_t serial() const override { return object_.serial; }
-        uint32_t name_index() const override { return object_.name; }
+        uint64_t name_key() const override { return object_.name; }
         std::uintptr_t class_address() const override { return 0; }
         std::uintptr_t outer_class(unsigned) const override { return 0; }
         bool is_a(std::uintptr_t, std::uintptr_t) const override { return false; }
@@ -285,7 +285,7 @@ int main()
         platform.objects[reinterpret_cast<std::uintptr_t>(other_object)] = other;
 
         Filter by_name;
-        by_name.name_indices = {77};
+        by_name.name_keys = {77};
         auto* all = subscribe(runtime, Rig::table, attached.entry, 1, 101, 3);
         auto* named = subscribe(runtime, Rig::table, attached.entry, 1, 102, 1, by_name, 256, {}, true);
         runtime.set_delivery(HookDelivery::tick);

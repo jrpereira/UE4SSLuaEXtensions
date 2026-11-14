@@ -321,7 +321,12 @@ public:
     explicit LiveObjectView(std::uintptr_t object) : object_(object) {}
     int32_t index() const override { return identity().index; }
     int32_t serial() const override { return identity().serial; }
-    uint32_t name_index() const override { return read_field<uint32_t>(object_, HookLayout::uobject_name_private); }
+    uint64_t name_key() const override
+    {
+        // FName is the comparison index followed by the number.
+        return Hooks::make_name_key(read_field<uint32_t>(object_, HookLayout::uobject_name_private),
+            read_field<uint32_t>(object_, HookLayout::uobject_name_private + sizeof(uint32_t)));
+    }
     std::uintptr_t class_address() const override
     {
         return read_field<std::uintptr_t>(object_, HookLayout::uobject_class_private);
@@ -365,7 +370,7 @@ public:
     }
     bool passes(const Hooks::Filter& filter, std::uintptr_t object) override
     {
-        if (!filter.object && filter.name_indices.empty() && filter.outer_class == 0) return true;
+        if (!filter.object && filter.name_keys.empty() && filter.outer_class == 0) return true;
         return object != 0 && Hooks::passes(filter, LiveObjectView(object));
     }
     Hooks::ObjectIdentity context_identity(std::uintptr_t object) override { return live_identity(object); }
@@ -2310,10 +2315,10 @@ private:
                     missing += (missing.empty() ? "" : ", ") + name;
                     continue;
                 }
-                filter.name_indices.push_back(found.comparison_index);
+                filter.name_keys.push_back(Hooks::make_name_key(found.comparison_index, found.number));
             }
             // Names that do not exist yet can never match; an empty set would match everything.
-            if (filter.name_indices.empty()) filter.name_indices.push_back(never_matching_name);
+            if (filter.name_keys.empty()) filter.name_keys.push_back(never_matching_name);
             if (!missing.empty()) note = "name not found: " + missing;
         }
         if (options.outer != 0)

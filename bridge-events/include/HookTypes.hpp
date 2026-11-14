@@ -112,11 +112,18 @@ enum class Tag : uint8_t
     enumeration = 'e', object = 'o', unsupported = 'x'
 };
 
+// An FName as one comparable value: comparison index and number. The number
+// tells "Indicator_1" (stored as Indicator, 2) from "Indicator" and "Indicator_7".
+constexpr uint64_t make_name_key(uint32_t comparison_index, uint32_t number)
+{
+    return (static_cast<uint64_t>(number) << 32) | comparison_index;
+}
+
 // Native filters, evaluated in this order before any copying.
 struct Filter
 {
     std::optional<ObjectIdentity> object;   // one instance
-    std::vector<uint32_t> name_indices;     // FName comparison indices of the frame object
+    std::vector<uint64_t> name_keys;        // FNames of the frame object (make_name_key)
     std::uintptr_t outer_class{};           // UClass address; 0 = no outer filter
     bool outer_exact{};                     // exact class, else IsA
     uint8_t outer_depth{outer_walk_depth};

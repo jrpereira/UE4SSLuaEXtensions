@@ -8,7 +8,7 @@ struct FakeObject final : ObjectView
 {
     int32_t idx{5};
     int32_t ser{9};
-    uint32_t name{77};
+    uint64_t name{77};
     std::uintptr_t cls{0x100};
     std::vector<std::uintptr_t> outers;     // class of each outer, nearest first
     std::vector<std::pair<std::uintptr_t, std::uintptr_t>> derived; // (class, base)
@@ -17,7 +17,7 @@ struct FakeObject final : ObjectView
 
     int32_t index() const override { return idx; }
     int32_t serial() const override { return ser; }
-    uint32_t name_index() const override { return name; }
+    uint64_t name_key() const override { return name; }
     std::uintptr_t class_address() const override { return cls; }
     std::uintptr_t outer_class(unsigned level) const override
     {
@@ -50,10 +50,21 @@ static void object_and_names()
     CHECK(!passes(filter, object));
 
     Filter names;
-    names.name_indices = {1, 77, 3};
+    names.name_keys = {1, 77, 3};
     CHECK(passes(names, object));
-    names.name_indices = {1, 3};
+    names.name_keys = {1, 3};
     CHECK(!passes(names, object));
+
+    // "Indicator_1" is stored as (Indicator, 2): it matches that instance only,
+    // not plain "Indicator" (number 0) or "Indicator_7" (number 8).
+    Filter numbered;
+    numbered.name_keys = {make_name_key(77, 2)};
+    object.name = make_name_key(77, 2);
+    CHECK(passes(numbered, object));
+    object.name = make_name_key(77, 0);
+    CHECK(!passes(numbered, object));
+    object.name = make_name_key(77, 8);
+    CHECK(!passes(numbered, object));
 }
 
 static void outer_class()
@@ -97,17 +108,17 @@ static void order_and_short_circuit()
     FakeObject object;
     Filter filter;
     filter.object = ObjectIdentity{0, 1, 1}; // fails
-    filter.name_indices = {77};
+    filter.name_keys = {77};
     filter.outer_class = 0x200;
     object.outers = {0x200};
     CHECK(!passes(filter, object));
     CHECK(object.outer_calls == 0);          // outer walk never started
 
     filter.object = ObjectIdentity{0, 5, 9};
-    filter.name_indices = {1};               // name fails before the outer walk
+    filter.name_keys = {1};               // name fails before the outer walk
     CHECK(!passes(filter, object) && object.outer_calls == 0);
 
-    filter.name_indices = {77};
+    filter.name_keys = {77};
     CHECK(passes(filter, object) && object.outer_calls == 1 && object.is_a_calls == 0);
 }
 
