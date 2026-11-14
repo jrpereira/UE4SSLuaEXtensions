@@ -2,11 +2,9 @@
 
 ## v1.0.0
 
-First release of UE4SSLuaSoundBridge, sound playback for UE4SS Lua mods
-through a native bridge.
+### Changes
 
-### Added
-
+- First release: sound playback for UE4SS Lua mods through a native bridge.
 - `Load` reads and decodes a WAV file from the calling mod's own folder (PCM at
   8, 16, 24 or 32 bits, float at 32 or 64 bits, mono or stereo), with an
   optional `max_seconds` limit.

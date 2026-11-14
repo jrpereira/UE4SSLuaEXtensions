@@ -40,7 +40,7 @@ Mods/
     │   ├── main.dll
     │   ├── main.json
     │   └── versions/
-    │       └── UE4SSLuaFileBridge-1.0.1.dll
+    │       └── UE4SSLuaFileBridge-1.1.0.dll
     ├── enabled.txt
     └── mod.json
 ```
