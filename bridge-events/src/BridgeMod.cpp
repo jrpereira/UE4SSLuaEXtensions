@@ -937,7 +937,45 @@ public:
         flush_debug_traces();
     }
 
-    void on_lua_start(RC::StringViewType, Lua& lua, Lua& main_lua, Lua& async_lua, Lua* hook_lua) override
+    void on_lua_start(RC::StringViewType mod_name, Lua& lua, Lua& main_lua, Lua& async_lua, Lua* hook_lua) override
+    {
+        // Nothing may escape into UE4SS's loop over C++ mods: log, publish
+        // nothing, and that mod has no UE4SSLuaEventBridge.
+        try
+        {
+            start_session(lua, main_lua, async_lua, hook_lua);
+            return;
+        }
+        catch (const std::exception& error)
+        {
+            report_start_failure(mod_name, error.what());
+        }
+        catch (...)
+        {
+            report_start_failure(mod_name, "unknown exception");
+        }
+        try
+        {
+            lua.execute_string("UE4SSLuaEventBridge = nil");
+        }
+        catch (...)
+        {
+        }
+    }
+
+    static void report_start_failure(RC::StringViewType mod_name, std::string_view what)
+    {
+        try
+        {
+            report("starting the event bridge for mod \"" + wide_to_utf8(std::wstring(mod_name)) + "\" failed: ",
+                what);
+        }
+        catch (...)
+        {
+        }
+    }
+
+    void start_session(Lua& lua, Lua& main_lua, Lua& async_lua, Lua* hook_lua)
     {
         auto session = std::make_unique<UE4SSLuaEventBridge::LuaSession>();
         session->id = next_session_id_.fetch_add(1);
