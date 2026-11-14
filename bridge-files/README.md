@@ -54,17 +54,9 @@ describes the module to ModCoreSettings.
 
 Use the published SHA-256 checksum to verify the exact archive bytes.
 
-For deterministic startup before the Lua mods that use the bridge, list it in
-`Mods/mods.txt` ahead of them, after the event bridge if both are installed:
-
-```text
-0_ModCore_UE4SSLuaEventBridge : 1
-0_ModCore_UE4SSLuaFileBridge : 1
-```
-
-The packaged `enabled.txt` marker also enables the bridge, but UE4SS loads
-marker-enabled mods in a separate pass with no defined ordering. A `mods.txt`
-entry is preferred when another mod needs the bridge during its Lua-state setup.
+The packaged `enabled.txt` marker enables the bridge, so it loads without any
+`mods.txt` entry. It is a native DLL mod, which UE4SS loads before Lua mods, and
+its `0_` folder name sorts ahead of the mods that use it.
 
 Keep only one active installation of the file bridge.
 
