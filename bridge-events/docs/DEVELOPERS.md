@@ -234,7 +234,7 @@ resolved only during this call and retained as a native weak reference.
 
 Returns a numeric target handle, or `nil, errorMessage`.
 
-### `BindAction(target, actionPath, eventName, callback)`
+### `BindAction(target, action, eventName, callback)`
 
 ```lua
 local handle, err = UE4SSLuaEventBridge.BindAction(
@@ -248,6 +248,16 @@ local handle, err = UE4SSLuaEventBridge.BindAction(
 
 This binds an existing `UInputAction`. It does not create an action, trigger,
 key mapping, or mapping context.
+
+`action` is the action's object path or a live `UInputAction` wrapper. A
+wrapper binds by address and skips the path lookup, so pass one when you
+already hold the action.
+
+Unreal gives an object its weak-reference serial the first time something
+weakly references it, and the bridge needs one to hold the action. When the
+action has none yet, `BindAction` asks Unreal to assign it and retries once.
+For a path, that adds one object lookup, about 1 ms; the serial then stays,
+so later binds of the same action skip it.
 
 Supported event names are `Started`, `Ongoing`, `Triggered`, `Canceled`, and
 `Completed`. The callback receives:

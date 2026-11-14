@@ -490,4 +490,51 @@ assert(bridge.CloseInputComponent(closedTarget)); dispatch(-1,closedTarget,"call
 local stoppedTarget = assert(bridge.OpenInputComponent("Stopped"))
 assert(bridge.SetTargetDeliveryFaultHandler(stoppedTarget, function() error("stopped callback") end))
 bridge.UnbindAll(); dispatch(-1,stoppedTarget,"callback_error")
+
+-- An InputAction nothing has weakly referenced has no serial yet: native Bind refuses it.
+-- BindAction then asks Unreal to assign one and retries once, by address.
+do
+    gameThread = true
+    local asset = object("InputAction", "/Game/Input/IA_Asset.IA_Asset")
+    function asset:GetAddress() return 4242 end
+    local find, bind = StaticFindObject, UE4SSLuaEventBridge_BindAction
+    local lookups, attempts = 0, 0
+    StaticFindObject = function(path)
+        if path == asset.path then lookups = lookups + 1; return asset end
+        return find(path)
+    end
+    UE4SSLuaEventBridge_BindAction = function(...)
+        attempts = attempts + 1
+        if not asset.weak_initialized then
+            return nil, "InputAction weak-reference initialization failed: " .. asset.path
+        end
+        return bind(...)
+    end
+    local target = assert(bridge.OpenInputComponent("Serial"))
+    local before = weakInitializations
+    local handle = assert(bridge.BindAction(target, asset.path, "Triggered", function() end))
+    expect(attempts == 2 and lookups == 1 and weakInitializations == before + 1, "one lookup, one serial, one retry")
+    expect(nativeBindings[handle].action_address == 4242, "the retry binds by address")
+
+    -- The wrapper form binds by address at once; a refusal for another reason is returned as is.
+    attempts = 0
+    local direct = assert(bridge.BindAction(target, asset, "Started", function() end))
+    expect(attempts == 1 and nativeBindings[direct].action_address == 4242, "a wrapper binds by address")
+    expect(bridge.SubscribeEnhancedInput({target = target, action = asset, event = "Completed"}, function() end))
+    asset.weak_initialized = false
+    failWeakInitialization = true
+    local refused, why = bridge.BindAction(target, asset, "Triggered", function() end)
+    expect(refused == nil and why:find("weak-reference initialization failed", 1, true)
+        and why:find("failed to initialize its weak reference", 1, true), "initialization failure is reported")
+    failWeakInitialization = false
+    asset.weak_initialized = true
+    failNextBind = true
+    attempts = 0
+    local other, otherWhy = bridge.BindAction(target, asset.path, "Triggered", function() end)
+    expect(other == nil and otherWhy == "injected bind failure" and attempts == 1, "other refusals are not retried")
+    local dead = object("InputAction", "/Game/Input/IA_Dead.IA_Dead"); dead.valid = false
+    expect(bridge.BindAction(target, dead, "Triggered", function() end) == nil, "a dead wrapper is refused")
+    StaticFindObject, UE4SSLuaEventBridge_BindAction = find, bind
+    bridge.UnbindAll()
+end
 print("Lua helper tests passed")

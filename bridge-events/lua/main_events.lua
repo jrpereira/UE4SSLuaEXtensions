@@ -560,6 +560,10 @@ local function main()
                     check("Unbind", Bridge.Unbind(handle) == true)
                     rejects("Unbind twice", Bridge.Unbind(handle))
                 end
+                local byObject, objectError = Bridge.BindAction(target, action, "Triggered", function() end)
+                if check("BindAction with the action object", type(byObject) == "number", objectError) then
+                    check("Unbind the object binding", Bridge.Unbind(byObject) == true)
+                end
                 local spec = Bridge.SubscribeEnhancedInput({ target = target, action = actionPath, event = "Started" },
                     function() end)
                 if check("SubscribeEnhancedInput", type(spec) == "number") then

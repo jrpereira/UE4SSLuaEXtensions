@@ -45,6 +45,12 @@
 - `UE4SSLEB_MAX_DISPATCH_US` defaults to 500 microseconds instead of 2,000,
   since the input pass now runs every frame. `UE4SSLEB_QUEUE_CHECKS_PER_SECOND`
   applies only without the engine tick.
+- Fix `BindAction` and `SubscribeEnhancedInput` refusing an InputAction asset
+  that nothing had weakly referenced yet ("InputAction weak-reference
+  initialization failed"). Unreal assigns that reference lazily; the bridge
+  now asks Unreal to assign it and retries once.
+- `BindAction` and `SubscribeEnhancedInput` also accept a live `UInputAction`
+  wrapper in place of its path; it binds by address and skips the lookup.
 - With the engine tick, the bridge DLL stays loaded until the game exits:
   UE4SS cannot unregister the tick callback. Restarting the C++ mods then
   needs a game restart, as it already did once a hook had been used.

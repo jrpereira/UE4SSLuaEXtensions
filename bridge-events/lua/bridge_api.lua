@@ -121,6 +121,9 @@ local __phases = {
     Completed = 5,
 }
 
+-- The public BindAction; assigned below, once the object helpers it uses exist.
+local __bindPublicAction
+
 -- actionAddress (optional) is the address of the live InputAction the helper
 -- holds: native Bind checks it and skips the path lookup, an object walk.
 local function __bindAction(targetHandle, action, event, callback, trace, actionAddress)
@@ -257,7 +260,7 @@ local bridge = {
         return closed, closeError
     end,
     BindAction = function(targetHandle, action, event, callback)
-        return __bindAction(targetHandle, action, event, callback, nil)
+        return __bindPublicAction(targetHandle, action, event, callback)
     end,
     Unbind = function(handle)
         if not __positiveInteger(handle) then
@@ -556,6 +559,47 @@ local function __objectPath(object)
         return nil, "unexpected generated Input Action name: " .. fullName
     end
     return path
+end
+
+-- action is an InputAction object path or a live UInputAction wrapper; a
+-- wrapper binds by address and skips the native path lookup. Unreal assigns
+-- an object's weak-reference serial lazily, so an action nothing has weakly
+-- referenced yet is refused natively; ask Unreal to assign one, then retry once.
+local __missingWeakSerial = "InputAction weak-reference initialization failed"
+__bindPublicAction = function(targetHandle, action, event, callback)
+    local path, address
+    if type(action) ~= "string" then
+        if not __validObject(action) then
+            return nil, "action must be an InputAction object path or a live UInputAction"
+        end
+        local pathError
+        path, pathError = __objectPath(action)
+        if path == nil then return nil, pathError end
+        local ok, value = pcall(function() return action:GetAddress() end)
+        if not ok or not __positiveInteger(value) then return nil, "action did not provide a valid address" end
+        address = value
+    else
+        path = action
+    end
+
+    local handle, bindError = __bindAction(targetHandle, path, event, callback, nil, address)
+    if handle ~= nil or type(bindError) ~= "string" or not bindError:find(__missingWeakSerial, 1, true) then
+        return handle, bindError
+    end
+
+    local object = action
+    if type(action) == "string" then
+        local found, findError = __findObject(path, "/Script/EnhancedInput.InputAction", "action")
+        if found == nil then return nil, bindError .. "; " .. findError end
+        local ok, value = pcall(function() return found:GetAddress() end)
+        if ok and __positiveInteger(value) then address = value end
+        object = found
+    end
+    local initialized, initializeError = __initializeWeakIdentity(object)
+    if not initialized then
+        return nil, bindError .. "; failed to initialize its weak reference: " .. tostring(initializeError)
+    end
+    return __bindAction(targetHandle, path, event, callback, nil, address)
 end
 
 -- Empties a rooted context and keeps it for the next Bind.
