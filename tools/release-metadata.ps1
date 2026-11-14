@@ -4,6 +4,7 @@ $ErrorActionPreference='Stop'
 $products=@{
     'bridge-events'=[ordered]@{name='UE4SSLuaEventBridge';api=6}
     'bridge-files'=[ordered]@{name='UE4SSLuaFileBridge';api=$null}
+    'bridge-sounds'=[ordered]@{name='UE4SSLuaSoundBridge';api=$null}
 }
 if(-not $products.Contains($Product)){throw "Unknown product: $Product"}
 $definition=$products[$Product]

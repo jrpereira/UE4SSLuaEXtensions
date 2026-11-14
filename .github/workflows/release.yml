@@ -7,6 +7,7 @@ on:
     branches:
       - "release/bridge-events/v*"
       - "release/bridge-files/v*"
+      - "release/bridge-sounds/v*"
   workflow_dispatch:
 
 permissions:

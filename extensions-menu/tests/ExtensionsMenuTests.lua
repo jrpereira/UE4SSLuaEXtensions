@@ -8,7 +8,7 @@ local function present(...)
     for _, folder in ipairs({...}) do set['/mods/' .. folder .. '/mod.json'] = true end
     return function(path) return set[path] == true end
 end
-local EVENTS, FILES = '0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge'
+local EVENTS, FILES, SOUNDS = '0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge', '0_ModCore_UE4SSLuaSoundBridge'
 local function ids(found)
     local out = {}
     for n, extension in ipairs(found) do out[n] = extension.id end
@@ -20,6 +20,12 @@ assert(ids(Menu.installed('/mods', present(EVENTS, FILES))) == 'UE4SSLuaEventBri
 assert(ids(Menu.installed('/mods', present(FILES, EVENTS))) == 'UE4SSLuaEventBridge,UE4SSLuaFileBridge')
 assert(ids(Menu.installed('/mods', present(FILES))) == 'UE4SSLuaFileBridge')
 assert(ids(Menu.installed('/mods', present())) == '')
+assert(ids(Menu.installed('/mods', present(SOUNDS, FILES, EVENTS)))
+    == 'UE4SSLuaEventBridge,UE4SSLuaFileBridge,UE4SSLuaSoundBridge')
+assert(ids(Menu.installed('/mods', present(SOUNDS))) == 'UE4SSLuaSoundBridge')
+local all = Menu.installed('/mods', present(EVENTS, FILES, SOUNDS))
+assert(Menu.count(all) == 3 and Menu.pageManifest(all):find('PresetLabels=3|3', 1, true))
+assert(Menu.pageManifest(all):find('Category.Files', 1, true) < Menu.pageManifest(all):find('Category.Sounds', 1, true))
 local both = Menu.installed('/mods', present(EVENTS, FILES))
 assert(Menu.count(both) == 2 and Menu.count(Menu.installed('/mods', present(EVENTS))) == 1)
 
@@ -39,7 +45,9 @@ assert(page:find('LEX_Installed', 1, true) < page:find('Category.Events', 1, tru
 assert(Menu.slotAddress(Menu.extensions[1]) == 'UE4SSLuaEXtensions:Events')
 assert(not Menu.pageManifest({Menu.extensions[2]}):find('Category.Events', 1, true), 'only installed extensions')
 local events, files = Menu.extensions[1], Menu.extensions[2]
-assert(events.label == 'Events Extension' and files.label == 'Files Extension')
+local sounds = Menu.extensions[3]
+assert(events.label == 'Events Extension' and files.label == 'Files Extension' and sounds.label == 'Sounds Extension')
+assert(Menu.slotAddress(sounds) == 'UE4SSLuaEXtensions:Sounds' and sounds.contributor == 'UE4SSLuaEXtensions.Sounds')
 
 -- The source page is the extension's own mod_settings.ini under the contributor's Mod Id.
 local ini = '[Mod]\r\nId=UE4SSLuaEventBridge\r\nName=UE4SS Lua Event Bridge\r\n\r\n'

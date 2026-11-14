@@ -61,3 +61,16 @@ jobs:
             ${{ steps.bridge-files.outputs.archive }}
             ${{ steps.bridge-files.outputs.archive }}.manifest.json
             ${{ steps.bridge-files.outputs.archive }}.sha256
+      - name: Verify and package bridge-sounds
+        id: bridge-sounds
+        if: hashFiles('bridge-sounds/CMakeLists.txt') != ''
+        shell: pwsh
+        run: ./tools/ci-package-product.ps1 -Product bridge-sounds -SourceCommit $env:GITHUB_SHA -OutputFile $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        if: steps.bridge-sounds.outcome == 'success'
+        with:
+          name: ${{ steps.bridge-sounds.outputs.artifact }}
+          path: |
+            ${{ steps.bridge-sounds.outputs.archive }}
+            ${{ steps.bridge-sounds.outputs.archive }}.manifest.json
+            ${{ steps.bridge-sounds.outputs.archive }}.sha256

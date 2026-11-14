@@ -69,9 +69,10 @@ def documents(extension=X):
 
 
 class ManifestTests(unittest.TestCase):
-    def test_the_manifest_describes_both_extensions_and_what_is_not_deployed(self):
+    def test_the_manifest_describes_every_extension_and_what_is_not_deployed(self):
         self.assertEqual([e['mod_folder'] for e in MANIFEST['extensions']],
-                         ['0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge'])
+                         ['0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge',
+                          '0_ModCore_UE4SSLuaSoundBridge'])
         self.assertEqual(MANIFEST['not_deployed'], ['NEXUS.bb', 'DEVELOPMENT.md'])
         self.assertEqual(MANIFEST['nexus_description'], {'source': 'README.md', 'output': 'NEXUS.bb'})
 

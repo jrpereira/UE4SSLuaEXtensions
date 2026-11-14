@@ -1,7 +1,7 @@
 name: collection
 
 # The combined Nexus package. Run it by hand with one release tag per extension:
-# it verifies both published releases (checksum and payload manifest), assembles the
+# it verifies every published release (checksum and payload manifest), assembles the
 # package and publishes it as GitHub release extensions/v<version>. It builds no DLLs.
 on:
   workflow_dispatch:
@@ -14,6 +14,9 @@ on:
         required: true
       files_tag:
         description: File Bridge release tag, for example bridge-files/v1.0.1
+        required: true
+      sounds_tag:
+        description: Sound Bridge release tag, for example bridge-sounds/v1.0.0
         required: true
 
 permissions:
@@ -38,6 +41,7 @@ jobs:
       PACKAGE_VERSION: ${{ inputs.version }}
       EVENTS_TAG: ${{ inputs.events_tag }}
       FILES_TAG: ${{ inputs.files_tag }}
+      SOUNDS_TAG: ${{ inputs.sounds_tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,7 +53,7 @@ jobs:
         run: |
           git fetch --tags --force
           python tools/build_collection.py --version "$PACKAGE_VERSION" \
-            --tag "$EVENTS_TAG" --tag "$FILES_TAG" \
+            --tag "$EVENTS_TAG" --tag "$FILES_TAG" --tag "$SOUNDS_TAG" \
             --output collection-dist --output-file "$GITHUB_ENV"
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4

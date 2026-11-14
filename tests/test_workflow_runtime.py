@@ -57,7 +57,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('--changelog "$env:RELEASE_PRODUCT/CHANGELOG.md"', text)
 
     def test_every_product_is_packaged_only_when_present(self):
-        self.assertEqual(self.products, ['bridge-events', 'bridge-files'])
+        self.assertEqual(self.products, ['bridge-events', 'bridge-files', 'bridge-sounds'])
         text = (ROOT/'.github/workflows/build.yml').read_text()
         for product in self.products:
             with self.subTest(product=product):
