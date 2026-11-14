@@ -523,6 +523,9 @@ stay referenced while their contexts or bindings are owned by the scope.
 If helper cleanup fails, native removal preserves targets for retry and clears
 obsolete subscription handles when removal succeeds. Retry `Close()` or
 `UnbindAll()` to finish cleanup. Failed attempts do not resume delivery.
+`UnbindAll()` removes bindings only: pending `onLoopStart` callbacks stay
+registered (cancel them with the function `onLoopStart` returned), and a
+target's delivery-fault handler stays until the target is closed.
 
 A callback that raises an error disables its binding. The bridge writes the
 action, phase and error to UE4SS.log, and also reports a delivery fault when a

@@ -27,11 +27,11 @@ local function __forgetTarget(target)
     end
 end
 
+-- Bindings only: loop-start callbacks have their own cancel function, and a
+-- target's fault handler goes when the target is closed.
 local function __clearCallbacks()
     __callbacks = {}
     __bindings = {}
-    __targetFaultHandlers = {}
-    __loopStartCallbacks = {}
 end
 
 local function __traceback(message)
@@ -998,6 +998,10 @@ bridge.UnbindAll = function()
         or UE4SSLuaEventBridge_UnbindAllPreserveTargets
     local count, completed, nativeError = removeNative(__session)
     count = count or 0
+    if completed and helpersClosed then
+        -- Full native removal also closed every target of the session.
+        __targetFaultHandlers = {}
+    end
     if completed and not helpersClosed then
         -- Native bulk removal consumed these handles. Preserve context records
         -- and targets, but never retry an already-removed subscription.

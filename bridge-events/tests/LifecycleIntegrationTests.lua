@@ -196,6 +196,10 @@ local function fixture()
             end
             return removed, true
         end
+        env.UE4SSLuaEventBridge_EnableTargetDeliveryFaults = function(id, target)
+            own(id)
+            return self.targets[target] == id
+        end
         env.UE4SSLuaEventBridge_UnbindAll = function(id) return bulkUnbind(id, false) end
         env.UE4SSLuaEventBridge_UnbindAllPreserveTargets = function(id) return bulkUnbind(id, true) end
         session.dispatch = check(loadfile("bridge-events/lua/bridge_api.lua", "t", env))()
@@ -716,6 +720,34 @@ cases["public UnbindAll bulk failure keeps ownership but suppresses callbacks"] 
     f.bulkFailure = false
     local _, retried = s.api.UnbindAll()
     check(retried)
+    f:empty()
+end
+
+cases["UnbindAll keeps loop-start callbacks and the fault handlers of kept targets"] = function()
+    local f, loops, faults = fixture(), 0, 0
+    local s = f:loadSession()
+    s.api.onLoopStart(function() loops = loops + 1 end)
+    local token = check(s.loopToken)
+    local scope = s:open(true)
+    check(scope:Bind("A", s.api.Helpers.Trigger.Tap, function() end))
+    local target = next(f.targets)
+    check(s.api.SetTargetDeliveryFaultHandler(target, function() faults = faults + 1 end))
+    -- Helper cleanup fails: targets are preserved, and so are their handlers.
+    f.removeFailures = 1
+    local _, ok = s.api.UnbindAll()
+    check(not ok and count(f.targets) == 1)
+    s.dispatch(-2, token)
+    check(loops == 1, "UnbindAll dropped a pending loop-start callback")
+    s.dispatch(-1, target, "queue_capacity_exceeded")
+    check(faults == 1, "a preserved target lost its fault handler")
+    -- Full removal closes the targets, and their handlers go with them.
+    check(scope:Close())
+    local raw = check(s.api.OpenInputComponent("/Game/Raw.Component"))
+    check(s.api.SetTargetDeliveryFaultHandler(raw, function() faults = faults + 1 end))
+    local _, closed = s.api.UnbindAll()
+    check(closed and count(f.targets) == 0)
+    s.dispatch(-1, raw, "queue_capacity_exceeded")
+    check(faults == 1, "a closed target's fault handler ran")
     f:empty()
 end
 
