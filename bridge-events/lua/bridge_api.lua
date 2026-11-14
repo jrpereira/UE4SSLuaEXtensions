@@ -322,6 +322,23 @@ local function __captureObject(object)
 end
 
 local __weakState = setmetatable({}, { __mode = "k" })
+-- Tokens of collected handles. No native runs inside a finalizer: it may run
+-- on a coroutine the mod created, where UE4SS refuses native calls. The queue
+-- drains at the start of the next lifetimes call.
+local __pendingReleases = {}
+
+local function __drainReleases()
+    if #__pendingReleases == 0 then return end
+    local work = __pendingReleases
+    __pendingReleases = {}
+    for index = 1, #work do
+        if not pcall(UE4SSLuaEventBridge_LifetimeRelease, __session, work[index]) then
+            for rest = index, #work do __pendingReleases[#__pendingReleases + 1] = work[rest] end
+            return
+        end
+    end
+end
+
 local __WeakHandle = {}
 __WeakHandle.__index = __WeakHandle
 __WeakHandle.__metatable = false
@@ -329,6 +346,7 @@ __WeakHandle.__metatable = false
 -- Returns the wrapper while its UObject lives, without reading object memory
 -- first. Off the game thread it returns nil and an error but keeps the wrapper.
 function __WeakHandle:get()
+    __drainReleases()
     local state = __weakState[self]
     if state == nil or state.object == nil then return nil end
     if UE4SSLuaEventBridge_IsInGameThread() ~= true then
@@ -348,43 +366,59 @@ function __WeakHandle:identity()
     return state.token, state.address
 end
 
--- Forgets the wrapper and returns the handle's share of its observation.
+-- Forgets the wrapper and returns the handle's share of its observation. A
+-- refused native call leaves the share to the finalizer's queue.
 function __WeakHandle:release()
+    __drainReleases()
+    local state = __weakState[self]
+    if state == nil or state.released then return end
+    state.object = nil
+    if pcall(UE4SSLuaEventBridge_LifetimeRelease, __session, state.token) then
+        state.released = true
+    end
+end
+function __WeakHandle:__gc()
     local state = __weakState[self]
     if state == nil or state.released then return end
     state.object, state.released = nil, true
-    UE4SSLuaEventBridge_LifetimeRelease(__session, state.token)
+    __pendingReleases[#__pendingReleases + 1] = state.token
 end
-__WeakHandle.__gc = __WeakHandle.release
 
 bridge.lifetimes = {
     captureAddress = function(address)
+        __drainReleases()
         if not __positiveInteger(address) then return nil, "address must be a positive integer" end
         return UE4SSLuaEventBridge_LifetimeCapture(__session, address)
     end,
     captureObject = function(object)
+        __drainReleases()
         local token, why = __captureObject(object)
         if token == nil then return nil, why end
         return token
     end,
     -- Drops one capture of token; the last capture ends the observation.
     release = function(token)
+        __drainReleases()
         if type(token) ~= "string" or token:match("^[1-9][0-9]*$") == nil then return false end
         return UE4SSLuaEventBridge_LifetimeRelease(__session, token) == true
     end,
     valid = function(address, token)
+        __drainReleases()
         if not __positiveInteger(address) or type(token) ~= "string" or
             token:match("^[1-9][0-9]*$") == nil then return false end
         return UE4SSLuaEventBridge_LifetimeValid(__session, address, token) == true
     end,
     -- Losses are queued only after the session opts in, here or by calling takeLost.
     reportLosses = function()
+        __drainReleases()
         return UE4SSLuaEventBridge_LifetimeReportLosses(__session) == true
     end,
     takeLost = function()
+        __drainReleases()
         return UE4SSLuaEventBridge_LifetimeTakeLost(__session)
     end,
     weak = function(object)
+        __drainReleases()
         if UE4SSLuaEventBridge_IsInGameThread() ~= true then
             return nil, "weak handles must be created on the Unreal game thread"
         end

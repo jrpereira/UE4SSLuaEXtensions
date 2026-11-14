@@ -115,6 +115,8 @@ local function fixture()
         end
         env.UE4SSLuaEventBridge_LifetimeRelease = function(id, token)
             own(id)
+            -- UE4SS refuses natives on a Lua thread it did not create.
+            if self.refuseNatives then error("calling thread is not registered with UE4SS") end
             local count = session.references[token]
             if not count then return false end
             session.references[token] = count > 1 and count - 1 or nil
@@ -318,10 +320,33 @@ cases["weak handles return their observation when released or collected"] = func
     check(second:get() == o, "other handles keep the observation")
     second = nil
     collectgarbage(); collectgarbage()
-    check(s.references["1705"] == nil, "a collected handle returns its share")
+    check(s.references["1705"] == 1, "a finalizer calls no native")
+    check(s.api.lifetimes.valid(705, "1705"))
+    check(s.references["1705"] == nil, "a collected handle returns its share on the next lifetimes call")
     check(s.api.lifetimes.release("bad") == false)
     local token = check(s.api.lifetimes.captureObject(o))
     check(s.api.lifetimes.release(token) and not s.api.lifetimes.release(token))
+end
+
+cases["a refused release stays queued until a native call succeeds"] = function()
+    local f = fixture()
+    local s = f:loadSession()
+    local o = trackedObject(706)
+    local kept = check(s.api.lifetimes.weak(o))
+    local first = check(s.api.lifetimes.weak(o))
+    local second = check(s.api.lifetimes.weak(o))
+    check(s.references["1706"] == 3)
+    -- An explicit release refused on a mod coroutine is left to the finalizer.
+    f.refuseNatives = true
+    first:release()
+    check(s.references["1706"] == 3, "a refused release returns nothing")
+    first, second = nil, nil
+    collectgarbage(); collectgarbage()
+    s.api.lifetimes.valid(706, "1706")
+    check(s.references["1706"] == 3, "a refused drain keeps the queue")
+    f.refuseNatives = false
+    check(kept:get() == o)
+    check(s.references["1706"] == 1, "both shares come back once natives are allowed")
 end
 
 -- Consumers test against tests/support/lifetimes.lua; it must answer as bridge_api.lua does.
