@@ -117,7 +117,7 @@ if(UE4SSLEB_BUILD_TESTS)
         add_executable(NativeBackendLifecycleTests "${UE4SSLEB_TEST_ROOT}/NativeBackendLifecycleWinTests.cpp")
         target_compile_features(NativeBackendLifecycleTests PRIVATE cxx_std_20)
         target_include_directories(NativeBackendLifecycleTests PRIVATE include "${LEX_SHARED_DIR}/contract" "${LEX_SHARED_DIR}/ue4ss-abi"
-            "${LEX_SHARED_DIR}/tests")
+            "${LEX_SHARED_DIR}/native" "${LEX_SHARED_DIR}/tests")
         target_link_libraries(NativeBackendLifecycleTests PRIVATE UE4SSXBDispatch)
         target_compile_options(NativeBackendLifecycleTests PRIVATE /W4 /WX)
         add_test(NAME NativeBackendLifecycleTests COMMAND NativeBackendLifecycleTests)

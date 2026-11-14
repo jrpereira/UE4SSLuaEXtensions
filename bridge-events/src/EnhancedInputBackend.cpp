@@ -6,6 +6,7 @@
 #include <SharedDispatch.hpp>
 #include <sstream>
 #include <BindingSnapshot.hpp>
+#include <LexReport.hpp>
 #include <cstring>
 #include <new>
 #include <string_view>
@@ -41,11 +42,6 @@ T read_at(const ABI::InputActionInstanceView& view, std::size_t offset)
     T value{};
     std::memcpy(&value, view.storage + offset, sizeof(T));
     return value;
-}
-
-std::wstring widen_ascii(const std::string& value)
-{
-    return std::wstring(value.begin(), value.end());
 }
 
 UClass* object_class(UObject* object)
@@ -594,7 +590,7 @@ std::pair<uint64_t, std::string> EnhancedInputBackend::open_target(LuaSession& s
     }
 
     std::string resolution_error;
-    auto* component = resolve_component(widen_ascii(component_path), resolution_error);
+    auto* component = resolve_component(Lex::utf8_to_wide(component_path), resolution_error);
     if (!component)
     {
         return {0, resolution_error.empty() ? "EnhancedInputComponent was not found at object path: " + component_path : resolution_error};
@@ -756,7 +752,7 @@ std::pair<uint64_t, std::string> EnhancedInputBackend::subscribe(
     }
     else
     {
-        action = resolve_action(widen_ascii(action_path));
+        action = resolve_action(Lex::utf8_to_wide(action_path));
     }
 
     std::scoped_lock lock(mutex_);

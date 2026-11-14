@@ -47,7 +47,8 @@ UStruct*& UStruct::GetSuperStruct() {
 std::wstring UObject::GetPathName(UObject*) const {
     if (this==&input_action_class) return L"/Script/EnhancedInput.InputAction";
     if (this==component) return L"/Game/Maps/Map.Map:PersistentLevel.PlayerController_0.InputComponent0";
-    if (this==asset_action) return L"/Game/Input/Actions/IA_ToggleQuickslots.IA_ToggleQuickslots";
+    // A non-ASCII asset path: Lua passes UTF-8, the engine compares UTF-16.
+    if (this==asset_action) return L"/Game/Input/Actions/IA_Atalho\u00c7\u00e3o.IA_Atalho\u00c7\u00e3o";
     return L"/Engine/Transient.IA_MCC_Test";
 }
 static std::atomic<int> scans{};
@@ -74,7 +75,7 @@ namespace ABI=EnhancedInputABI;
 using namespace RC::Unreal;
 static const std::string component_path="/Game/Maps/Map.Map:PersistentLevel.PlayerController_0.InputComponent0";
 static const std::string action_path="/Engine/Transient.IA_MCC_Test";
-static const std::string asset_action_path="/Game/Input/Actions/IA_ToggleQuickslots.IA_ToggleQuickslots";
+static const std::string asset_action_path="/Game/Input/Actions/IA_Atalho\xC3\x87\xC3\xA3o.IA_Atalho\xC3\x87\xC3\xA3o";
 struct Fixture {
     alignas(8) std::array<std::byte,ABI::enhanced_input_component_size> storage{};
     alignas(8) std::array<std::byte,0x20> action_storage{};
