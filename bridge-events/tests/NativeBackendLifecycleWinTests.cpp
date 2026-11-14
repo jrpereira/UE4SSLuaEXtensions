@@ -37,7 +37,15 @@ int32_t& UStruct::GetPropertiesSize() {
     static int32_t size = static_cast<int32_t>(UE4SSLuaEventBridge::EnhancedInputABI::enhanced_input_component_size);
     return size;
 }
+// The class of both actions; its own class chain ends here.
+static UClass input_action_class;
+UStruct*& UStruct::GetSuperStruct() {
+    static UStruct* none{};
+    none = nullptr;
+    return none;
+}
 std::wstring UObject::GetPathName(UObject*) const {
+    if (this==&input_action_class) return L"/Script/EnhancedInput.InputAction";
     if (this==component) return L"/Game/Maps/Map.Map:PersistentLevel.PlayerController_0.InputComponent0";
     if (this==asset_action) return L"/Game/Input/Actions/IA_ToggleQuickslots.IA_ToggleQuickslots";
     return L"/Engine/Transient.IA_MCC_Test";
@@ -78,6 +86,9 @@ struct Fixture {
         asset_action=reinterpret_cast<UObject*>(asset_action_storage.data());
         auto* cls=&type;
         std::memcpy(storage.data()+ABI::uobject_class_offset,&cls,sizeof(cls));
+        auto* action_cls=&input_action_class;
+        std::memcpy(action_storage.data()+ABI::uobject_class_offset,&action_cls,sizeof(action_cls));
+        std::memcpy(asset_action_storage.data()+ABI::uobject_class_offset,&action_cls,sizeof(action_cls));
         for(int32_t i=0;i<3;++i) {
             auto* obj=i==0?component:i==1?action_object:asset_action;
             std::memcpy(reinterpret_cast<std::byte*>(obj)+0x0c,&i,sizeof(i));
@@ -281,9 +292,11 @@ int main() {
         auto none=backend.open_target(s,missing_component);
         CHECK(!none.first && none.second=="EnhancedInputComponent was not found at object path: "+missing_component);
         CHECK(scans==before_component+2);
-        // The target error still wins over a missing action.
+        // The target error still wins over a missing action, and costs no walk.
+        const int before_unknown=scans;
         auto unknown=backend.subscribe(s,999,7,missing_action,"Triggered",ABI::TriggerEvent::Triggered);
         CHECK(!unknown.first && unknown.second.find("target handle is unknown")!=std::string::npos);
+        CHECK(scans==before_unknown);
         // An object that left its slot is not served from the cache.
         const auto saved=objects[2]; objects[2]={};
         const int before_stale=scans;
@@ -293,6 +306,21 @@ int main() {
         CHECK(backend.subscribe(s,target.first,9,asset_action_path,"Triggered",ABI::TriggerEvent::Triggered).first);
         CHECK(f.bindings().size==5);
         CHECK(backend.unsubscribe_all(s)==5); CHECK(backend.shutdown());
+    }
+    // An action handed over by address binds with no walk at all; an object
+    // that is not an InputAction is refused, and so is an unknown target.
+    {
+        Fixture f; EnhancedInputBackend backend; backend.initialize(); LuaSession s;
+        auto target=backend.open_target(s,component_path); CHECK(target.first);
+        scans=0;
+        auto direct=backend.subscribe(s,target.first,1,action_path,"Triggered",ABI::TriggerEvent::Triggered,{},action_object);
+        CHECK(direct.first && direct.second.empty() && scans==0);
+        CHECK(f.bindings().size==1 && f.bindings().data[0]->action.Get()==action_object);
+        auto wrong=backend.subscribe(s,target.first,2,component_path,"Triggered",ABI::TriggerEvent::Triggered,{},component);
+        CHECK(!wrong.first && wrong.second=="object is not an InputAction: "+component_path && scans==0);
+        auto unknown=backend.subscribe(s,999,3,action_path,"Triggered",ABI::TriggerEvent::Triggered,{},action_object);
+        CHECK(!unknown.first && unknown.second.find("target handle is unknown")!=std::string::npos && scans==0);
+        CHECK(backend.unsubscribe_all(s)==1); CHECK(backend.shutdown());
     }
     return LexTests::finish("NativeBackendLifecycleTests");
 }

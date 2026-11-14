@@ -58,6 +58,22 @@ UClass* object_class(UObject* object)
     return result;
 }
 
+// An object handed over by address must be an InputAction: its class or a
+// super class is /Script/EnhancedInput.InputAction.
+bool is_input_action(UObject* object)
+{
+    constexpr int max_class_depth = 32;
+    auto* type = static_cast<RC::Unreal::UStruct*>(object_class(object));
+    for (int depth = 0; type && depth < max_class_depth; ++depth, type = type->GetSuperStruct())
+    {
+        if (type->GetPathName() == L"/Script/EnhancedInput.InputAction")
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void append_debug_text(std::string& output, std::string_view value)
 {
     output.push_back('"');
@@ -709,10 +725,39 @@ std::pair<uint64_t, std::string> EnhancedInputBackend::subscribe(
     std::string action_path,
     std::string phase_name,
     ABI::TriggerEvent phase,
-    EnhancedInputDebugInfo debug)
+    EnhancedInputDebugInfo debug,
+    UObject* action_object)
 {
-    // Resolve outside the lock; errors keep their order below.
-    auto* action = resolve_action(widen_ascii(action_path));
+    // A target error wins, and costs no lookup.
+    {
+        std::scoped_lock lock(mutex_);
+        if (!initialized_.load(std::memory_order_acquire))
+        {
+            return {0, "Enhanced Input backend is not initialized"};
+        }
+        const auto target_it = targets_.find(target_id);
+        if (target_it == targets_.end() || target_it->second.session != &session)
+        {
+            return {0, "Enhanced Input target handle is unknown or belongs to another Lua session: " +
+                           std::to_string(target_id)};
+        }
+    }
+
+    // An action handed over by address (the caller has checked it is a live
+    // UObject) needs only a class check; a path is looked up outside the lock.
+    UObject* action{};
+    if (action_object)
+    {
+        if (!is_input_action(action_object))
+        {
+            return {0, "object is not an InputAction: " + action_path};
+        }
+        action = action_object;
+    }
+    else
+    {
+        action = resolve_action(widen_ascii(action_path));
+    }
 
     std::scoped_lock lock(mutex_);
     if (!initialized_.load(std::memory_order_acquire))

@@ -1748,6 +1748,15 @@ private:
             return 2;
         }
         const auto target = static_cast<uint64_t>(target_value);
+        // 0 binds by path; otherwise the address of the action the caller
+        // holds, which skips the path lookup.
+        const auto action_address_value = lua.get_integer(1);
+        if (action_address_value < 0)
+        {
+            lua.set_nil();
+            lua.set_string("invalid InputAction address");
+            return 2;
+        }
         std::string action_path;
         std::string error;
         if (!decode_packed_path(lua, action_path, error))
@@ -1755,6 +1764,18 @@ private:
             lua.set_nil();
             lua.set_string(error);
             return 2;
+        }
+        RC::Unreal::UObject* action_object{};
+        if (action_address_value != 0)
+        {
+            const auto address = static_cast<std::uintptr_t>(action_address_value);
+            if (!read_object_identity(address, true, false))
+            {
+                lua.set_nil();
+                lua.set_string("InputAction address is not a live UObject: " + action_path);
+                return 2;
+            }
+            action_object = reinterpret_cast<RC::Unreal::UObject*>(address);
         }
 
         const auto [phase, phase_view] = parse_phase(lua.get_integer(1));
@@ -1837,7 +1858,8 @@ private:
             std::move(action_path),
             phase_name,
             phase,
-            std::move(debug));
+            std::move(debug),
+            action_object);
         if (handle == 0)
         {
             lua.set_nil();

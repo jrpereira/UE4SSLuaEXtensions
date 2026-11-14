@@ -121,7 +121,9 @@ local __phases = {
     Completed = 5,
 }
 
-local function __bindAction(targetHandle, action, event, callback, trace)
+-- actionAddress (optional) is the address of the live InputAction the helper
+-- holds: native Bind checks it and skips the path lookup, an object walk.
+local function __bindAction(targetHandle, action, event, callback, trace, actionAddress)
     if not __positiveInteger(targetHandle) then
         return nil, "targetHandle must be a positive integer returned by OpenInputComponent"
     end
@@ -136,7 +138,7 @@ local function __bindAction(targetHandle, action, event, callback, trace)
     end
 
     local packed = __packPath(action)
-    local args = { __session, targetHandle }
+    local args = { __session, targetHandle, actionAddress or 0 }
     for i = 1, #packed do args[#args + 1] = packed[i] end
     args[#args + 1] = __phases[event]
 
@@ -687,6 +689,11 @@ function __scopeMethods:Bind(key, trigger, callback, options)
     end
 
     local actionPath, pathError = __objectPath(action)
+    local addressOk, actionAddress = pcall(function() return action:GetAddress() end)
+    if actionPath ~= nil and (not addressOk or not __positiveInteger(actionAddress)) then
+        pathError = "generated InputAction did not provide a valid address"
+        actionPath = nil
+    end
     if actionPath == nil then
         local removed, removeError = __removeContext(state, record)
         if not removed then state.orphans[#state.orphans + 1] = record end
@@ -712,7 +719,7 @@ function __scopeMethods:Bind(key, trigger, callback, options)
             record.callback_failed = true
             error(callbackError, 0)
         end
-    end, trace)
+    end, trace, actionAddress)
     if handle == nil then
         local removed, removeError = __removeContext(state, record)
         if not removed then state.orphans[#state.orphans + 1] = record end
@@ -733,7 +740,7 @@ function __scopeMethods:Bind(key, trigger, callback, options)
                 label = state.debug_label,
             }
             local observerHandle, observerError = __bindAction(
-                state.target, actionPath, phase, function() end, observerTrace)
+                state.target, actionPath, phase, function() end, observerTrace, actionAddress)
             if observerHandle == nil then
                 local removed, removeError = __removeRecord(state, record)
                 if not removed then state.orphans[#state.orphans + 1] = record end

@@ -145,7 +145,8 @@ public:
         std::string action_path,
         std::string phase_name,
         EnhancedInputABI::TriggerEvent phase,
-        EnhancedInputDebugInfo debug = {});
+        EnhancedInputDebugInfo debug = {},
+        RC::Unreal::UObject* action_object = nullptr);
     bool unsubscribe(LuaSession& session, uint64_t id);
     std::size_t unsubscribe_all(LuaSession& session, bool preserve_targets = false);
     void deactivate(LuaSession& session, uint64_t id);

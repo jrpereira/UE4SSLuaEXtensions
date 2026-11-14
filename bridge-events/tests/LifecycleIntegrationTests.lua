@@ -21,6 +21,7 @@ local function fixture()
         check(self.gameThread, "reflected mutation attempted off game thread")
         self.mutations = self.mutations + 1
     end
+    local nextAddress = 0x100000
     local function object(kind)
         local o = { valid = true, path = "/Engine/Transient.Lifecycle_" .. f:id() }
         function o:IsValid() return self.valid end
@@ -74,6 +75,11 @@ local function fixture()
             self:mutate()
             local o = object(class.class)
             o.flags = flags
+            if class.class == "InputAction" then
+                nextAddress = nextAddress + 8
+                o.address = nextAddress
+                function o:GetAddress() return self.address end
+            end
             self.constructed[class.class] = (self.constructed[class.class] or 0) + 1
             function o:MapKey(action, key) self.action = action; self.key = key end
             function o:UnmapAll() self.action, self.key = nil, nil end
@@ -155,7 +161,7 @@ local function fixture()
             own(args[1])
             check(self.componentAlive, "bind after component destruction")
             local handle = self:id()
-            self.bindings[handle] = { session = session, token = args[69], handle = handle }
+            self.bindings[handle] = { session = session, token = args[70], handle = handle }
             return handle
         end
         env.UE4SSLuaEventBridge_Unbind = function(id, handle)

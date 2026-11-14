@@ -9,6 +9,7 @@ local counters = {
     native_unbound = 0,
 }
 local nextObject = 0
+local nextAddress = 0x100000
 local nextHandle = 0
 local nativeTokens = {}
 local nativeBindings = {}
@@ -74,6 +75,7 @@ function StaticFindObject(path)
 end
 
 local contextsConstructed = 0
+local lastAction
 function StaticConstructObject(class, outer, _name, flags)
     -- Private contexts are rooted so a game-side mapping clear cannot collect them.
     if class.class_name == "InputMappingContext" then
@@ -85,6 +87,13 @@ function StaticConstructObject(class, outer, _name, flags)
     nextObject = nextObject + 1
     local generated = object(class.class_name, "/Engine/Transient.Generated_" .. nextObject)
     generated.outer = outer
+    if class.class_name == "InputAction" then
+        -- Only generated actions are asked for an address (native Bind skips the path lookup).
+        nextAddress = nextAddress + 8
+        generated.address = nextAddress
+        function generated:GetAddress() return self.address end
+        lastAction = generated
+    end
     if class.class_name == "InputMappingContext" then
         function generated:MapKey(action, key)
             self.action = action
@@ -129,14 +138,15 @@ function UE4SSLuaEventBridge_BindAction(...)
         return nil, "injected bind failure"
     end
     nextHandle = nextHandle + 1
-    nativeTokens[nextHandle] = args[69]
+    nativeTokens[nextHandle] = args[70]
     nativeBindings[nextHandle] = {
-        phase = args[68],
-        debug = args[70] == 1,
-        scope_id = args[71],
-        binding_id = args[72],
-        primary = args[73] == 1,
-        trigger_kind = args[74],
+        action_address = args[3],
+        phase = args[69],
+        debug = args[71] == 1,
+        scope_id = args[72],
+        binding_id = args[73],
+        primary = args[74] == 1,
+        trigger_kind = args[75],
     }
     return nextHandle
 end
@@ -216,6 +226,10 @@ local tapHandle, tapError = scope:Bind("F10", Trigger.Tap, function(event)
     tapEvent = event
 end, { threshold_seconds = 0.2 })
 expect(tapHandle ~= nil, tapError)
+-- The helper hands over the action it just created, so native Bind needs no
+-- path lookup (an object walk); the public BindAction passes 0.
+expect(nativeBindings[tapHandle].action_address == lastAction.address,
+    "Bind must pass the generated InputAction's address")
 expect(nativeBindings[tapHandle].debug == false,
     "debug-disabled scopes must not attach diagnostic metadata")
 
@@ -428,6 +442,7 @@ local started = assert(bridge.BindAction(guarded, "Action", "Started", function(
         if epoch == capturedEpoch and bridge.IsTargetDeliveryValid(guarded) then calls = calls + 100 end
     end
 end))
+expect(nativeBindings[started].action_address == 0, "BindAction must bind by path")
 local token = nativeTokens[started]
 dispatch(token, started, "Action", "Started", 0,0,1,0,0,0,1)
 expect(held and calls == 1)
