@@ -131,6 +131,8 @@ public:
         std::vector<Watch> matched;
         collect(by_index_, index, matched);
         collect(by_address_, address, matched);
+        if (matched.empty()) return; // The common case: nothing observed this object.
+        bool removed{};
         for (const auto& [session, token] : matched)
         {
             const auto found = sessions_.find(session);
@@ -142,6 +144,7 @@ public:
             unwatch(session, token, identity);
             state.tokens.erase(identity);
             state.observations.erase(record);
+            removed = true;
             if (state.report_losses && !state.overflow)
             {
                 if (state.lost.size() < loss_limit_) state.lost.push_back(token);
@@ -152,7 +155,7 @@ public:
                 }
             }
         }
-        publish_count();
+        if (removed) publish_count();
     }
 
     LostResult take_lost(uint64_t session)
