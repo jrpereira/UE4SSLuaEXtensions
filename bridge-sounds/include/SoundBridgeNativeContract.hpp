@@ -39,14 +39,16 @@
 // ---------------------------------------------------------------------------
 // 3. Files
 // ---------------------------------------------------------------------------
-// Load reads one file from the calling mod's own folder, read-only. The path
-// is relative to that folder (`sounds/cue.wav` by convention); `/` and `\`
-// both separate segments. Refused (`invalid`): empty, absolute or
-// drive-relative paths, `:` anywhere (drives, streams), wildcards and control
-// characters, segments ending in a dot or space. Refused (`outside_root`): a
-// `..` that climbs out of the folder, reserved device names, and a file whose
-// final path (links followed) lies outside the mod folder's final path. Files
-// larger than max_file_bytes are `invalid` before they are read.
+// Load reads one file, read-only, from any folder. An absolute path needs its
+// drive letter (`C:/...`) and loads as given; a relative path resolves against
+// the calling mod's folder (`sounds/cue.wav` by convention), and `..` may climb
+// out of it. `/` and `\` both separate segments; links are followed. Refusals
+// are for robustness, all `invalid`: empty, rooted-without-drive and
+// drive-relative paths, network and device paths (`\\server`, `\\.\`,
+// `\\?\`), `:` other than after the drive, wildcards and control characters,
+// segments ending in a dot or space, device names (CON, NUL, COM1, ...), `..`
+// above a drive's root, folders, files that aren't on disk, and files larger
+// than max_file_bytes (refused before they are read).
 //
 // ---------------------------------------------------------------------------
 // 4. Playback
@@ -101,7 +103,6 @@ enum class ErrorCode : uint8_t
 {
     not_found,
     denied,
-    outside_root,
     busy,
     io,
     invalid,
@@ -109,8 +110,8 @@ enum class ErrorCode : uint8_t
     too_long,
 };
 
-inline constexpr std::array<std::string_view, 8> error_code_names{
-    "not_found", "denied", "outside_root", "busy", "io", "invalid", "unsupported", "too_long"};
+inline constexpr std::array<std::string_view, 7> error_code_names{
+    "not_found", "denied", "busy", "io", "invalid", "unsupported", "too_long"};
 
 constexpr std::string_view to_string(ErrorCode code)
 {
@@ -137,7 +138,7 @@ inline constexpr std::array<NativeFunction, 8> native_functions{{
      "sounds:int, sound_bytes:int, playing:int, started:int, dropped:int, stolen:int, device:str, "
      "device_changes:int"},
     {"Load", "isi", "session, path:str, max_ms:int (-1 = no limit)",
-     "sound:int, frames:int, channels:int, rate:int, path:str (normalized, relative)"},
+     "sound:int, frames:int, channels:int, rate:int, path:str (normalized, as given: absolute or relative)"},
     {"Release", "ii", "session, sound", "true (also for a sound already released)"},
     {"Play", "iiiiii", "session, sound, pan:micro, volume:micro, pitch:micro, lowpass:hz (0 = none)", "play:int"},
     {"Stop", "ii", "session, play", "true (also for a play that has ended)"},

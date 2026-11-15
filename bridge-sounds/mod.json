@@ -6,7 +6,7 @@
   "categories": [
     "libraries"
   ],
-  "description": "Sound playback for UE4SS Lua mods through a native C++ bridge: WAV files from the mod's own folder, played at once with per-play pan, volume, pitch and low-pass filter, outside the game's audio engine.",
+  "description": "Sound playback for UE4SS Lua mods through a native C++ bridge: WAV files from any folder, played at once with per-play pan, volume, pitch and low-pass filter, outside the game's audio engine.",
   "dependencies": [
     {
       "id": "UE4SS",

@@ -75,6 +75,7 @@ local function main()
         check("at least 8 voices", caps.max_voices >= 8, caps.max_voices)
         check("pitch range covers 0.5 to 2", caps.pitch.min <= 0.5 and caps.pitch.max >= 2)
         check("stop is supported", caps.stop == true)
+        check("any path loads", caps.paths == "any", caps.paths)
         check("target_ue4ss_commit", caps.target_ue4ss_commit == "97b7e501", caps.target_ue4ss_commit)
         local stats = sounds:GetStats()
         check("GetStats fields", math.type(stats.sounds) == "integer" and math.type(stats.started) == "integer"
@@ -111,10 +112,27 @@ local function main()
         refused("missing file", "not_found", sounds.Load("lexverify-missing.wav"))
         refused("not a WAV file", "unsupported", sounds.Load("lexverify-text.wav"))
         refused("a folder", "invalid", sounds.Load("Scripts"))
-        refused("climbing out of the folder", "outside_root", sounds.Load("../x.wav"))
-        refused("absolute path", "invalid", sounds.Load("C:/Windows/Media/chord.wav"))
-        refused("rooted path", "invalid", sounds.Load("/x.wav"))
-        refused("device name", "outside_root", sounds.Load("CON.wav"))
+        local folder = modFolder()
+        local name = folder and folder:match("[/\\]([^/\\]+)$")
+        local out = name and ok("Load through .. out of the folder and back", sounds.Load("../" .. name .. "/lexverify-mono16.wav"))
+        if out then
+            check("a leading .. stays in the path", out.path == "../" .. name .. "/lexverify-mono16.wav", out.path)
+            out:Release()
+        end
+        if folder and folder:match("^%a:[/\\]") then
+            local absolute = ok("Load by absolute path", sounds.Load(folder .. "/lexverify-mono16.wav"))
+            if absolute then
+                check("an absolute path stays absolute", absolute.path:match("^%u:/.*/lexverify%-mono16%.wav$") ~= nil, absolute.path)
+                absolute:Release()
+            end
+        else
+            skip("Load by absolute path", "this script's folder isn't absolute: " .. tostring(folder))
+        end
+        refused("missing file by absolute path", "not_found", sounds.Load("C:/lexverify-missing/x.wav"))
+        refused("rooted path without a drive", "invalid", sounds.Load("/x.wav"))
+        refused("network path", "invalid", sounds.Load("\\\\lexverify\\share\\x.wav"))
+        refused("device path", "invalid", sounds.Load("\\\\.\\CON"))
+        refused("device name", "invalid", sounds.Load("CON.wav"))
         refused("empty path", "invalid", sounds.Load(""))
         refused("unknown option", "invalid", sounds.Load("lexverify-mono16.wav", { loop = true }))
         refused("non-string path", "invalid", sounds.Load(42))

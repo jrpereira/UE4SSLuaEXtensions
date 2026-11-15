@@ -1,4 +1,4 @@
-// UE4SSLuaSoundBridge: reading sound files from a mod's own folder.
+// UE4SSLuaSoundBridge: reading sound files.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -83,37 +83,6 @@ Failure last_failure(const std::string& what)
     return Failure{code, what + " (win32 " + std::to_string(error) + ")"};
 }
 
-std::wstring final_path(HANDLE handle)
-{
-    std::wstring buffer(512, L'\0');
-    for (int attempt = 0; attempt < 4; ++attempt)
-    {
-        const DWORD length = GetFinalPathNameByHandleW(handle, buffer.data(), static_cast<DWORD>(buffer.size()),
-            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-        if (length == 0) return {};
-        if (length < buffer.size())
-        {
-            buffer.resize(length);
-            return buffer;
-        }
-        buffer.resize(static_cast<std::size_t>(length) + 1);
-    }
-    return {};
-}
-
-bool equal_fold(const wchar_t* a, std::size_t a_length, const wchar_t* b, std::size_t b_length)
-{
-    return CompareStringOrdinal(a, static_cast<int>(a_length), b, static_cast<int>(b_length), TRUE) == CSTR_EQUAL;
-}
-
-// `child` lies strictly inside `parent` (both final paths).
-bool within(const std::wstring& child, const std::wstring& parent)
-{
-    if (parent.empty() || child.size() <= parent.size() + 1) return false;
-    if (child[parent.size()] != L'\\') return false;
-    return equal_fold(child.data(), parent.size(), parent.data(), parent.size());
-}
-
 std::wstring module_file_name(HMODULE module)
 {
     std::wstring buffer(MAX_PATH, L'\0');
@@ -168,46 +137,32 @@ std::string mods_folder(const void* address_in_module)
     return narrow(mods);
 }
 
-Core::Outcome<std::string> read_mod_file(const std::string& mod_folder, const std::string& relative, int64_t max_bytes)
+Core::Outcome<std::string> read_sound_file(const std::string& absolute, const std::string& shown, int64_t max_bytes)
 {
-    const auto folder = L"\\\\?\\" + backslashes(widen(mod_folder));
-    const auto file = folder + L"\\" + backslashes(widen(relative));
-    if (folder.size() <= 4 || file.size() <= folder.size() + 1)
-    {
-        return Failure{ErrorCode::invalid, relative + ": the path isn't valid UTF-8"};
-    }
-
-    Handle root(CreateFileW(folder.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
-    if (!root.valid()) return last_failure("the mod's folder " + mod_folder + " can't be opened");
-    const auto root_final = final_path(root.get());
-    if (root_final.empty()) return last_failure("the mod's folder " + mod_folder + " can't be resolved");
+    const auto file = L"\\\\?\\" + backslashes(widen(absolute));
+    if (file.size() <= 4) return Failure{ErrorCode::invalid, shown + ": the path isn't valid UTF-8"};
 
     Handle handle(CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
     if (!handle.valid())
     {
-        auto failed = last_failure(relative + ": can't be opened");
+        auto failed = last_failure(shown + ": can't be opened");
         const DWORD attributes = GetFileAttributesW(file.c_str());
         if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
         {
-            return Failure{ErrorCode::invalid, relative + ": is a folder"};
+            return Failure{ErrorCode::invalid, shown + ": is a folder"};
         }
-        if (failed.code == ErrorCode::not_found) failed.message = relative + ": not found";
+        if (failed.code == ErrorCode::not_found) failed.message = shown + ": not found";
         return failed;
     }
-    const auto file_final = final_path(handle.get());
-    if (file_final.empty()) return last_failure(relative + ": can't be resolved");
-    if (!within(file_final, root_final))
-    {
-        return Failure{ErrorCode::outside_root, relative + ": resolves outside the mod's folder"};
-    }
+    // Only disk files: anything else (a pipe, a device behind a link) could block on read.
+    if (GetFileType(handle.get()) != FILE_TYPE_DISK) return Failure{ErrorCode::invalid, shown + ": isn't a file on disk"};
 
     LARGE_INTEGER size{};
-    if (!GetFileSizeEx(handle.get(), &size)) return last_failure(relative + ": size unknown");
+    if (!GetFileSizeEx(handle.get(), &size)) return last_failure(shown + ": size unknown");
     if (size.QuadPart > max_bytes)
     {
-        return Failure{ErrorCode::invalid, relative + ": larger than " + std::to_string(max_bytes / (1024 * 1024)) + " MiB"};
+        return Failure{ErrorCode::invalid, shown + ": larger than " + std::to_string(max_bytes / (1024 * 1024)) + " MiB"};
     }
     std::string content(static_cast<std::size_t>(size.QuadPart), '\0');
     std::size_t done = 0;
@@ -215,7 +170,7 @@ Core::Outcome<std::string> read_mod_file(const std::string& mod_folder, const st
     {
         const auto chunk = static_cast<DWORD>(std::min<std::size_t>(content.size() - done, 1u << 24));
         DWORD read = 0;
-        if (!ReadFile(handle.get(), content.data() + done, chunk, &read, nullptr)) return last_failure(relative + ": read failed");
+        if (!ReadFile(handle.get(), content.data() + done, chunk, &read, nullptr)) return last_failure(shown + ": read failed");
         if (read == 0) break;
         done += read;
     }

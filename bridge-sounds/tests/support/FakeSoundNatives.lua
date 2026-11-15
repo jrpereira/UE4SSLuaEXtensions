@@ -25,6 +25,8 @@ function Fake.new()
             ["sounds/stereo.wav"] = { frames = 96000, channels = 2, rate = 48000 },
             ["sounds/long.wav"] = { frames = 480000, channels = 1, rate = 48000 },
             ["sounds/text.wav"] = { code = "unsupported", message = "not a WAV file" },
+            ["../Other/sounds/cue.wav"] = { frames = 4410, channels = 1, rate = 44100 },
+            ["C:/Mods/Other/sounds/cue.wav"] = { frames = 4410, channels = 1, rate = 44100 },
         },
         sounds = {},
         released = {},
@@ -59,7 +61,7 @@ function Fake.new()
 
     local natives = {}
 
-    function natives.GetVersion() return "1.0.0" end
+    function natives.GetVersion() return "1.1.0" end
 
     function natives.GetCapabilities() return 1, 32, 67108864, "xaudio2", "97b7e501" end
 
@@ -71,7 +73,7 @@ function Fake.new()
 
     function natives.Load(_, path, maxMs)
         local normalized = path:gsub("\\", "/"):gsub("^%./", "")
-        if normalized:find("..", 1, true) then return nil, "outside_root", "Load " .. path .. ": climbs out" end
+        if normalized:upper():match("^CON") then return nil, "invalid", "Load " .. path .. ": names a device" end
         local file = fake.files[normalized]
         if not file then return nil, "not_found", "Load " .. path .. ": not found" end
         if file.code then return nil, file.code, "Load " .. path .. ": " .. file.message end

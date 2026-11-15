@@ -1,7 +1,7 @@
 # UE4SS Lua Sound Bridge
 
 UE4SSLuaSoundBridge lets UE4SS Lua mods play their own sounds. A mod loads WAV
-files from its own folder once, then plays them at once, as often as it likes,
+files once, then plays them at once, as often as it likes,
 with pan, volume, pitch and a low-pass filter chosen per play. Playback runs
 through XAudio2, beside the game's own audio engine, so it works where the
 game's sound banks can't help: sounds the game doesn't ship, and cues whose
@@ -22,10 +22,15 @@ direction must not lag the camera.
   dropped quietly.
 - Sounds belong to the Lua state that loaded them and are released when it
   stops.
-- Errors as `nil, code, message` with eight stable codes.
+- Errors as `nil, code, message` with seven stable codes.
 
-Sounds are read only from the calling mod's own folder. By convention they go
-in a `sounds/` subfolder, next to `Scripts/`.
+`Load` takes a path relative to the calling mod's own folder, where sounds go
+in a `sounds/` subfolder next to `Scripts/` by convention, or an absolute path
+to a WAV file anywhere. Code that runs in another mod's Lua state, such as a
+template run by ModCore Templates, builds an absolute path from its own script's
+location. Lua's `io` can already read any file, so the bridge doesn't restrict
+folders; it refuses only paths that could stall the game, such as network
+shares and device names.
 
 The bridge doesn't follow the game's volume settings or pause; a mod that
 needs that offers its own volume and stops playing while paused.
@@ -51,7 +56,7 @@ Mods/
     │   ├── main.dll
     │   ├── main.json
     │   └── versions/
-    │       └── UE4SSLuaSoundBridge-1.0.0.dll
+    │       └── UE4SSLuaSoundBridge-1.1.0.dll
     ├── enabled.txt
     └── mod.json
 ```

@@ -15,7 +15,7 @@ Gives Lua mods file and folder access inside the game's own folders. Each mod ge
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaFileBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-files/README.md]File Bridge README[/url].
 
 [size=4][b]UE4SS Lua Sound Bridge[/b][/size]
-Lets Lua mods play their own WAV files, outside the game's audio engine. A mod loads sounds from its own folder once, then plays them at once with pan, volume, pitch and a low-pass filter chosen per play; plays overlap, and playback follows the default output device when headphones are plugged in or out. Built for cues that must land with what is on screen, such as a sound that tells which side an attack comes from.
+Lets Lua mods play WAV files outside the game's audio engine. A mod loads sounds once, from its own folder or any path, then plays them at once with pan, volume, pitch and a low-pass filter chosen per play; plays overlap, and playback follows the default output device when headphones are plugged in or out. Built for cues that must land with what is on screen, such as a sound that tells which side an attack comes from.
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaSoundBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-sounds/README.md]Sound Bridge README[/url].
 

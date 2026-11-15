@@ -1,4 +1,4 @@
-# UE4SSLuaSoundBridge Lua API (1.0.0)
+# UE4SSLuaSoundBridge Lua API (1.1.0)
 
 API version 1. Every Lua mod gets the global `UE4SSLuaSoundBridge` when the
 bridge is installed; without the bridge the global is `nil`.
@@ -21,10 +21,9 @@ bridge is installed; without the bridge the global is `nil`.
 |---|---|
 | `not_found` | The file doesn't exist. |
 | `denied` | The system refused to open the file. |
-| `outside_root` | The path leaves the mod's folder (`..`, a link pointing elsewhere) or names a device. |
 | `busy` | Another program holds the file open exclusively. |
-| `io` | Reading failed, the mod's folder is unknown, or a limit was reached. |
-| `invalid` | A bad argument, option or path, a folder instead of a file, a file over 64 MiB, or a released sound. |
+| `io` | Reading failed, the mod's folder is unknown for a relative path, or a limit was reached. |
+| `invalid` | A bad argument, option or path (including network and device paths), a folder instead of a file, a file over 64 MiB, or a released sound. |
 | `unsupported` | Not a WAV file, or a WAV format the bridge doesn't decode. |
 | `too_long` | Longer than the `max_seconds` given to `Load`. |
 
@@ -57,6 +56,7 @@ A new table on each call:
 | `pan`, `volume`, `pitch` | `{min =, max =}`: `-1..1`, `0..4`, `0.5..2` |
 | `lowpass` | `{min = 20}` |
 | `stop` | `true`: `Stop`, `sound:Stop` and `StopAll` exist |
+| `paths` | `"any"`: `Load` takes absolute paths and `..` out of the mod's folder (1.1.0) |
 | `target_ue4ss_commit` | `"97b7e501"` |
 
 A mod that needs a later feature checks for its key here.
@@ -82,18 +82,32 @@ A new table on each call, for diagnostics:
 
 Reads and decodes one WAV file and returns a sound.
 
-`path` is relative to the calling mod's own folder. Put sounds in a `sounds/`
-subfolder by convention: `"sounds/cue.wav"`. `/` and `\` both separate
-folders; `.` and `..` inside the folder are resolved. Refused:
+`path` names any WAV file the game can read:
 
-- empty, absolute (`/x.wav`, `C:/x.wav`) and drive-relative paths, and `:`
-  anywhere (`invalid`);
-- wildcards (`* ? " < > |`), control characters, and folder or file names
-  ending in a dot or a space (`invalid`);
-- a `..` that climbs out of the mod's folder, device names such as `CON`, and a
-  file whose real location (links followed) is outside the folder
-  (`outside_root`);
-- files over 64 MiB (`invalid`).
+- **Relative** paths resolve against the folder of the mod that owns the
+  calling Lua state. Put a mod's sounds in a `sounds/` subfolder by
+  convention: `"sounds/cue.wav"`. `..` may climb out of the folder:
+  `"../OtherMod/sounds/cue.wav"`.
+- **Absolute** paths start with a drive letter and load as given:
+  `"C:/Games/.../Mods/MyMod/sounds/cue.wav"`. Code that runs in another mod's
+  Lua state (a template run by ModCore Templates, for example) builds one from
+  its own script's location, `debug.getinfo(1, "S").source`.
+
+`/` and `\` both separate folders; `.` and `..` are resolved before the file is
+opened, and links are followed. Lua's `io` already reads any file, so the
+bridge doesn't restrict folders. It refuses, with `invalid`, only what could
+stall the game or be read differently than written:
+
+- empty paths, rooted paths without a drive (`/x.wav`), drive-relative paths
+  (`C:x.wav`), and `:` anywhere but after the drive letter (streams);
+- network and device paths (`\\server\share\...`, `\\.\...`, `\\?\...`) and
+  device names such as `CON`, `NUL` or `COM1` in any folder or file name;
+- wildcards (`* ? " < > |`), control characters, folder or file names ending in
+  a dot or a space, and `..` above a drive's root;
+- folders, anything that isn't a file on disk, and files over 64 MiB.
+
+A drive letter mapped to a network share is read like a local drive; a slow
+share stalls the game while `Load` runs.
 
 `options`:
 
@@ -116,7 +130,7 @@ Read-only:
 
 | Field | Meaning |
 |---|---|
-| `path` | The normalized path, relative to the mod's folder |
+| `path` | The normalized path as given: relative (`sounds/cue.wav`, `../Other/cue.wav`) or absolute (`C:/.../cue.wav`) |
 | `frames` | Sample frames |
 | `channels` | `1` or `2` |
 | `rate` | Sample rate in Hz |

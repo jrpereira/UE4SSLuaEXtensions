@@ -180,7 +180,7 @@ public:
     {
         ModName = L"UE4SSLuaSoundBridge";
         ModVersion = UE4SSLSB_WIDEN(UE4SSLSB_VERSION);
-        ModDescription = L"Sound playback for UE4SS Lua mods: WAV files from the mod's folder, with pan, volume, pitch and low-pass";
+        ModDescription = L"Sound playback for UE4SS Lua mods: WAV files, with pan, volume, pitch and low-pass";
         ModAuthors = L"UE4SS Lua Extension Bridges contributors";
         ModIntendedSDKVersion = L"3.0.1-97b7e501";
         active_bridge = this;
@@ -282,14 +282,13 @@ private:
         if (!utf16_to_utf8(std::wstring_view(mod_name.data(), mod_name.size()), name)) name.clear();
         session->mod_name = name;
         // The mod name must be exactly one folder name.
-        const auto checked = Core::normalize_sound_path(name);
-        if (!mods_.empty() && checked && checked.value() == name && name.find('/') == std::string::npos)
+        if (!mods_.empty() && Core::single_folder_name(name))
         {
             session->mod_folder = mods_ + "/" + name;
         }
         else if (!mods_.empty())
         {
-            report("mod \"" + name + "\": its name isn't one folder name, so it can't load sounds");
+            report("mod \"" + name + "\": its name isn't one folder name, so it can load sounds only by absolute path");
         }
 
         register_natives(lua);
@@ -359,9 +358,10 @@ Reply load(SoundBridgeMod& bridge, Call& call)
     const auto path = call.string();
     const auto max_ms = call.integer();
     if (!session) return failure(ErrorCode::invalid, session_gone());
-    auto relative = Core::normalize_sound_path(path);
-    if (!relative) return failure(relative.failure().code, "Load " + relative.failure().message);
-    if (session->mod_folder.empty()) return failure(ErrorCode::io, "Load " + path + ": this mod's folder is unknown");
+    auto normalized = Core::normalize_sound_path(path);
+    if (!normalized) return failure(normalized.failure().code, "Load " + normalized.failure().message);
+    auto absolute = Core::resolve_sound_path(normalized.value(), session->mod_folder);
+    if (!absolute) return failure(absolute.failure().code, "Load " + absolute.failure().message);
     {
         std::scoped_lock lock(session->mutex);
         if (static_cast<int64_t>(session->sounds.size()) >= Contract::max_sounds_per_session)
@@ -369,10 +369,10 @@ Reply load(SoundBridgeMod& bridge, Call& call)
             return failure(ErrorCode::io, "Load " + path + ": a Lua environment holds at most 4096 sounds");
         }
     }
-    auto bytes = Win32::read_mod_file(session->mod_folder, relative.value(), Contract::max_file_bytes);
+    auto bytes = Win32::read_sound_file(absolute.value(), normalized.value(), Contract::max_file_bytes);
     if (!bytes) return failure(bytes.failure().code, "Load " + bytes.failure().message);
     auto decoded = Core::decode_wav(bytes.value(), max_ms < 0 ? -1 : max_ms);
-    if (!decoded) return failure(decoded.failure().code, "Load " + relative.value() + ": " + decoded.failure().message);
+    if (!decoded) return failure(decoded.failure().code, "Load " + normalized.value() + ": " + decoded.failure().message);
     auto sound = std::make_shared<const SoundData>(std::move(decoded.value()));
     const auto id = bridge.next_sound_id();
     {
@@ -383,7 +383,7 @@ Reply load(SoundBridgeMod& bridge, Call& call)
     bridge.engine().start();
     bridge.engine().prepare(sound->format());
     return success(id, static_cast<int64_t>(sound->frames()), static_cast<int64_t>(sound->channels),
-        static_cast<int64_t>(sound->rate), relative.value());
+        static_cast<int64_t>(sound->rate), normalized.value());
 }
 
 Reply release(SoundBridgeMod& bridge, Call& call)

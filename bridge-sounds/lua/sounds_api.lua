@@ -256,6 +256,7 @@ local function __GetCapabilities()
         pitch = { min = __PITCH_MIN, max = __PITCH_MAX },
         lowpass = { min = __LOWPASS_MIN },
         stop = true,
+        paths = "any",
         target_ue4ss_commit = commit,
     }
 end
