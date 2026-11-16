@@ -4,7 +4,7 @@ UE4SS runs Lua mods inside the game, but Lua alone cannot reach everything a mod
 
 There are three independent extensions. Each has its own mod folder, version and documentation. A mod depends on whichever it uses, and you can keep all of them installed. They do nothing on their own: install them when a mod asks for them.
 
-## UE4SS Lua Event Bridge
+## UE4SS Lua Event Bridge (1.3.0)
 
 Connects Unreal Enhanced Input to UE4SS Lua callbacks. Bind existing Input Actions or create key bindings with native Tap and Hold triggers: Unreal handles the stopwatch, your mod handles the action. Lua receives copied event values outside Unreal's native input-dispatch stack.
 
@@ -12,13 +12,13 @@ It also provides native object-lifetime validation and weak handles, so a mod ca
 
 Mod folder: `0_ModCore_UE4SSLuaEventBridge`. Documentation: [Event Bridge README](bridge-events/README.md).
 
-## UE4SS Lua File Bridge
+## UE4SS Lua File Bridge (1.1.0)
 
 Gives Lua mods file and folder access inside the game's own folders. Each mod gets named locations (its own folder, a per-mod data folder, a scratch folder and the save folder), explicit write grants, atomic writes and file sockets that let mods talk through a path. Lua already has `io`; this is `io` with a seatbelt. The sandbox prevents mistakes; it is not a security boundary.
 
 Mod folder: `0_ModCore_UE4SSLuaFileBridge`. Documentation: [File Bridge README](bridge-files/README.md).
 
-## UE4SS Lua Sound Bridge
+## UE4SS Lua Sound Bridge (1.1.0)
 
 Lets Lua mods play WAV files outside the game's audio engine. A mod loads sounds once, from its own folder or any path, then plays them at once with pan, volume, pitch and a low-pass filter chosen per play; plays overlap, and playback follows the default output device when headphones are plugged in or out. Built for cues that must land with what is on screen, such as a sound that tells which side an attack comes from.
 
@@ -26,7 +26,7 @@ Mod folder: `0_ModCore_UE4SSLuaSoundBridge`. Documentation: [Sound Bridge README
 
 ## Installation
 
-The Nexus download is one ZIP holding all three extensions. Extract it into the UE4SS `Mods` directory, or install it with your mod manager. It adds a folder for each extension and a third, Lua-only folder for the menu:
+The Nexus download is one ZIP holding all three extensions. Extract it into the UE4SS `Mods` directory, or install it with your mod manager. It adds a folder for each extension and a fourth, Lua-only folder for the menu:
 
 ```text
 Mods/

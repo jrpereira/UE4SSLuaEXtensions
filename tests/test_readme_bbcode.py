@@ -1,5 +1,6 @@
 """NEXUS.bb is generated from README.md; the converter rejects Markdown it cannot render."""
 import importlib.util
+import re
 from pathlib import Path
 import unittest
 
@@ -31,6 +32,18 @@ class ConvertTests(unittest.TestCase):
         for text in ('| a | b |\n| - | - |', '> quote', '![x](y.png)', '#### deep', '```\nopen'):
             with self.assertRaises(ValueError, msg=text):
                 bbcode.convert(text)
+
+
+class ProductHeadingTests(unittest.TestCase):
+    PRODUCTS = {'Event': 'bridge-events', 'File': 'bridge-files', 'Sound': 'bridge-sounds'}
+
+    def test_each_product_heading_shows_its_current_version(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        for name, folder in self.PRODUCTS.items():
+            header = (ROOT / folder / 'contract/Version.hpp').read_text(encoding='utf-8')
+            version = re.search(r'#define \w+_VERSION "([0-9.]+)"', header).group(1)
+            self.assertIn(f'\n## UE4SS Lua {name} Bridge ({version})\n', readme,
+                          f'README heading for the {name} Bridge must show {version} from {folder}/contract/Version.hpp')
 
 
 class GeneratedFileTests(unittest.TestCase):
