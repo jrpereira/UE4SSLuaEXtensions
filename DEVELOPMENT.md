@@ -22,6 +22,7 @@ shared/
 tools/                          build, packaging, release and hygiene tooling
 tests/                          run.sh (the test runner) and the tooling's own tests
 package-manifest.json           what the combined package ZIP holds and where each file goes
+CHANGELOG.md                    changes to the package's own folder; its section for a package version opens that release's notes
 repository-policy.json          vendored files and their source modules, for the hygiene check
 ```
 

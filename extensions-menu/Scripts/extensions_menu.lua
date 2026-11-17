@@ -153,4 +153,26 @@ end
 -- The publishing directory of one contributor, inside this folder's cache.
 function M.directory(cache, id) return cache .. '/' .. id end
 
+-- Makes sure a directory exists and takes files. Only a file written into it counts: a mkdir's
+-- own result is not trusted, since early in UE4SS's startup a shell mkdir may report failure for
+-- a folder it did create. Each way of creating it is tried in turn, and the directory re-probed:
+--   ops.probe(path)       true when a file can be written into path
+--   ops.makeDir(path)     optional, UE4SSLuaFileBridge's MakeDir; may raise
+--   ops.shellMakeDir(path) optional, os.execute mkdir; may raise
+-- Returns true, or nil and the reasons each way failed.
+function M.ensureDirectory(path, ops)
+    if ops.probe(path) then return true end
+    local reasons = {}
+    for _, way in ipairs({'makeDir', 'shellMakeDir'}) do
+        local make = ops[way]
+        if make then
+            local ok, why = pcall(make, path)
+            if ops.probe(path) then return true end
+            reasons[#reasons + 1] = way .. ': ' .. (ok and 'no file can be written there' or tostring(why))
+        end
+    end
+    return nil, 'cannot create the cache directory ' .. path
+        .. (#reasons > 0 and ' (' .. table.concat(reasons, '; ') .. ')' or '')
+end
+
 return M

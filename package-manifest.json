@@ -4,13 +4,15 @@
   "repository": "jrpereira/UE4SSLuaEXtensions",
   "archive": "UE4SSLuaEXtensions-v{version}.zip",
   "release_tag": "extensions/v{version}",
+  "changelog": "CHANGELOG.md",
   "nexus_description": {
     "source": "README.md",
     "output": "NEXUS.bb"
   },
   "not_deployed": [
     "NEXUS.bb",
-    "DEVELOPMENT.md"
+    "DEVELOPMENT.md",
+    "CHANGELOG.md"
   ],
   "forbidden_folders": [
     "tools",

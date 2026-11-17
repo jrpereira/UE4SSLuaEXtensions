@@ -337,10 +337,22 @@ def published_dependency(dependency):
     return dict(dependency, version=version.replace('?', '0'))
 
 
-def release_notes(manifest, collection_version, products, changelogs):
+def package_notes(changelog, collection_version):
+    """The package changelog's section for this version (changes to the package's own folders),
+    or None when it has none: a package that only gathers new extension releases needs none."""
+    if not changelog or not re.search(rf'^## v{re.escape(collection_version)}[ \t]*$', changelog, re.M):
+        return None
+    return extract_notes(changelog, f'v{collection_version}', heading=False).strip()
+
+
+def release_notes(manifest, collection_version, products, changelogs, package_changelog=None):
     lines = [HEADING, '',
              f'{manifest["package"]} {collection_version} packages these extensions together for Nexus. '
              'Each is released separately on GitHub.', '']
+    own = package_notes(package_changelog, collection_version)
+    if own:
+        own = re.sub(r'^(#{2,5})(?=[ \t])', r'#\1', own, flags=re.M)
+        lines += [f'### {manifest["package"]} {collection_version}', '', own, '']
     for product in products:
         name, version = product['product_name'], product['version']
         notes = extract_notes(changelogs[name], f'v{version}', heading=False).strip()
@@ -422,7 +434,9 @@ def main():
         folders = package_folders(manifest, args.version, lambda path: (ROOT / path).read_bytes() if (ROOT / path).is_file() else None,
                                   targets, source_commit)
         target = assemble(manifest, args.version, source_commit, products, args.output, date_time, folders)
-        notes = release_notes(manifest, args.version, products, {p['product_name']: p['changelog'] for p in products})
+        changelog = ROOT / manifest.get('changelog', 'CHANGELOG.md')
+        notes = release_notes(manifest, args.version, products, {p['product_name']: p['changelog'] for p in products},
+                              changelog.read_text(encoding='utf-8') if changelog.is_file() else None)
         (args.output / 'release-notes.md').write_text(notes, encoding='utf-8')
     if args.output_file:
         with args.output_file.open('a', encoding='utf-8') as handle:

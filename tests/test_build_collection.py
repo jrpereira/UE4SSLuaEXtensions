@@ -73,8 +73,27 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual([e['mod_folder'] for e in MANIFEST['extensions']],
                          ['0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge',
                           '0_ModCore_UE4SSLuaSoundBridge'])
-        self.assertEqual(MANIFEST['not_deployed'], ['NEXUS.bb', 'DEVELOPMENT.md'])
+        self.assertEqual(MANIFEST['not_deployed'], ['NEXUS.bb', 'DEVELOPMENT.md', 'CHANGELOG.md'])
         self.assertEqual(MANIFEST['nexus_description'], {'source': 'README.md', 'output': 'NEXUS.bb'})
+
+    def test_release_notes_open_with_the_package_changes_only_when_it_has_some(self):
+        products = [{'product_name': 'UE4SSLuaEventBridge', 'version': '1.3.0', 'tag': 'bridge-events/v1.3.0'}]
+        changelogs = {'UE4SSLuaEventBridge': '# Changelog\n\n## v1.3.0\n\n### Changes\n\n- Bridge change.\n'}
+        package = '# Changelog\n\n## v1.3.3\n\n### Changes\n\n- Package fix.\n\n## v1.3.2\n\n- Older.\n'
+        notes = build.release_notes(MANIFEST, '1.3.3', products, changelogs, package)
+        self.assertIn('### UE4SSLuaEXtensions 1.3.3\n\n- Package fix.\n', notes)
+        self.assertNotIn('Older', notes)
+        self.assertLess(notes.index('Package fix'), notes.index('### UE4SSLuaEventBridge 1.3.0'))
+        for without in (None, package.replace('v1.3.3', 'v1.3.1')):
+            notes = build.release_notes(MANIFEST, '1.3.3', products, changelogs, without)
+            self.assertNotIn('### UE4SSLuaEXtensions', notes)
+            self.assertIn('- Bridge change.', notes)
+
+    def test_the_package_changelogs_newest_section_reads_as_notes(self):
+        import re
+        changelog = (ROOT / MANIFEST['changelog']).read_text(encoding='utf-8')
+        newest = re.search(r'^## v([0-9]+\.[0-9]+\.[0-9]+)$', changelog, re.M)[1]
+        self.assertTrue(build.package_notes(changelog, newest))
 
     def test_the_menu_folder_lists_files_that_exist_and_no_development_folders(self):
         for folder in MANIFEST['folders']:

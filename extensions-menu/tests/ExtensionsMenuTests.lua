@@ -109,4 +109,47 @@ for _, entry in ipairs(list) do
     local directory = Menu.directory('/mods/x/cache', entry.id)
     assert(not seenDirectory[directory]); seenDirectory[directory] = true
 end
+-- A missing cache directory (a fresh install) is created; only a file written into it counts.
+local function disk(existing)
+    local dirs, calls = {}, {}
+    for _, path in ipairs(existing or {}) do dirs[path] = true end
+    local ops = {probe = function(path) return dirs[path] == true end}
+    local function way(name, creates, result)
+        return function(path)
+            calls[#calls + 1] = name
+            if creates then dirs[path] = true end
+            if result == 'raise' then error(name .. ' refused', 0) end
+            return result
+        end
+    end
+    return ops, way, calls, dirs
+end
+do -- already there: nothing is created
+    local ops, way, calls = disk({'/c'})
+    ops.makeDir, ops.shellMakeDir = way('bridge', true), way('shell', true)
+    assert(Menu.ensureDirectory('/c', ops) == true and #calls == 0)
+end
+do -- the File Bridge creates it first
+    local ops, way, calls, dirs = disk()
+    ops.makeDir, ops.shellMakeDir = way('bridge', true), way('shell', true)
+    assert(Menu.ensureDirectory('/c', ops) == true and table.concat(calls, ',') == 'bridge' and dirs['/c'])
+end
+do -- the bridge fails, the shell creates it but reports failure: the probe decides
+    local ops, way, calls = disk()
+    ops.makeDir, ops.shellMakeDir = way('bridge', false, 'raise'), way('shell', true, 'raise')
+    assert(Menu.ensureDirectory('/c', ops) == true and table.concat(calls, ',') == 'bridge,shell')
+end
+do -- without the bridge, the shell alone
+    local ops, way, calls = disk()
+    ops.shellMakeDir = way('shell', true, false)
+    assert(Menu.ensureDirectory('/c', ops) == true and table.concat(calls, ',') == 'shell')
+end
+do -- a call that reports success without creating it is a failure, with each way's reason
+    local ops, way = disk()
+    ops.makeDir, ops.shellMakeDir = way('bridge', false, true), way('shell', false, 'raise')
+    local made, why = Menu.ensureDirectory('/c', ops)
+    assert(made == nil and why:find('cannot create the cache directory /c', 1, true)
+        and why:find('makeDir: no file can be written there', 1, true) and why:find('shell refused', 1, true), why)
+end
+
 print('PASS extensions menu: detection, count, sections, settings files, storage and publishing as a ModCore Settings module')
