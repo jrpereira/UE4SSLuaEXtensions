@@ -7,7 +7,7 @@ For contributors to the extensions themselves. Mod authors who use them want the
 
 ```text
 bridge-events/, bridge-files/,  one folder per extension: src/, include/, lua/, contract/Version.hpp,
-bridge-sounds/                  packaging/, tests/, docs/, examples/, CHANGELOG.md, mod.json
+bridge-sounds/, bridge-logs/    packaging/, tests/, docs/, examples/, CHANGELOG.md, mod.json
 extensions-menu/                the package's own Lua folder (no DLL): the extensions as one ModCore Settings module
 shared/
   bootstrap/                    the generic main.dll that selects and starts an extension's versioned DLL

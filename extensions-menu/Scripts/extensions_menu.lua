@@ -25,6 +25,8 @@ M.extensions = {
         title = 'UE4SS Lua File Bridge', slot = 'Files', contributor = 'UE4SSLuaEXtensions.Files'},
     {id = 'UE4SSLuaSoundBridge', folder = '0_ModCore_UE4SSLuaSoundBridge', label = 'Sounds Extension',
         title = 'UE4SS Lua Sound Bridge', slot = 'Sounds', contributor = 'UE4SSLuaEXtensions.Sounds'},
+    {id = 'UE4SSLuaLogBridge', folder = '0_ModCore_UE4SSLuaLogBridge', label = 'Logs Extension',
+        title = 'UE4SS Lua Log Bridge', slot = 'Logs', contributor = 'UE4SSLuaEXtensions.Logs'},
 }
 
 -- The address of an extension's slot on this folder's page.

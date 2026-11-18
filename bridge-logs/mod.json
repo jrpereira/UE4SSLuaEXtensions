@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "id": "UE4SSLuaLogBridge",
+  "name": "UE4SS Lua Log Bridge",
+  "preferred": "ModCore",
+  "categories": [
+    "libraries"
+  ],
+  "description": "Leveled logging for UE4SS Lua mods through a native C++ bridge: per-module and per-category levels you can change in-game, UE4SS.log or per-mod log files, immediate, per-frame or periodic writing on the game thread or a worker thread, and a crash-safe journal.",
+  "dependencies": [
+    {
+      "id": "UE4SS",
+      "url": "https://github.com/UE4SS-RE/RE-UE4SS"
+    }
+  ],
+  "links": {
+    "source": "https://github.com/jrpereira/UE4SSLuaEXtensions"
+  }
+}

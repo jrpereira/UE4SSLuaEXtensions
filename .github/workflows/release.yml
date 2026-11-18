@@ -8,6 +8,7 @@ on:
       - "release/bridge-events/v*"
       - "release/bridge-files/v*"
       - "release/bridge-sounds/v*"
+      - "release/bridge-logs/v*"
   workflow_dispatch:
 
 permissions:
