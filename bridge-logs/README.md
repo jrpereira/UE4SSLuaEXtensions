@@ -9,14 +9,14 @@ crash-safe delivery.
 - Levels change per mod, per category or globally, from settings.ini, the
   ModCore Settings menu or Lua, and apply while the game runs.
 - Lines go to UE4SS.log or to the mod's own `logs/<category>.log`.
-- Written at once, once per frame or every few seconds, on the game thread or
-  on the bridge's own thread so disk writes never touch a frame.
+- Written at once, once per frame or every few seconds, always by the
+  bridge's own thread, so disk writes never touch a frame.
 - Every line lands in a memory-mapped journal before the call returns, so a
   crash loses nothing; the next start writes the previous session's lines to
   `logs/previous-session.log`.
 
 ```lua
-local log = UE4SSLuaLogBridge().Register("MyMod", { target = "module", thread = "worker",
+local log = UE4SSLuaLogBridge().Register("MyMod", { target = "module",
     categories = { "combat" } })
 log.info("loaded ", count, " entries")
 log.combat.debug("hit ", target)

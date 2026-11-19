@@ -1,5 +1,5 @@
 -- A mod logging through UE4SS Lua Log Bridge: a UE4SS.log logger for notable
--- events and a per-frame worker logger writing LogDemo/logs/<category>.log.
+-- events and a per-frame logger writing LogDemo/logs/<category>.log.
 local Logs = UE4SSLuaLogBridge and UE4SSLuaLogBridge()
 if not Logs then
     print("[LogDemo] UE4SS Lua Log Bridge is not installed\n")
@@ -8,7 +8,7 @@ end
 
 local log = assert(Logs.Register("LogDemo", { level = "info" }))
 local trace = assert(Logs.Register("LogDemoTrace", {
-    target = "module", frequency = "frame", thread = "worker", level = "trace", categories = { "combat" },
+    target = "module", frequency = "frame", level = "trace", categories = { "combat" },
 }))
 
 log.info("loaded; bridge ", Logs.GetVersion())

@@ -2,19 +2,14 @@
 
 // Loggers, writing into the journal and delivering to targets. Portable: the
 // Windows layer supplies the Sink (UE4SS.log and files), the clocks, the
-// engine tick and the worker thread, and calls deliver() from each context.
+// engine tick and the worker thread.
 //
-// Delivery passes:
-//   call    inside the Lua call that wrote: game-thread immediate loggers
-//   tick    the engine-tick post-callback: game-thread loggers whose time came
-//   worker  the worker thread: worker loggers whose time came
-//   all     everything pending, synchronously (Flush, a full journal, stop)
-// A logger is delivered by one kind of pass only (and by `all`), so its lines
-// keep their order. Game passes and the worker hold separate delivery locks,
-// so a slow disk on the worker never blocks the game thread; `all` takes both.
+// The game thread only copies lines into the journal; the worker delivers.
+//   due()  the worker's pass: what is due (`frame` once a frame has passed)
+//   all()  everything pending, synchronously (Flush, a full journal, stop)
+// One delivery lock keeps every logger's lines in order.
 //
-// Without the engine tick, `frame` becomes `periodic` at 16 ms and every
-// non-immediate logger is delivered by the worker.
+// Without the engine tick, `frame` becomes `periodic` at 16 ms.
 
 #include <Journal.hpp>
 #include <LogBridgeNativeContract.hpp>
@@ -36,14 +31,12 @@ namespace UE4SSLuaLogBridge::Core
 {
 using NativeContract::Frequency;
 using NativeContract::Target;
-using NativeContract::Thread;
 
 struct Policy
 {
     Target target{Target::ue4ss};
     Frequency frequency{Frequency::immediate};
     int64_t interval_ms{1000};
-    Thread thread{Thread::game};
 };
 
 class Sink
@@ -54,14 +47,6 @@ public:
     virtual void ue4ss(const std::string& line) = 0;
     // Appends `text` (whole lines) to <folder>/logs/<category>.log.
     virtual void file(const std::string& folder, const std::string& category, const std::string& text) = 0;
-};
-
-enum class Pass
-{
-    call,
-    tick,
-    worker,
-    all,
 };
 
 struct CoreStats
@@ -115,8 +100,7 @@ public:
     struct Written
     {
         bool ok{};
-        bool deliver_now{}; // the caller runs deliver(Pass::call)
-        bool wake_worker{};
+        bool wake_worker{}; // an immediate line: the worker should run now
     };
 
     // Copies one line into the journal. A full journal is first delivered
@@ -147,28 +131,28 @@ public:
                     ++next_seq_;
                     ++written_;
                     pending_.push_back(Pending{slot, logger});
-                    const bool immediate = policy.frequency == Frequency::immediate;
-                    return Written{true, immediate && policy.thread == Thread::game,
-                        immediate && policy.thread == Thread::worker};
+                    return Written{true, policy.frequency == Frequency::immediate};
                 }
                 ++stalls_;
             }
-            deliver(Pass::all, now_ms);
+            all(now_ms);
         }
         return {};
     }
 
-    // Delivers what `pass` owns and is due. `frame` tells the worker a frame
-    // has passed since its last frame delivery. Returns the lines delivered.
-    std::size_t deliver(Pass pass, int64_t now_ms, bool frame = false)
+    // Delivers what is due; `frame` says a frame has passed since the last
+    // call that had it. Returns the lines delivered.
+    std::size_t due(int64_t now_ms, bool frame = false)
     {
-        if (pass == Pass::all)
-        {
-            std::scoped_lock order(game_delivery_, worker_delivery_);
-            return deliver_locked(pass, now_ms, frame);
-        }
-        std::scoped_lock order(pass == Pass::worker ? worker_delivery_ : game_delivery_);
-        return deliver_locked(pass, now_ms, frame);
+        std::scoped_lock order(delivery_);
+        return deliver_locked(false, now_ms, frame);
+    }
+
+    // Delivers everything pending.
+    std::size_t all(int64_t now_ms)
+    {
+        std::scoped_lock order(delivery_);
+        return deliver_locked(true, now_ms, false);
     }
 
     // How long the worker may sleep: until its next periodic logger with
@@ -181,7 +165,6 @@ public:
         {
             const auto& logger = loggers_.at(pending.logger);
             const auto policy = effective(logger.policy);
-            if (policy.thread != Thread::worker) continue;
             if (policy.frequency == Frequency::immediate) return 0;
             if (policy.frequency != Frequency::periodic) continue;
             const auto due = logger.last_delivery_ms + policy.interval_ms - now_ms;
@@ -190,13 +173,12 @@ public:
         return wait;
     }
 
-    [[nodiscard]] bool has_worker_frame_loggers() const
+    [[nodiscard]] bool has_frame_loggers() const
     {
         std::scoped_lock lock(mutex_);
         for (const auto& [_, logger] : loggers_)
         {
-            const auto policy = effective(logger.policy);
-            if (policy.thread == Thread::worker && policy.frequency == Frequency::frame) return true;
+            if (effective(logger.policy).frequency == Frequency::frame) return true;
         }
         return false;
     }
@@ -234,8 +216,7 @@ private:
     Sink& sink_;
     std::atomic<bool> tick_;
     mutable std::mutex mutex_;
-    std::mutex game_delivery_;
-    std::mutex worker_delivery_;
+    std::mutex delivery_;
     std::unordered_map<int64_t, Logger> loggers_;
     std::deque<Pending> pending_;
     int64_t next_logger_{1};
@@ -244,43 +225,29 @@ private:
     int64_t delivered_{};
     int64_t stalls_{};
 
-    // Without the engine tick, frame becomes periodic at 16 ms and every
-    // non-immediate logger moves to the worker.
+    // Without the engine tick, frame becomes periodic at 16 ms.
     Policy effective(Policy policy) const
     {
-        if (tick_.load(std::memory_order_acquire) || policy.frequency == Frequency::immediate) return policy;
-        if (policy.frequency == Frequency::frame) policy.interval_ms = frame_fallback_ms;
+        if (policy.frequency != Frequency::frame || tick_.load(std::memory_order_acquire)) return policy;
         policy.frequency = Frequency::periodic;
-        policy.thread = Thread::worker;
+        policy.interval_ms = frame_fallback_ms;
         return policy;
     }
 
-    bool owns(Pass pass, const Logger& logger, int64_t now_ms, bool frame, std::unordered_map<int64_t, bool>& due,
+    bool is_due(const Logger& logger, int64_t now_ms, bool frame, std::unordered_map<int64_t, bool>& due,
         int64_t id) const
     {
         const auto policy = effective(logger.policy);
-        switch (pass)
-        {
-        case Pass::all: return true;
-        case Pass::call: return policy.thread == Thread::game && policy.frequency == Frequency::immediate;
-        case Pass::tick:
-        case Pass::worker:
-        {
-            const auto thread = pass == Pass::tick ? Thread::game : Thread::worker;
-            if (policy.thread != thread) return false;
-            if (policy.frequency == Frequency::immediate) return true;
-            if (policy.frequency == Frequency::frame) return pass == Pass::tick || frame;
-            const auto known = due.find(id);
-            if (known != due.end()) return known->second;
-            const bool now_due = now_ms - logger.last_delivery_ms >= policy.interval_ms;
-            due.emplace(id, now_due);
-            return now_due;
-        }
-        }
-        return false;
+        if (policy.frequency == Frequency::immediate) return true;
+        if (policy.frequency == Frequency::frame) return frame;
+        const auto known = due.find(id);
+        if (known != due.end()) return known->second;
+        const bool now_due = now_ms - logger.last_delivery_ms >= policy.interval_ms;
+        due.emplace(id, now_due);
+        return now_due;
     }
 
-    std::size_t deliver_locked(Pass pass, int64_t now_ms, bool frame)
+    std::size_t deliver_locked(bool everything, int64_t now_ms, bool frame)
     {
         std::vector<Line> batch;
         {
@@ -290,7 +257,7 @@ private:
             for (const auto& pending : pending_)
             {
                 auto& logger = loggers_.at(pending.logger);
-                if (!owns(pass, logger, now_ms, frame, due, pending.logger))
+                if (!everything && !is_due(logger, now_ms, frame, due, pending.logger))
                 {
                     kept.push_back(pending);
                     continue;

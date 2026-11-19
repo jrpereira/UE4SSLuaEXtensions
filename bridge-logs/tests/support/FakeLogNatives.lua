@@ -9,7 +9,7 @@ Fake.SESSION = SESSION
 Fake.MOD = "FakeMod"
 
 local SHAPES = {
-    GetVersion = "", GetCapabilities = "", GetStats = "", Register = "isiiiii", Write = "iiiss", Level = "iis",
+    GetVersion = "", GetCapabilities = "", GetStats = "", Register = "isiiii", Write = "iiiss", Level = "iis",
     Generation = "", SetLevel = "ss", GetLevel = "s", Flush = "",
 }
 Fake.SHAPES = SHAPES
@@ -22,7 +22,7 @@ function Fake.new()
         counts = {},
         violations = {},
         lines = {},     -- {logger=, name=, rank=, category=, message=}
-        loggers = {},   -- id -> {name, target, frequency, interval, thread, rank}
+        loggers = {},   -- id -> {name, target, frequency, interval, rank}
         levels = {},    -- folded key ("" global, "mod", "mod.cat") -> rank
         defaults = {},
         generation = 1,
@@ -80,13 +80,13 @@ function Fake.new()
 
     function natives.Register(...)
         if not check("Register", ...) then return nil, "invalid", "Register: bad arguments" end
-        local session, name, target, frequency, interval, thread, rank = ...
+        local session, name, target, frequency, interval, rank = ...
         if session ~= SESSION then return nil, "invalid", "Register: unknown session" end
         if name == "" then name = Fake.MOD end
         if not name:match("^[%w_][%w_ %-]*$") or #name > 64 then return nil, "invalid", "Register: bad module name" end
         local id = fake.nextLogger
         fake.nextLogger = id + 1
-        fake.loggers[id] = { name = name, target = target, frequency = frequency, interval = interval, thread = thread,
+        fake.loggers[id] = { name = name, target = target, frequency = frequency, interval = interval,
             rank = rank }
         if rank > 0 then fake.defaults[name:lower()] = rank end
         return id, name

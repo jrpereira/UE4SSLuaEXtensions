@@ -61,8 +61,8 @@ local function main()
     group("registering", function()
         fileLog = ok("Register a module-file logger", logs.Register("LexVerify", { target = "module",
             categories = { "lexverify" } }))
-        workerLog = ok("Register a periodic worker logger", logs.Register("LexVerifyWorker", { target = "module",
-            frequency = "periodic", interval = 0.1, thread = "worker", level = "trace",
+        workerLog = ok("Register a periodic logger", logs.Register("LexVerifyWorker", { target = "module",
+            frequency = "periodic", interval = 0.1, level = "trace",
             categories = { "lexverifyworker" } }))
         ok("Register a frame logger", logs.Register("LexVerifyFrame", { frequency = "frame", level = "OFF" }))
         refused("unknown option", "invalid", logs.Register("LexVerify2", { colour = "red" }))

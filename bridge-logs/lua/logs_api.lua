@@ -32,7 +32,6 @@ local __OFF = 7
 local __DEFAULT_CATEGORIES = { "main", "config", "ui", "input" }
 local __TARGETS = { default = 0, module = 1 }
 local __FREQUENCIES = { immediate = 0, frame = 1, periodic = 2 }
-local __THREADS = { game = 0, worker = 1 }
 local __POLL_EVERY = 64
 
 local function __fail(message)
@@ -243,7 +242,7 @@ local function __newLogger(id, name)
 end
 
 local __REGISTER_OPTIONS = {
-    target = true, frequency = true, interval = true, thread = true, level = true, categories = true,
+    target = true, frequency = true, interval = true, level = true, categories = true,
 }
 
 local function __choice(options, key, choices, default)
@@ -267,9 +266,6 @@ local function __Register(name, options)
     local frequency
     frequency, why = __choice(options, "frequency", __FREQUENCIES, "immediate")
     if frequency == nil then return __fail(why) end
-    local thread
-    thread, why = __choice(options, "thread", __THREADS, "game")
-    if thread == nil then return __fail(why) end
     local interval = options.interval
     if interval == nil then interval = 1 end
     if type(interval) ~= "number" or interval ~= interval or interval <= 0 then
@@ -295,7 +291,7 @@ local function __Register(name, options)
     local logger = __loggers[key]
     if not logger then
         local id, resolved, message = __native("Register", __session, name or "", target, frequency, intervalMs,
-            thread, rank)
+            rank)
         if id == nil then return nil, resolved, message end
         if name == nil then __defaultName = resolved end
         logger = __loggers[resolved:lower()]
@@ -361,7 +357,6 @@ local function __GetCapabilities()
         levels = { "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL", "OFF" },
         targets = { "default", "module" },
         frequencies = { "immediate", "frame", "periodic" },
-        threads = { "game", "worker" },
         default_categories = { "main", "config", "ui", "input" },
     }
 end

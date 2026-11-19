@@ -80,7 +80,6 @@ inline constexpr int64_t settings_poll_ms = 500;
 
 enum class Target : uint8_t { ue4ss = 0, module = 1 };
 enum class Frequency : uint8_t { immediate = 0, frame = 1, periodic = 2 };
-enum class Thread : uint8_t { game = 0, worker = 1 };
 
 // --- Error codes ----------------------------------------------------------
 
@@ -115,8 +114,8 @@ inline constexpr std::array<NativeFunction, 10> native_functions{{
     {"GetCapabilities", "", "", "api:int, journal_bytes:int, max_message_bytes:int, frame:int (1 = engine tick)"},
     {"GetStats", "", "",
      "written:int, delivered:int, pending:int, stalls:int, recovered:int, loggers:int, generation:int"},
-    {"Register", "isiiiii",
-     "session, name:str (\"\" = the mod's folder name), target:int, frequency:int, interval_ms:int, thread:int, "
+    {"Register", "isiiii",
+     "session, name:str (\"\" = the mod's folder name), target:int, frequency:int, interval_ms:int, "
      "default_rank:int (0 = none)",
      "logger:int, name:str"},
     {"Write", "iiiss", "session, logger, rank:int, category:str, message:str", "generation:int"},

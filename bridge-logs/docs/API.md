@@ -2,7 +2,7 @@
 
 ```lua
 local Logs = UE4SSLuaLogBridge()   -- this Lua mod's environment
-local log = Logs.Register("MyMod", { target = "module", frequency = "frame", thread = "worker",
+local log = Logs.Register("MyMod", { target = "module", frequency = "frame",
     categories = { "combat" } })
 log.info("loaded ", count, " entries")
 log.combat.debug("hit ", target, " for ", damage)
@@ -36,14 +36,16 @@ registering it again returns the same logger and ignores the options except
 | `target` | `"default"`: UE4SS.log; `"module"`: `<mod folder>/logs/<category>.log` | `"default"` |
 | `frequency` | `"immediate"`, `"frame"` (once per frame), `"periodic"` | `"immediate"` |
 | `interval` | seconds between periodic writes, 0.05 to 3600 | `1` |
-| `thread` | `"game"`: written on the game thread; `"worker"`: on the bridge's own thread | `"game"` |
 | `level` | the module's level when settings name none | none (WARN) |
 | `categories` | a list of category names to register | |
 
-`thread = "worker"` keeps disk writes off the game thread entirely. With
-`"game"` and `"immediate"` a line is written inside the logging call, as
-`print` does. Without the engine tick (rare), `frame` becomes `periodic` at
-16 ms and every non-immediate logger is written by the worker.
+The logging call only copies the line into the journal; the bridge's own
+thread writes it to its target, so no disk write ever runs on the game thread.
+`immediate` wakes that thread for each line (typically under a millisecond
+later), `frame` once per frame, `periodic` every `interval`. A line can
+therefore reach UE4SS.log just after a `print` made right after it; call
+`Flush()` first when that order matters. Without the engine tick (rare),
+`frame` becomes `periodic` at 16 ms.
 
 `module` target files: on a file's first write in a session, the previous
 session's file becomes `<category>.prev.log`. Lines read
@@ -69,7 +71,7 @@ Writes every pending line now, from the calling thread.
 ### `GetCapabilities()`
 
 `{ api = 1, journal_bytes, max_message_bytes = 65536, frame = <engine tick>,
-levels, targets, frequencies, threads, default_categories }`.
+levels, targets, frequencies, default_categories }`.
 
 ### `GetStats()`
 

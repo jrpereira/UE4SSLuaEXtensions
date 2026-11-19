@@ -1,6 +1,6 @@
 // UE4SSLuaLogBridge: the UE4SS C++ mod. Owns the journal, the level resolver,
 // the delivery core, one Session per Lua mod, the natives of
-// LogBridgeNativeContract.hpp, the worker thread and the engine-tick pass.
+// LogBridgeNativeContract.hpp, the worker thread and the engine-tick wake-up.
 
 #include <UE4SSLuaABI.hpp>
 
@@ -219,7 +219,7 @@ public:
         }
         wake_cv_.notify_all();
         if (worker_.joinable()) worker_.join();
-        core_->deliver(Core::Pass::all, Win32::monotonic_ms());
+        core_->all(Win32::monotonic_ms());
     }
 
     void on_unreal_init() override
@@ -232,7 +232,7 @@ public:
         {
             RC::Unreal::Hook::RegisterEngineTickPostCallback([](RC::Unreal::UEngine*, float) { on_engine_tick(); });
         }
-        if (!tick) report("the engine tick is unavailable: frame and periodic loggers are delivered by the worker thread");
+        if (!tick) report("the engine tick is unavailable: frame loggers are delivered every 16 ms instead");
         wake();
     }
 
@@ -267,7 +267,7 @@ public:
             by_state_.erase(found);
         }
         if (session) session->active.store(false);
-        core_->deliver(Core::Pass::all, Win32::monotonic_ms());
+        core_->all(Win32::monotonic_ms());
     }
 
     std::shared_ptr<Session> find_session(int64_t id)
@@ -303,8 +303,7 @@ public:
         {
             try
             {
-                bridge->core_->deliver(Core::Pass::tick, Win32::monotonic_ms());
-                if (bridge->core_->has_worker_frame_loggers())
+                if (bridge->core_->has_frame_loggers())
                 {
                     bridge->frame_.store(true, std::memory_order_release);
                     bridge->wake();
@@ -437,7 +436,7 @@ private:
             try
             {
                 const auto later = Win32::monotonic_ms();
-                core_->deliver(Core::Pass::worker, later, frame_.exchange(false, std::memory_order_acq_rel));
+                core_->due(later, frame_.exchange(false, std::memory_order_acq_rel));
                 if (later - last_settings >= Contract::settings_poll_ms)
                 {
                     last_settings = later;
@@ -517,12 +516,11 @@ Reply register_logger(LogBridgeMod& bridge, Call& call)
     const auto target = call.integer();
     const auto frequency = call.integer();
     const auto interval = call.integer();
-    const auto thread = call.integer();
     const auto rank = call.integer();
     if (!session) return failure(ErrorCode::invalid, session_gone());
-    if (target < 0 || target > 1 || frequency < 0 || frequency > 2 || thread < 0 || thread > 1)
+    if (target < 0 || target > 1 || frequency < 0 || frequency > 2)
     {
-        return failure(ErrorCode::invalid, "Register: unknown target, frequency or thread");
+        return failure(ErrorCode::invalid, "Register: unknown target or frequency");
     }
     if (rank < 0 || rank > Core::rank_off) return failure(ErrorCode::invalid, "Register: unknown level");
     if (name.empty()) name = Core::module_name_from_folder(session->mod_name);
@@ -542,7 +540,6 @@ Reply register_logger(LogBridgeMod& bridge, Call& call)
     policy.target = static_cast<Contract::Target>(target);
     policy.frequency = static_cast<Contract::Frequency>(frequency);
     policy.interval_ms = interval;
-    policy.thread = static_cast<Contract::Thread>(thread);
     const auto id = bridge.core().register_logger(name, session->mod_folder, policy, Win32::monotonic_ms());
     bridge.levels().set_default(name, static_cast<int>(rank));
     {
@@ -566,7 +563,6 @@ Reply write_line(LogBridgeMod& bridge, Call& call)
     const auto now = Win32::monotonic_ms();
     const auto written = bridge.core().write(logger, static_cast<int>(rank), category, message, now_time(), now);
     if (!written.ok) return failure(ErrorCode::io, "Write: the journal refused the line");
-    if (written.deliver_now) bridge.core().deliver(Core::Pass::call, now);
     if (written.wake_worker) bridge.wake();
     return success(bridge.levels().generation());
 }
@@ -615,7 +611,7 @@ Reply get_level(LogBridgeMod& bridge, Call& call)
 
 Reply flush(LogBridgeMod& bridge, Call&)
 {
-    bridge.core().deliver(Core::Pass::all, Win32::monotonic_ms());
+    bridge.core().all(Win32::monotonic_ms());
     return success(true);
 }
 
@@ -624,7 +620,7 @@ constexpr std::array<NativeEntry, 10> natives{{
     {"GetVersion", "", &get_version},
     {"GetCapabilities", "", &get_capabilities},
     {"GetStats", "", &get_stats},
-    {"Register", "isiiiii", &register_logger},
+    {"Register", "isiiii", &register_logger},
     {"Write", "iiiss", &write_line},
     {"Level", "iis", &level},
     {"Generation", "", &generation},
