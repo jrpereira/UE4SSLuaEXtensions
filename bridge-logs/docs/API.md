@@ -2,7 +2,8 @@
 
 ```lua
 local Logs = UE4SSLuaLogBridge()   -- this Lua mod's environment
-local log = Logs.Register("MyMod", { target = "module", frequency = "frame", thread = "worker" })
+local log = Logs.Register("MyMod", { target = "module", frequency = "frame", thread = "worker",
+    categories = { "combat" } })
 log.info("loaded ", count, " entries")
 log.combat.debug("hit ", target, " for ", damage)
 ```
@@ -26,7 +27,8 @@ or `busy`); logging calls never raise.
 `name` is the module name levels are keyed by: 1 to 64 letters, digits, `_`,
 `-` or inner spaces, not `global`. Without it, the mod's folder name is used
 (characters a name can't hold become `_`). A name registers once per Lua mod;
-registering it again returns the same logger and ignores the options.
+registering it again returns the same logger and ignores the options except
+`categories`.
 `Register(options)` is `Register(nil, options)`.
 
 | Option | Values | Default |
@@ -36,7 +38,7 @@ registering it again returns the same logger and ignores the options.
 | `interval` | seconds between periodic writes, 0.05 to 3600 | `1` |
 | `thread` | `"game"`: written on the game thread; `"worker"`: on the bridge's own thread | `"game"` |
 | `level` | the module's level when settings name none | none (WARN) |
-| `categories` | a list of category names to create now | |
+| `categories` | a list of category names to register | |
 
 `thread = "worker"` keeps disk writes off the game thread entirely. With
 `"game"` and `"immediate"` a line is written inside the logging call, as
@@ -79,11 +81,14 @@ reached their target.
 ## Loggers and categories
 
 A logger is its `main` category. Every logger has `main`, `config`, `ui` and
-`input`; any other field that is a valid category name makes that category on
-first use (`log.combat`), as does `log.category("combat")`. A category name is
-a letter, then up to 31 letters, digits, `_` or `-`, not a Windows device name;
-names are folded to lower case. A category named like a method (`write`) is
-reached only through `log.category`.
+`input`; other categories exist only once registered, through the `categories`
+option of `Register` (a later `Register` of the same name adds its categories)
+or `log.register("combat", "ai")`, which returns them in order. A registered
+category is a field of the logger (`log.combat`, or `log[name]`); an
+unregistered one reads as `nil`, so a misspelt `log.commbat.debug(...)` raises
+at once instead of logging to a category nobody watches. A category name is a
+letter, then up to 31 letters, digits, `_` or `-`, not a Windows device name
+and not a method name (`write`, `level`, ...); names are folded to lower case.
 
 | Method (logger or category) | |
 |---|---|
@@ -92,6 +97,7 @@ reached only through `log.category`.
 | `enabled(level)` | whether a line at that level would be written |
 | `level` | the effective level name (a field, read each time) |
 | `name` | the module or category name |
+| `register(name, ...)` | logger only: registers categories and returns them; `nil, "invalid", message` for a bad name, registering none |
 
 `log:warn(...)` works as well as `log.warn(...)`. From a coroutine the mod
 created, UE4SS refuses native calls; the line then goes to UE4SS.log through

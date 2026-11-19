@@ -62,7 +62,8 @@ local function main()
         fileLog = ok("Register a module-file logger", logs.Register("LexVerify", { target = "module",
             categories = { "lexverify" } }))
         workerLog = ok("Register a periodic worker logger", logs.Register("LexVerifyWorker", { target = "module",
-            frequency = "periodic", interval = 0.1, thread = "worker", level = "trace" }))
+            frequency = "periodic", interval = 0.1, thread = "worker", level = "trace",
+            categories = { "lexverifyworker" } }))
         ok("Register a frame logger", logs.Register("LexVerifyFrame", { frequency = "frame", level = "OFF" }))
         refused("unknown option", "invalid", logs.Register("LexVerify2", { colour = "red" }))
         refused("bad module name", "invalid", logs.Register("bad/name"))
@@ -71,6 +72,9 @@ local function main()
             check("default categories", fileLog.main == fileLog and fileLog.config ~= nil and fileLog.ui ~= nil
                 and fileLog.input ~= nil)
             check("one logger per name", logs.Register("lexverify") == fileLog)
+            check("an unregistered category is no field", fileLog.lexverifx == nil)
+            check("register adds a category", fileLog.register("extra") == fileLog.extra and fileLog.extra ~= nil)
+            refused("a category named like a method", "invalid", fileLog.register("write"))
         end
     end)
 

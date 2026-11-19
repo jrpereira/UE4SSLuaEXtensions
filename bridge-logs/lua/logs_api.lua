@@ -136,8 +136,17 @@ end
 
 -- Loggers ---------------------------------------------------------------------
 
-local __RESERVED = { write = true, enabled = true, category = true, name = true, level = true }
+local __RESERVED = { write = true, enabled = true, register = true, name = true, level = true }
 for _, method in ipairs(__METHODS) do __RESERVED[method] = true end
+
+-- Why a category can't be registered under this name, or nil.
+local function __categoryProblem(name)
+    if not __validCategory(name) then
+        return "bad category name " .. tostring(name)
+            .. " (a letter, then up to 31 letters, digits, _ or -, not a device name)"
+    end
+    if __RESERVED[name:lower()] then return "category name " .. name .. " is a method name" end
+end
 
 -- The methods of one category, written into `into`; `self` is the table a
 -- colon call passes.
@@ -192,14 +201,8 @@ local __defaultName
 local function __newLogger(id, name)
     local state = { id = id, name = name, ranks = {}, epoch = __epoch, categories = {} }
     local methods = { name = name }
-    local category
-    -- A field that is no method names a category, made on first use.
-    setmetatable(methods, { __index = function(_, key)
-        if key == "level" then return __levelField(state, "main", key) end
-        if type(key) == "string" and not __RESERVED[key:lower()] and __validCategory(key) then
-            return category(key)
-        end
-    end })
+    -- Only registered categories are fields: a misspelt one reads as nil.
+    setmetatable(methods, { __index = function(_, key) return __levelField(state, "main", key) end })
     local logger = setmetatable({}, {
         __index = methods,
         __newindex = __readOnly,
@@ -208,23 +211,34 @@ local function __newLogger(id, name)
     })
     __categoryMethods(state, "main", logger, methods)
 
-    function category(first, second)
-        local wanted = first == logger and second or first
-        if not __validCategory(wanted) then
-            return __fail("category: a name is a letter, then up to 31 letters, digits, _ or -, not a device name")
-        end
-        local key = wanted:lower()
+    local function add(name)
+        local key = name:lower()
         local found = state.categories[key]
-        if found then return found end
-        found = key == "main" and logger or __newCategory(state, key)
-        state.categories[key] = found
-        if not __RESERVED[key] then methods[key] = found end
+        if not found then
+            found = __newCategory(state, key)
+            state.categories[key] = found
+            methods[key] = found
+        end
         return found
     end
-    methods.category = category
+    -- register(name, ...) adds categories and returns them, in order.
+    methods.register = function(...)
+        local names = table.pack(...)
+        local first = 1
+        if names[1] == logger then first = 2 end
+        for index = first, names.n do
+            local why = __categoryProblem(names[index])
+            if why then return __fail("register: " .. why) end
+        end
+        local found = {}
+        for index = first, names.n do found[#found + 1] = add(names[index]) end
+        return table.unpack(found)
+    end
     state.categories.main = logger
     methods.main = logger
-    for _, default in ipairs(__DEFAULT_CATEGORIES) do category(default) end
+    for _, default in ipairs(__DEFAULT_CATEGORIES) do
+        if default ~= "main" then add(default) end
+    end
     return logger
 end
 
@@ -272,7 +286,8 @@ local function __Register(name, options)
     if extra ~= nil then
         if type(extra) ~= "table" then return __fail("Register: option categories must be a list") end
         for _, category in ipairs(extra) do
-            if not __validCategory(category) then return __fail("Register: bad category name " .. tostring(category)) end
+            local problem = __categoryProblem(category)
+            if problem then return __fail("Register: " .. problem) end
         end
     end
 
@@ -290,7 +305,7 @@ local function __Register(name, options)
         end
     end
     if extra then
-        for _, category in ipairs(extra) do logger.category(category) end
+        logger.register(table.unpack(extra))
     end
     return logger
 end
