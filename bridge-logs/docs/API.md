@@ -33,7 +33,7 @@ registering it again returns the same logger and ignores the options except
 
 | Option | Values | Default |
 |---|---|---|
-| `target` | `"ue4ss"`: UE4SS.log; `"module"`: `<mod folder>/logs/<category>.log` | `"ue4ss"` |
+| `target` | `"default"`: UE4SS.log; `"module"`: `<mod folder>/logs/<category>.log` | `"default"` |
 | `frequency` | `"immediate"`, `"frame"` (once per frame), `"periodic"` | `"immediate"` |
 | `interval` | seconds between periodic writes, 0.05 to 3600 | `1` |
 | `thread` | `"game"`: written on the game thread; `"worker"`: on the bridge's own thread | `"game"` |

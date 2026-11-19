@@ -30,7 +30,7 @@ for rank, name in ipairs(__LEVELS) do __RANK[name:lower()] = rank end
 local __DEFAULT_RANK = 4
 local __OFF = 7
 local __DEFAULT_CATEGORIES = { "main", "config", "ui", "input" }
-local __TARGETS = { ue4ss = 0, module = 1 }
+local __TARGETS = { default = 0, module = 1 }
 local __FREQUENCIES = { immediate = 0, frame = 1, periodic = 2 }
 local __THREADS = { game = 0, worker = 1 }
 local __POLL_EVERY = 64
@@ -262,7 +262,7 @@ local function __Register(name, options)
     for key in pairs(options) do
         if not __REGISTER_OPTIONS[key] then return __fail("Register: unknown option " .. tostring(key)) end
     end
-    local target, why = __choice(options, "target", __TARGETS, "ue4ss")
+    local target, why = __choice(options, "target", __TARGETS, "default")
     if target == nil then return __fail(why) end
     local frequency
     frequency, why = __choice(options, "frequency", __FREQUENCIES, "immediate")
@@ -359,7 +359,7 @@ local function __GetCapabilities()
         max_message_bytes = maxMessage,
         frame = frame == 1,
         levels = { "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL", "OFF" },
-        targets = { "ue4ss", "module" },
+        targets = { "default", "module" },
         frequencies = { "immediate", "frame", "periodic" },
         threads = { "game", "worker" },
         default_categories = { "main", "config", "ui", "input" },
