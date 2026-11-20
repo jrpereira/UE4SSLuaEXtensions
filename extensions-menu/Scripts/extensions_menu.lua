@@ -77,7 +77,8 @@ end
 -- contributor's Mod Id, so storage stays the extension's. Every extension's rows land on one
 -- page, where setting ids must be unique, so each id (and any rule naming it) takes the
 -- extension's slot as a prefix; storage is keyed by ConfigSection and ConfigKey, not by id.
--- Without that file, the startup verification switch its Scripts read from config.ini [<id>].
+-- Without that file, the startup verification switch its Scripts read from config.ini [<id>],
+-- stored where the menu stores a row by default.
 local RULES = {VisibleWhen = true, mcLabelWhen = true}
 function M.sourceManifest(extension, text)
     local prefix = extension.slot .. '_'
@@ -111,8 +112,7 @@ function M.sourceManifest(extension, text)
     block(lines, 'Mod', {{'Id', extension.contributor}, {'Name', extension.title}})
     block(lines, 'Setting.' .. prefix .. 'EnableVerifications', {{'Id', prefix .. 'EnableVerifications'},
         {'Type', 'toggle'}, {'Label', 'Enable load-time verifications'}, {'Description', DESCRIPTION},
-        {'Group', 'Diagnostics'}, {'PresetValues', '0|1'}, {'PresetLabels', 'Off|On'}, {'Default', '0'},
-        {'ConfigFile', 'config.ini'}, {'ConfigSection', extension.id}, {'ConfigKey', 'EnableVerifications'}})
+        {'Group', 'Diagnostics'}, {'PresetValues', '0|1'}, {'PresetLabels', 'Off|On'}, {'Default', '0'}})
     return table.concat(lines, '\n')
 end
 

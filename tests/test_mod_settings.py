@@ -34,7 +34,7 @@ class ModSettingsTests(unittest.TestCase):
             text = output.read_text(encoding='utf-8') if output.exists() else None
             return result, text
 
-    def test_rows_in_array_order_with_storage_defaults(self):
+    def test_rows_in_array_order_storage_only_when_given(self):
         result, text = self.generate({
             'id': 'Demo', 'name': 'Demo Mod',
             'settings': [
@@ -46,9 +46,9 @@ class ModSettingsTests(unittest.TestCase):
         self.assertEqual(text,
             '[Mod]\nId=Demo\nName=Demo Mod\n'
             '\n[Setting.Level]\nId=Level\nType=picker\nLabel=Level\nPresetValues=1|2|x\n'
-            'PresetLabels=Low|Mid|High\nDefault=2\nConfigFile=config.ini\nConfigSection=Demo\nConfigKey=Lvl\n'
+            'PresetLabels=Low|Mid|High\nDefault=2\nConfigKey=Lvl\n'
             '\n[Setting.Alpha]\nId=Alpha\nType=toggle\nDescription=a; b = c\n'
-            'ConfigFile=other.ini\nConfigSection=S\nConfigKey=Alpha\n')
+            'ConfigFile=other.ini\nConfigSection=S\n')
 
     def test_no_settings_writes_the_mod_section_only(self):
         result, text = self.generate({'id': 'Demo', 'name': 'Demo'})
@@ -83,7 +83,7 @@ class ModSettingsTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(text.startswith(f"[Mod]\nId={manifest['id']}\n"))
                 self.assertIn(f"[Setting.EnableVerifications]\nId=EnableVerifications\nType=toggle\n", text)
-                self.assertIn(f"ConfigFile=config.ini\nConfigSection={manifest['id']}\nConfigKey=EnableVerifications\n", text)
+                self.assertNotIn('ConfigFile=', text)
 
 
 if __name__ == '__main__':

@@ -37,8 +37,10 @@ appear in array order:
   "values": [[1, "Trace"], [2, "Debug"]], "default": 4 }
 ```
 
-A value is stored in `config.ini`, section `[<mod.json id>]`, key `<row id>`;
-`file`, `section` and `key` override that only when needed. The build writes
+A value is stored where the menu stores a row by default: `config.ini`,
+section `[<mod.json id>]`, key `<row id>` (requested from ModCore Settings,
+COORDINATOR/MCS/REQ-config-defaults.md). `file`, `section` and `key` override
+that only when needed and are the only storage fields written. The build writes
 the rows to the mod folder's `mod_settings.ini`
 (`shared/bootstrap/cmake/ModSettings.cmake`), which the menus read; there is no
 `mod_settings.ini` source file.

@@ -13,9 +13,10 @@
 #   "id"           required: a letter, then letters, digits or _
 #   "type", "label", "description", "group", "default"
 #   "values"       [[value, label], ...]: PresetValues and PresetLabels
-#   "file"         where the value is stored; default "config.ini"
-#   "section"      default: the mod.json id
-#   "key"          default: the row's id
+#   "file", "section", "key"
+#                  ConfigFile, ConfigSection, ConfigKey, written only when given:
+#                  where a value is stored is the menu's default (config.ini,
+#                  [<mod id>], the row's id), not each mod's to repeat
 # A value is a string or a number. Any other field is refused. Works in script
 # mode too.
 
@@ -131,15 +132,14 @@ function(lex_mod_settings_text out_var manifest)
                 string(APPEND lines "Default=${value}\n")
             endif()
 
-            set(file "config.ini")
-            set(section "${mod_id}")
-            set(key "${id}")
-            foreach(field file section key)
+            foreach(pair "file;ConfigFile" "section;ConfigSection" "key;ConfigKey")
+                list(GET pair 0 field)
+                list(GET pair 1 name)
                 if(field IN_LIST fields)
-                    _lex_setting_scalar(${field} "${row}" "${where}.${field}" ${field})
+                    _lex_setting_scalar(value "${row}" "${where}.${field}" ${field})
+                    string(APPEND lines "${name}=${value}\n")
                 endif()
             endforeach()
-            string(APPEND lines "ConfigFile=${file}\nConfigSection=${section}\nConfigKey=${key}\n")
 
             string(APPEND text "\n[Setting.${id}]\n${lines}")
         endforeach()

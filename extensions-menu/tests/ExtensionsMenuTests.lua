@@ -65,7 +65,7 @@ assert(source:find('VisibleWhen=Events_EnableVerifications\n', 1, true), 'rules 
 for _, extension in ipairs(Menu.extensions) do
     local fallback = Menu.sourceManifest(extension)
     assert(fallback:find('Id=' .. extension.contributor .. '\n', 1, true))
-    assert(fallback:find('ConfigFile=config.ini\nConfigSection=' .. extension.id .. '\nConfigKey=EnableVerifications', 1, true), 'storage')
+    assert(not fallback:find('ConfigFile=', 1, true), 'storage is the menu default')
     assert(fallback:find('Type=toggle', 1, true) and fallback:find('Default=0', 1, true), 'off by default')
     assert(table.concat(Menu.settingIds(fallback), ',') == extension.slot .. '_EnableVerifications')
 end
