@@ -81,10 +81,19 @@ end
 
 -- Creates a folder when it is missing. A probe file shows an existing one without starting
 -- a shell, which on Windows is a cmd.exe process on the game thread for every call.
-function M.mkdir(path)
+local function writable(path)
     local probe=path..'/.mc-probe'
     local file=io.open(probe,'wb')
-    if file then file:close();os.remove(probe);return end
+    if not file then return false end
+    file:close();os.remove(probe)
+    return true
+end
+
+-- Creates path and its missing parents. The shell's result is not trusted: UE4SS's early
+-- startup can report a failed mkdir for a folder it did create, so a probe file written
+-- into the folder decides.
+function M.mkdir(path)
+    if writable(path) then return end
     local command
     if package.config:sub(1,1)=='\\' then
         -- Quoting alone does not prevent cmd.exe environment expansion.
@@ -94,8 +103,8 @@ function M.mkdir(path)
     else
         command="mkdir -p -- '"..path:gsub("'","'\\''").."'"
     end
-    local ok=os.execute(command)
-    assert(ok==true or ok==0,'cannot create directory: '..path)
+    os.execute(command)
+    assert(writable(path),'cannot create directory: '..path)
 end
 
 return M
