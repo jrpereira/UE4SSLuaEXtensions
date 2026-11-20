@@ -15,20 +15,5 @@
   ],
   "links": {
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions"
-  },
-  "config_section": "UE4SSLuaEXtensions.Sounds",
-  "settings": [
-    {
-      "id": "EnableVerifications",
-      "type": "toggle",
-      "label": "Enable load-time verifications",
-      "description": "Runs the bridge's in-game checks when the game loads and writes PASS and FAIL lines to UE4SS.log. Takes effect on the next launch.",
-      "group": "Diagnostics",
-      "values": [
-        [0, "Off"],
-        [1, "On"]
-      ],
-      "default": 0
-    }
-  ]
+  }
 }

@@ -16,8 +16,7 @@
 #       SELECTOR_FILE <path>        configured main.json copied next to main.dll
 #       ENABLED_FILE  <path>        enabled.txt copied to the mod folder
 #       [SCRIPT_FILE   <path>]      Lua copied to Scripts/main.lua in the mod folder
-#       [MANIFEST_FILE <path>]      mod.json whose "settings" become the mod folder's
-#                                   mod_settings.ini (ModSettings.cmake)
+#       [SETTINGS_FILE <path>]      mod_settings.ini copied to the mod folder
 #       [SCRIPT_MODULES <path>...]  Lua modules copied to Scripts/ under their own names
 #       [TARGET       <name>]       CMake target and InternalName; default <PRODUCT>Bootstrap
 #       [CLAIM_NAME   <name>])      per-process mutex Local\<claim>-<pid>-97b7e501;
@@ -25,8 +24,6 @@
 #
 # Identities must differ between products: the function rejects a repeated
 # product, target, magic, claim or dist folder in one build.
-
-include("${CMAKE_CURRENT_LIST_DIR}/ModSettings.cmake")
 
 function(bridge_read_product_version out_var version_file)
     file(STRINGS "${version_file}" version_line REGEX "^#define [A-Za-z0-9_]+_VERSION \"")
@@ -48,7 +45,7 @@ endfunction()
 
 function(add_bridge_bootstrap)
     set(one_value PRODUCT MAGIC VERSION_FILE DIST_FOLDER DISPLAY_NAME SELECTOR_FILE ENABLED_FILE
-        SCRIPT_FILE MANIFEST_FILE TARGET CLAIM_NAME)
+        SCRIPT_FILE SETTINGS_FILE TARGET CLAIM_NAME)
     cmake_parse_arguments(PARSE_ARGV 0 ARG "" "${one_value}" "SCRIPT_MODULES")
     get_filename_component(source_dir "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." ABSOLUTE)
     if(ARG_UNPARSED_ARGUMENTS)
@@ -149,12 +146,9 @@ function(add_bridge_bootstrap)
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${module}" "${dist}/Scripts/${module_name}"
         )
     endforeach()
-    if(ARG_MANIFEST_FILE)
-        set(settings_file "${CMAKE_CURRENT_BINARY_DIR}/mod_settings.ini")
-        lex_write_mod_settings("${ARG_MANIFEST_FILE}" "${settings_file}")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_MANIFEST_FILE}")
+    if(ARG_SETTINGS_FILE)
         add_custom_command(TARGET ${ARG_TARGET} POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${settings_file}" "${dist}/mod_settings.ini"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${ARG_SETTINGS_FILE}" "${dist}/mod_settings.ini"
         )
     endif()
 endfunction()

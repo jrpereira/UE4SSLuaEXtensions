@@ -139,18 +139,17 @@ class ProductChecks(unittest.TestCase):
         self.assertTrue(script.is_file(), script)
         self.assertIn('${LEX_SHARED_DIR}/lua/lex_verify.lua', identity.get('SCRIPT_MODULES', ''))
         self.assertIn('require("lex_verify")', script.read_text(encoding='utf-8'))
-        self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/mod.json', identity.get('MANIFEST_FILE', ''))
-        manifest = json.loads((EXTENSION.folder / 'mod.json').read_text(encoding='utf-8'))
-        self.assertEqual(manifest['id'], EXTENSION.product)
-        rows = {row['id']: row for row in manifest['settings']}
-        verify = rows['EnableVerifications']
-        # Stored at the defaults: config.ini, the page's section, EnableVerifications (lex_verify.lua reads it there).
-        self.assertRegex(manifest['config_section'], r'^UE4SSLuaEXtensions\.[A-Z][a-z]+$')
-        self.assertIn(f"Verify.enabled(\"{manifest['config_section']}\")", script.read_text(encoding='utf-8'))
-        self.assertFalse({'file', 'section', 'key'} & verify.keys())
-        self.assertEqual((verify['type'], verify['default'], verify['values']), ('toggle', 0, [[0, 'Off'], [1, 'On']]))
-        self.assertFalse((EXTENSION.folder / 'packaging/mod_settings.ini').exists(),
-                         'menu rows live in mod.json "settings"')
+        self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/packaging/mod_settings.ini', identity.get('SETTINGS_FILE', ''))
+        settings = (EXTENSION.folder / 'packaging/mod_settings.ini').read_text(encoding='utf-8')
+        self.assertTrue(settings.startswith(f'[Mod]\nId={EXTENSION.product}\n'), 'the page is the product')
+        # Stored at the menu's defaults: config.ini, [Mod] ConfigSection, the row's Id (lex_verify.lua reads it there).
+        section = re.search(r'^ConfigSection=(UE4SSLuaEXtensions\.[A-Z][a-z]+)$', settings, re.M)
+        self.assertTrue(section, '[Mod] ConfigSection=UE4SSLuaEXtensions.<Slot>')
+        self.assertIn(f'Verify.enabled("{section.group(1)}")', script.read_text(encoding='utf-8'))
+        self.assertIn('[Setting.EnableVerifications]\nId=EnableVerifications\nType=toggle\n', settings)
+        self.assertNotRegex(settings, r'(?m)^Config(File|Key)=', 'rows take the default storage')
+        self.assertNotIn('settings', json.loads((EXTENSION.folder / 'mod.json').read_text(encoding='utf-8')),
+                         'menus are not declared in mod.json')
 
     def test_changelog_sections_are_extractable(self):
         release_notes = _load_release_notes()

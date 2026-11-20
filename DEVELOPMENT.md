@@ -29,23 +29,12 @@ repository-policy.json          vendored files and their source modules, for the
 An extension's folder holds only what is specific to it. Its `CMakeLists.txt`
 calls the shared functions with its own name, Lua API and descriptor magic.
 
-Menu rows live in the extension's `mod.json`, as a `settings` array, and
-appear in array order:
-
-```json
-{ "id": "GlobalLevel", "type": "picker", "label": "Global log level", "group": "Levels",
-  "values": [[1, "Trace"], [2, "Debug"]], "default": 4 }
-```
-
-Each extension reads its own folder's `config.ini`, section
-`[UE4SSLuaEXtensions.<Slot>]` (mod.json `config_section`, written once as
-`[Mod] ConfigSection`), key `<row id>`: where the menu stores a row by default
-(requested from ModCore Settings, COORDINATOR/MCS/REQ-config-defaults.md).
-A row's `file`, `section` and `key` override that only when needed and are the
-only storage fields written on rows. The build writes
-the rows to the mod folder's `mod_settings.ini`
-(`shared/bootstrap/cmake/ModSettings.cmake`), which the menus read; there is no
-`mod_settings.ini` source file.
+Each extension's menu is its hand-written `packaging/mod_settings.ini`, copied
+to the mod folder by the build. `[Mod] ConfigSection=UE4SSLuaEXtensions.<Slot>`
+names the section every row stores in; rows state no `ConfigFile` or
+`ConfigKey`, so each value goes to the extension's own `config.ini`, section
+`[UE4SSLuaEXtensions.<Slot>]`, key `<row Id>` (ModCore Settings' defaults for
+mod_settings.ini rows).
 
 ## Tests
 

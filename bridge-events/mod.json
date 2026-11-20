@@ -16,32 +16,5 @@
   "links": {
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions",
     "nexus": "https://www.nexusmods.com/thebloodofdawnwalker/mods/526"
-  },
-  "config_section": "UE4SSLuaEXtensions.Events",
-  "settings": [
-    {
-      "id": "EnableVerifications",
-      "type": "toggle",
-      "label": "Enable load-time verifications",
-      "description": "Runs the bridge's in-game checks when the game loads and writes PASS and FAIL lines to UE4SS.log. Takes effect on the next launch.",
-      "group": "Diagnostics",
-      "values": [
-        [0, "Off"],
-        [1, "On"]
-      ],
-      "default": 0
-    },
-    {
-      "id": "EnableHooks",
-      "type": "toggle",
-      "label": "Enable function hooks",
-      "description": "Lets Lua mods hook game functions through the bridge (Hooks.Install and Hooks.Request). Nothing is patched until a mod asks for a hook; off refuses every hook. Takes effect the next time Lua mods start.",
-      "group": "Features",
-      "values": [
-        [0, "Off"],
-        [1, "On"]
-      ],
-      "default": 1
-    }
-  ]
+  }
 }

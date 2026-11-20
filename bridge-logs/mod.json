@@ -15,37 +15,5 @@
   ],
   "links": {
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions"
-  },
-  "config_section": "UE4SSLuaEXtensions.Logs",
-  "settings": [
-    {
-      "id": "GlobalLevel",
-      "type": "picker",
-      "label": "Global log level",
-      "description": "The level every mod logs at unless its own level is set: lines below it are not written. Module levels go in config.ini under [Levels], as Module=DEBUG or Module.category=TRACE (a name or a number from 1 for Trace to 7 for Off). Takes effect at once.",
-      "group": "Levels",
-      "values": [
-        [1, "Trace"],
-        [2, "Debug"],
-        [3, "Info"],
-        [4, "Warn"],
-        [5, "Error"],
-        [6, "Critical"],
-        [7, "Off"]
-      ],
-      "default": 4
-    },
-    {
-      "id": "EnableVerifications",
-      "type": "toggle",
-      "label": "Enable load-time verifications",
-      "description": "Runs the bridge's in-game checks when the game loads and writes PASS and FAIL lines to UE4SS.log. Takes effect on the next launch.",
-      "group": "Diagnostics",
-      "values": [
-        [0, "Off"],
-        [1, "On"]
-      ],
-      "default": 0
-    }
-  ]
+  }
 }

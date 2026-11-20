@@ -259,7 +259,7 @@ first `Hooks.Install()` or `Hooks.Request()` call in the process.
   stays orphaned and a request returns to pending. Stopping a Lua session
   unhooks every hook it owns.
 
-Settings: the menu (`settings` in `mod.json`) has a toggle, **Enable function hooks**
+Settings: `mod_settings.ini` has a toggle, **Enable function hooks**
 (`config.ini`: `[UE4SSLuaEXtensions.Events] EnableHooks`, default on). Off, `Hooks.Install()` and `Hooks.Request()` fail with a reason and
 `GetCapabilities().hooks_reason` says why.
 

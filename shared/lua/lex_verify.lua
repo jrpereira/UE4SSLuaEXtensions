@@ -8,8 +8,8 @@
 --   V.run(function() ... V.check("name", condition) ... end)
 --
 -- Verify.enabled(section) reads [<section>] EnableVerifications from the mod's
--- config.ini (written by the MCS toggle; <section> is mod.json's
--- config_section). A missing file or an
+-- config.ini (written by the MCS toggle; <section> is the [Mod] ConfigSection
+-- of the mod's mod_settings.ini). A missing file or an
 -- unreadable value means off: configuration never blocks an extension.
 
 local Verify = {}
