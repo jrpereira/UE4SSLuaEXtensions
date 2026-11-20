@@ -142,10 +142,11 @@ class ProductChecks(unittest.TestCase):
         self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/mod.json', identity.get('MANIFEST_FILE', ''))
         manifest = json.loads((EXTENSION.folder / 'mod.json').read_text(encoding='utf-8'))
         self.assertEqual(manifest['id'], EXTENSION.product)
-        rows = {row['Id']: row for row in manifest['settings']}
+        rows = {row['id']: row for row in manifest['settings']}
         verify = rows['EnableVerifications']
-        self.assertEqual((verify['ConfigFile'], verify['ConfigSection'], verify['ConfigKey'], verify['Default']),
-                         ('settings.ini', 'Settings', 'EnableVerifications', '0'))
+        # Stored at the defaults: config.ini, [<mod id>], EnableVerifications (lex_verify.lua reads it there).
+        self.assertFalse({'file', 'section', 'key'} & verify.keys())
+        self.assertEqual((verify['type'], verify['default'], verify['values']), ('toggle', 0, [[0, 'Off'], [1, 'On']]))
         self.assertFalse((EXTENSION.folder / 'packaging/mod_settings.ini').exists(),
                          'menu rows live in mod.json "settings"')
 

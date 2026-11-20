@@ -3,13 +3,13 @@
 -- Scripts/main.lua, which loads it with require("lex_verify").
 --
 --   local Verify = require("lex_verify")
---   if not Verify.enabled() then return end
+--   if not Verify.enabled("UE4SSLuaFileBridge") then return end
 --   local V = Verify.new("[UE4SSLuaFileBridge verify] ")
 --   V.run(function() ... V.check("name", condition) ... end)
 --
--- Verify.enabled() reads [Settings] EnableVerifications from the mod's settings.ini
--- (written by the MCS toggle). A missing file or an unreadable value means
--- off: configuration never blocks an extension.
+-- Verify.enabled(id) reads [<id>] EnableVerifications from the mod's config.ini
+-- (written by the MCS toggle; <id> is the mod.json id). A missing file or an
+-- unreadable value means off: configuration never blocks an extension.
 
 local Verify = {}
 
@@ -20,9 +20,10 @@ function Verify.modFolder()
     return scripts and scripts:match("^(.*)[/\\][^/\\]+$")
 end
 
-function Verify.enabled()
+function Verify.enabled(id)
+    local own = tostring(id):lower()
     local folder = Verify.modFolder()
-    local file = folder and io.open(folder .. "/settings.ini", "r")
+    local file = folder and io.open(folder .. "/config.ini", "r")
     if not file then return false end
     local section, value
     for line in file:lines() do
@@ -30,7 +31,7 @@ function Verify.enabled()
         local name = line:match("^%[(.-)%]$")
         if name then
             section = name:lower()
-        elseif section == "settings" then
+        elseif section == own then
             local key, raw = line:match("^([^=]-)%s*=%s*(.*)$")
             if key and key:lower() == "enableverifications" then value = raw end
         end

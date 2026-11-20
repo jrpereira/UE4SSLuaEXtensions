@@ -406,19 +406,19 @@ private:
         }
     }
 
-    // settings.ini [Levels], re-read when the file changes.
+    // Levels from config.ini, re-read when the file changes.
     void read_settings(bool first)
     {
         if (folders_.own.empty()) return;
-        const auto path = folders_.own + "/settings.ini";
+        const auto path = folders_.own + "/config.ini";
         const auto stamp = Win32::file_stamp(path);
         if (stamp == settings_stamp_) return;
         settings_stamp_ = stamp;
         const auto text = Win32::read_file(path, 1024 * 1024);
         std::vector<std::string> ignored;
         const bool changed = levels_.set_settings(Core::parse_level_settings(text ? *text : std::string(), &ignored));
-        for (const auto& line : ignored) report("settings.ini [Levels]: ignored \"" + line + "\"");
-        if (changed && !first) report("levels re-read from settings.ini");
+        for (const auto& line : ignored) report("config.ini: ignored \"" + line + "\"");
+        if (changed && !first) report("levels re-read from config.ini");
     }
 
     void worker_loop()

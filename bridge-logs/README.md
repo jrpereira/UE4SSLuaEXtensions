@@ -6,7 +6,7 @@ crash-safe delivery.
 - Levels TRACE, DEBUG, INFO, WARN, ERROR and CRITICAL; WARN by default.
 - Each mod registers a logger with categories (`main`, `config`, `ui`, `input`
   and any it registers).
-- Levels change per mod, per category or globally, from settings.ini, the
+- Levels change per mod, per category or globally, from config.ini, the
   ModCore Settings menu or Lua, and apply while the game runs.
 - Lines go to UE4SS.log or to the mod's own `logs/<category>.log`.
 - Written at once, once per frame or every few seconds, always by the
@@ -39,7 +39,7 @@ local log = UE4SSLuaLogBridge().Register('MyMod')
 
 Calls (`log.debug(...)`, `log:warn(...)`, `log.enabled('debug')`, `log.level`) and the
 UE4SS.log line format stay the same. The level moves from `log_level.txt` to
-`[Levels] MyMod=DEBUG` in the bridge's settings.ini. Declare the dependency in
+`[Levels] MyMod=DEBUG` in the bridge's config.ini. Declare the dependency in
 `mod.json`:
 
 ```json

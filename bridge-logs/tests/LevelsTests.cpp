@@ -43,14 +43,17 @@ void settings()
 {
     std::vector<std::string> ignored;
     const auto table = parse_level_settings(
-        "[Settings]\nEnableVerifications=1\nGlobal=TRACE\n\n"
+        "[UE4SSLuaLogBridge]\nEnableVerifications=1\nGlobalLevel = 3\n\n"
         "[Levels]\r\n; comment\r\nGlobal = info\r\nPreymonition=DEBUG\r\nPreymonition.combat=trace\r\n"
-        "Broken=loud\r\nbad/key=INFO\r\nnoequals\r\n[Other]\nX=ERROR\n",
+        "Broken=loud\r\nbad/key=INFO\r\nnoequals\r\n[Other]\nX=ERROR\nGlobalLevel=1\n",
         &ignored);
     CHECK(table.size() == 3);
     CHECK(table.at("") == 3 && table.at("preymonition") == 2 && table.at("preymonition.combat") == 1);
-    CHECK(ignored.size() == 2);
+    CHECK(ignored.size() == 3); // Global in [Levels], Broken, bad/key
     CHECK(parse_level_settings("").empty() && parse_level_settings("[levels]\nA=ERROR").at("a") == 5);
+    CHECK(parse_level_settings("[ue4sslualogbridge]\ngloballevel=trace").at("") == 1);
+    ignored.clear();
+    CHECK(parse_level_settings("[UE4SSLuaLogBridge]\nGlobalLevel=loud\n", &ignored).empty() && ignored.size() == 1);
 }
 
 void resolution()
@@ -64,8 +67,8 @@ void resolution()
     levels.set_default("Mod", 5); // a weaker default doesn't replace a stronger one
     CHECK(levels.resolve("Mod", "main") == 3);
 
-    CHECK(levels.set_settings(parse_level_settings("[Levels]\nGlobal=ERROR\nmod=DEBUG\nMod.combat=TRACE\n")));
-    CHECK(!levels.set_settings(parse_level_settings("[Levels]\nGlobal=ERROR\nmod=DEBUG\nMod.combat=TRACE\n")));
+    CHECK(levels.set_settings(parse_level_settings("[UE4SSLuaLogBridge]\nGlobalLevel=ERROR\n[Levels]\nmod=DEBUG\nMod.combat=TRACE\n")));
+    CHECK(!levels.set_settings(parse_level_settings("[UE4SSLuaLogBridge]\nGlobalLevel=ERROR\n[Levels]\nmod=DEBUG\nMod.combat=TRACE\n")));
     CHECK(levels.resolve("Mod", "main") == 2 && levels.resolve("Mod", "combat") == 1);
     CHECK(levels.resolve("Other", "main") == 5); // global setting
     CHECK(levels.resolve_key("") == 5 && levels.resolve_key("mod") == 2 && levels.resolve_key("mod.combat") == 1);

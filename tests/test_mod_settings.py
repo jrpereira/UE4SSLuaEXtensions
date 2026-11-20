@@ -34,20 +34,21 @@ class ModSettingsTests(unittest.TestCase):
             text = output.read_text(encoding='utf-8') if output.exists() else None
             return result, text
 
-    def test_rows_in_array_order_with_keys_in_the_usual_order(self):
+    def test_rows_in_array_order_with_storage_defaults(self):
         result, text = self.generate({
             'id': 'Demo', 'name': 'Demo Mod',
             'settings': [
-                {'ConfigKey': 'Level', 'Id': 'Level', 'Type': 'picker', 'PresetValues': [1, 2, 3],
-                 'PresetLabels': ['Low', 'Mid', 'High'], 'Default': 2, 'Step': '1', 'Label': 'Level'},
-                {'Id': 'Alpha', 'Type': 'toggle', 'Description': 'a; b = c'},
+                {'key': 'Lvl', 'id': 'Level', 'type': 'picker', 'values': [[1, 'Low'], [2, 'Mid'], ['x', 'High']],
+                 'default': 2, 'label': 'Level'},
+                {'id': 'Alpha', 'type': 'toggle', 'description': 'a; b = c', 'file': 'other.ini', 'section': 'S'},
             ]})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(text,
             '[Mod]\nId=Demo\nName=Demo Mod\n'
-            '\n[Setting.Level]\nId=Level\nType=picker\nLabel=Level\nPresetValues=1|2|3\n'
-            'PresetLabels=Low|Mid|High\nDefault=2\nConfigKey=Level\nStep=1\n'
-            '\n[Setting.Alpha]\nId=Alpha\nType=toggle\nDescription=a; b = c\n')
+            '\n[Setting.Level]\nId=Level\nType=picker\nLabel=Level\nPresetValues=1|2|x\n'
+            'PresetLabels=Low|Mid|High\nDefault=2\nConfigFile=config.ini\nConfigSection=Demo\nConfigKey=Lvl\n'
+            '\n[Setting.Alpha]\nId=Alpha\nType=toggle\nDescription=a; b = c\n'
+            'ConfigFile=other.ini\nConfigSection=S\nConfigKey=Alpha\n')
 
     def test_no_settings_writes_the_mod_section_only(self):
         result, text = self.generate({'id': 'Demo', 'name': 'Demo'})
@@ -56,15 +57,17 @@ class ModSettingsTests(unittest.TestCase):
 
     def test_refusals(self):
         cases = {
-            'not an array': {'settings': {'Id': 'A'}},
-            'no Id': {'settings': [{'Type': 'toggle'}]},
-            'bad Id': {'settings': [{'Id': 'a b'}]},
-            'repeated Id': {'settings': [{'Id': 'A'}, {'Id': 'A'}]},
-            'bar in an item': {'settings': [{'Id': 'A', 'PresetLabels': ['x|y']}]},
-            'line break': {'settings': [{'Id': 'A', 'Label': 'x\ny'}]},
-            'object value': {'settings': [{'Id': 'A', 'Label': {'x': 1}}]},
-            'boolean value': {'settings': [{'Id': 'A', 'Default': True}]},
-            'bad key': {'settings': [{'Id': 'A', 'Config-Key': 'x'}]},
+            'not an array': {'settings': {'id': 'A'}},
+            'no id': {'settings': [{'type': 'toggle'}]},
+            'bad id': {'settings': [{'id': 'a b'}]},
+            'repeated id': {'settings': [{'id': 'A'}, {'id': 'A'}]},
+            'unknown field': {'settings': [{'id': 'A', 'Label': 'x'}]},
+            'values not pairs': {'settings': [{'id': 'A', 'values': [1, 2]}]},
+            'pair of three': {'settings': [{'id': 'A', 'values': [[1, 'a', 'b']]}]},
+            'bar in a label': {'settings': [{'id': 'A', 'values': [[1, 'x|y']]}]},
+            'line break': {'settings': [{'id': 'A', 'label': 'x\ny'}]},
+            'object value': {'settings': [{'id': 'A', 'label': {'x': 1}}]},
+            'boolean value': {'settings': [{'id': 'A', 'default': True}]},
         }
         for name, extra in cases.items():
             with self.subTest(name=name):
@@ -79,7 +82,8 @@ class ModSettingsTests(unittest.TestCase):
                 result, text = self.generate(manifest)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(text.startswith(f"[Mod]\nId={manifest['id']}\n"))
-                self.assertIn('[Setting.EnableVerifications]\n', text)
+                self.assertIn(f"[Setting.EnableVerifications]\nId=EnableVerifications\nType=toggle\n", text)
+                self.assertIn(f"ConfigFile=config.ini\nConfigSection={manifest['id']}\nConfigKey=EnableVerifications\n", text)
 
 
 if __name__ == '__main__':

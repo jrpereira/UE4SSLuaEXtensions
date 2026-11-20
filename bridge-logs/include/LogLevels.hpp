@@ -130,14 +130,17 @@ inline std::optional<std::string> level_key(std::string_view key)
 
 using LevelTable = std::unordered_map<std::string, int>;
 
-// The [Levels] section of settings.ini: `Global=WARN`, `Module=DEBUG`,
-// `Module.category=TRACE`. Keys are case-insensitive; other sections,
-// comments, unknown keys and unknown levels are ignored (configuration never
-// blocks the bridge), each unknown entry noted in `ignored` when given.
+// Levels from config.ini: `[UE4SSLuaLogBridge] GlobalLevel=4` (the menu's
+// row) is the global level (key ""), and `[Levels]` holds `Module=DEBUG` and
+// `Module.category=TRACE`. Sections and keys are case-insensitive; other
+// sections, comments, unknown keys and unknown levels are ignored
+// (configuration never blocks the bridge), each unknown [Levels] entry and an
+// unknown GlobalLevel noted in `ignored` when given.
 inline LevelTable parse_level_settings(std::string_view text, std::vector<std::string>* ignored = nullptr)
 {
     LevelTable table;
     bool in_levels = false;
+    bool in_own = false;
     while (!text.empty())
     {
         const auto end = text.find('\n');
@@ -147,15 +150,25 @@ inline LevelTable parse_level_settings(std::string_view text, std::vector<std::s
         if (line.front() == '[')
         {
             const auto close = line.find(']');
-            in_levels = close != std::string_view::npos && lower(trim(line.substr(1, close - 1))) == "levels";
+            const auto name = close == std::string_view::npos ? std::string() : lower(trim(line.substr(1, close - 1)));
+            in_levels = name == "levels";
+            in_own = name == "ue4sslualogbridge";
             continue;
         }
-        if (!in_levels) continue;
+        if (!in_levels && !in_own) continue;
         const auto equals = line.find('=');
         if (equals == std::string_view::npos) continue;
+        if (in_own)
+        {
+            if (lower(trim(line.substr(0, equals))) != "globallevel") continue;
+            const auto rank = parse_level(line.substr(equals + 1));
+            if (rank) table[""] = *rank;
+            else if (ignored) ignored->emplace_back(line);
+            continue;
+        }
         const auto key = level_key(line.substr(0, equals));
         const auto rank = parse_level(line.substr(equals + 1));
-        if (!key || !rank)
+        if (!key || key->empty() || !rank) // the global level lives in the bridge's own section
         {
             if (ignored) ignored->emplace_back(line);
             continue;

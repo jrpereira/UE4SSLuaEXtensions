@@ -51,7 +51,7 @@ assert(Menu.slotAddress(sounds) == 'UE4SSLuaEXtensions:Sounds' and sounds.contri
 
 -- The source page is the extension's own mod_settings.ini under the contributor's Mod Id.
 local ini = '[Mod]\r\nId=UE4SSLuaEventBridge\r\nName=UE4SS Lua Event Bridge\r\n\r\n'
-    .. '[Setting.A]\r\nId=EnableVerifications\r\nType=toggle\r\nConfigFile=settings.ini\r\n\r\n'
+    .. '[Setting.A]\r\nId=EnableVerifications\r\nType=toggle\r\nConfigFile=config.ini\r\n\r\n'
     .. '[Setting.B]\r\nId=EnableHooks\r\nType=toggle\r\nVisibleWhen=EnableVerifications\r\n'
     .. 'VisibleValues=1\r\n'
 local source = Menu.sourceManifest(events, ini)
@@ -59,13 +59,13 @@ assert(source:find('[Mod]\nId=UE4SSLuaEXtensions.Events\nName=UE4SS Lua Event Br
 assert(not source:find('Id=UE4SSLuaEventBridge', 1, true) and not source:find('\r', 1, true))
 -- Ids are unique on the shared page: each takes the extension's prefix, rules naming them too.
 assert(table.concat(Menu.settingIds(source), ',') == 'Events_EnableVerifications,Events_EnableHooks', 'every setting, in order')
-assert(source:find('[Setting.Events_A]\nId=Events_EnableVerifications\nType=toggle\nConfigFile=settings.ini\n', 1, true))
+assert(source:find('[Setting.Events_A]\nId=Events_EnableVerifications\nType=toggle\nConfigFile=config.ini\n', 1, true))
 assert(source:find('VisibleWhen=Events_EnableVerifications\n', 1, true), 'rules follow the ids')
 -- Without that file, the verification switch alone, with the extension's storage.
 for _, extension in ipairs(Menu.extensions) do
     local fallback = Menu.sourceManifest(extension)
     assert(fallback:find('Id=' .. extension.contributor .. '\n', 1, true))
-    assert(fallback:find('ConfigFile=settings.ini\nConfigSection=Settings\nConfigKey=EnableVerifications', 1, true), 'storage')
+    assert(fallback:find('ConfigFile=config.ini\nConfigSection=' .. extension.id .. '\nConfigKey=EnableVerifications', 1, true), 'storage')
     assert(fallback:find('Type=toggle', 1, true) and fallback:find('Default=0', 1, true), 'off by default')
     assert(table.concat(Menu.settingIds(fallback), ',') == extension.slot .. '_EnableVerifications')
 end

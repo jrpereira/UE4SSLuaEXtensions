@@ -112,21 +112,24 @@ written when its level is at or above the effective level of its
 `<module>.<category>`, the first of:
 
 1. a `SetLevel` override of the category, then of the module;
-2. settings.ini of the category, then of the module;
+2. config.ini `[Levels]` of the category, then of the module;
 3. the module's `level` option (the lowest one registered under that name);
 4. a `SetLevel` override of the global level, then the global setting;
 5. WARN.
 
-Settings live in the bridge's own folder, `0_ModCore_UE4SSLuaLogBridge/settings.ini`:
+Settings live in the bridge's own folder, `0_ModCore_UE4SSLuaLogBridge/config.ini`:
 
 ```ini
+[UE4SSLuaLogBridge]
+GlobalLevel=4
+
 [Levels]
-Global=WARN
 MyMod=DEBUG
 MyMod.combat=TRACE
 ```
 
-The ModCore Settings menu edits `Global`. The file is re-read within half a
+The ModCore Settings menu edits `GlobalLevel` (1 for TRACE to 7 for OFF; a
+name works too). The file is re-read within half a
 second of a change. Unknown keys and levels are ignored and noted in UE4SS.log.
 
 The Lua layer keeps levels it has asked for, so a filtered call makes no native

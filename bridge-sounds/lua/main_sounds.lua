@@ -1,6 +1,6 @@
 -- UE4SSLuaSoundBridge load-time verifications. Ships as Scripts/main.lua in the
 -- bridge's own mod folder and runs only when the MCS setting "Enable load-time
--- verifications" is on (settings.ini: [Settings] EnableVerifications=1); it is off by
+-- verifications" is on (config.ini: [UE4SSLuaSoundBridge] EnableVerifications=1); it is off by
 -- default. Results go to UE4SS.log as PASS, FAIL and SKIP lines, followed by a
 -- SUMMARY line once the timed playback checks finish. The harness is the
 -- shared Scripts/lex_verify.lua.
@@ -9,7 +9,7 @@
 -- folder, plays them at volume 0 (silent) and removes them again.
 
 local Verify = require("lex_verify")
-if not Verify.enabled() then return end
+if not Verify.enabled("UE4SSLuaSoundBridge") then return end
 
 local V = Verify.new("[UE4SSLuaSoundBridge verify] ")
 local log, check, group, ok, refused, raises, skip, summary =

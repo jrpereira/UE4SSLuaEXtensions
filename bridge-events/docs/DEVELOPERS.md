@@ -618,7 +618,7 @@ of this API (source: [`lua/main_events.lua`](../lua/main_events.lua)), and
 `Scripts/lex_verify.lua`, the harness all extensions share
 ([`shared/lua/lex_verify.lua`](../../shared/lua/lex_verify.lua)). They run
 only when **Enable load-time verifications** is on in the bridge's ModCore
-Settings page (`settings.ini`: `[Settings] EnableVerifications=1`). It is off by
+Settings page (`config.ini`: `[UE4SSLuaEventBridge] EnableVerifications=1`). It is off by
 default and takes effect on the next launch. Results are `PASS`, `FAIL`,
 `SKIP` and `NOTE` lines tagged `[UE4SSLuaEventBridge verify]` in UE4SS.log,
 with a `SUMMARY` line per stage:
@@ -878,7 +878,7 @@ retries. After a reload deletes the function, the request goes back to
 `pending`, tries the same three times and waits for its class.
 
 Failures return `nil, message`: unknown option, wrong type, `delivery = "sync"`
-(`"sync delivery needs hooks_sync"`), hooks disabled (`[Settings] EnableHooks=0`), or a
+(`"sync delivery needs hooks_sync"`), hooks disabled (`[UE4SSLuaEventBridge] EnableHooks=0`), or a
 native refusal such as `"property layout mismatch"`. Refusals that can never
 succeed (an unknown parameter, a parameter of an unsupported kind, a target that
 is not a `UFunction`, a property layout mismatch) return `nil, message` from

@@ -29,11 +29,19 @@ repository-policy.json          vendored files and their source modules, for the
 An extension's folder holds only what is specific to it. Its `CMakeLists.txt`
 calls the shared functions with its own name, Lua API and descriptor magic.
 
-Menu rows live in the extension's `mod.json`, as a `settings` array of
-Dawnwalker Mod Menu rows (`Id`, `Type`, `Label`, ..., with `PresetValues` and
-`PresetLabels` as arrays). Rows appear in array order. The build writes them to
-the mod folder's `mod_settings.ini` (`shared/bootstrap/cmake/ModSettings.cmake`),
-which the menus read; there is no `mod_settings.ini` source file.
+Menu rows live in the extension's `mod.json`, as a `settings` array, and
+appear in array order:
+
+```json
+{ "id": "GlobalLevel", "type": "picker", "label": "Global log level", "group": "Levels",
+  "values": [[1, "Trace"], [2, "Debug"]], "default": 4 }
+```
+
+A value is stored in `config.ini`, section `[<mod.json id>]`, key `<row id>`;
+`file`, `section` and `key` override that only when needed. The build writes
+the rows to the mod folder's `mod_settings.ini`
+(`shared/bootstrap/cmake/ModSettings.cmake`), which the menus read; there is no
+`mod_settings.ini` source file.
 
 ## Tests
 

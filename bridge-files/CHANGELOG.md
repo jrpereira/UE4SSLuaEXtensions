@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- Breaking: settings move from `settings.ini` `[Settings]` to `config.ini`
+  `[UE4SSLuaFileBridge]` (`EnableVerifications`), as in other ModCore mods. `settings.ini`
+  is no longer read, so switches return to their defaults until set again.
+
 ## v1.1.0
 
 ### Changes

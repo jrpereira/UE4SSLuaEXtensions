@@ -1,6 +1,6 @@
 -- Offline checks of an extension's load-time verifications (lua/main_*.lua,
 -- shipped as Scripts/main.lua with the shared Scripts/lex_verify.lua): the
--- MCS setting gates them, they are off unless settings.ini says EnableVerifications=1, and
+-- MCS setting gates them, they are off unless config.ini says [<mod id>] EnableVerifications=1, and
 -- a failure inside them never escapes main.lua. The in-game checks themselves
 -- need the game. Run from the repository root:
 --
@@ -47,7 +47,7 @@ local function write(path, text)
     file:close()
 end
 
--- Installs the script as <mod>/Scripts/main.lua with the given settings.ini
+-- Installs the script as <mod>/Scripts/main.lua with the given config.ini
 -- (nil for none) and runs it with a bridge global that records any access and
 -- then raises. Returns whether the bridge was touched, whether main.lua raised,
 -- and the printed text.
@@ -56,7 +56,7 @@ local function run(script, settings)
     shell("rm -rf '" .. mod .. "' && mkdir -p '" .. mod .. "/Scripts'")
     write(mod .. "/Scripts/main.lua", read(script.source))
     write(mod .. "/Scripts/lex_verify.lua", read(HARNESS))
-    if settings then write(mod .. "/settings.ini", settings) end
+    if settings then write(mod .. "/config.ini", settings) end
 
     local touched, printed = false, {}
     local stub = setmetatable({}, {
@@ -86,6 +86,7 @@ end
 
 do
     local label = script.source .. ": "
+    local own = "[" .. script.global .. "]"
     local function off(settings)
         local touched, ok, printed = run(script, settings)
         assert(ok, "main.lua raised")
@@ -93,16 +94,17 @@ do
         assert(printed == "", "printed while off: " .. printed)
     end
 
-    test(label .. "off without settings.ini", function() off(nil) end)
-    test(label .. "off when EnableVerifications=0", function() off("[Settings]\nEnableVerifications=0\n") end)
-    test(label .. "off for an unreadable value", function() off("[Settings]\nEnableVerifications=yes\n") end)
+    test(label .. "off without config.ini", function() off(nil) end)
+    test(label .. "off when EnableVerifications=0", function() off(own .. "\nEnableVerifications=0\n") end)
+    test(label .. "off for an unreadable value", function() off(own .. "\nEnableVerifications=yes\n") end)
     test(label .. "off when the key is in another section", function() off("[Other]\nEnableVerifications=1\n") end)
+    test(label .. "off for the old [Settings] section", function() off("[Settings]\nEnableVerifications=1\n") end)
     test(label .. "off for an empty file", function() off("") end)
 
     for _, settings in ipairs({
-        "[Settings]\nEnableVerifications=1\n",
-        "[settings]\r\n  enableverifications = 1 \r\n",
-        "[General]\nScale=2\n\n[Settings]\nEnableVerifications=1.0",
+        own .. "\nEnableVerifications=1\n",
+        own:lower() .. "\r\n  enableverifications = 1 \r\n",
+        "[General]\nScale=2\n\n" .. own .. "\nEnableVerifications=1.0",
     }) do
         test(label .. "on for " .. string.format("%q", settings), function()
             local touched, ok, printed = run(script, settings)
