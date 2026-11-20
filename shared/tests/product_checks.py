@@ -139,10 +139,15 @@ class ProductChecks(unittest.TestCase):
         self.assertTrue(script.is_file(), script)
         self.assertIn('${LEX_SHARED_DIR}/lua/lex_verify.lua', identity.get('SCRIPT_MODULES', ''))
         self.assertIn('require("lex_verify")', script.read_text(encoding='utf-8'))
-        settings = (EXTENSION.folder / 'packaging/mod_settings.ini').read_text(encoding='utf-8')
-        self.assertIn(f'Id={EXTENSION.product}\n', settings)
-        self.assertIn('ConfigSection=Settings\nConfigKey=EnableVerifications\n', settings)
-        self.assertIn('Default=0\n', settings)
+        self.assertIn('${CMAKE_CURRENT_SOURCE_DIR}/mod.json', identity.get('MANIFEST_FILE', ''))
+        manifest = json.loads((EXTENSION.folder / 'mod.json').read_text(encoding='utf-8'))
+        self.assertEqual(manifest['id'], EXTENSION.product)
+        rows = {row['Id']: row for row in manifest['settings']}
+        verify = rows['EnableVerifications']
+        self.assertEqual((verify['ConfigFile'], verify['ConfigSection'], verify['ConfigKey'], verify['Default']),
+                         ('settings.ini', 'Settings', 'EnableVerifications', '0'))
+        self.assertFalse((EXTENSION.folder / 'packaging/mod_settings.ini').exists(),
+                         'menu rows live in mod.json "settings"')
 
     def test_changelog_sections_are_extractable(self):
         release_notes = _load_release_notes()

@@ -28,7 +28,7 @@ add_bridge_bootstrap(
     ENABLED_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/enabled.txt"
     SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/lua/main_logs.lua"
     SCRIPT_MODULES "${LEX_SHARED_DIR}/lua/lex_verify.lua"
-    SETTINGS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/mod_settings.ini"
+    MANIFEST_FILE "${CMAKE_CURRENT_SOURCE_DIR}/mod.json"
 )
 
 lex_embed_lua(UE4SSLLB_GENERATED_LUA_API
