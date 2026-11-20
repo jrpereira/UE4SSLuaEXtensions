@@ -17,6 +17,7 @@
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions",
     "nexus": "https://www.nexusmods.com/thebloodofdawnwalker/mods/526"
   },
+  "config_section": "UE4SSLuaEXtensions.Events",
   "settings": [
     {
       "id": "EnableVerifications",

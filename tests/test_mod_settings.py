@@ -50,6 +50,13 @@ class ModSettingsTests(unittest.TestCase):
             '\n[Setting.Alpha]\nId=Alpha\nType=toggle\nDescription=a; b = c\n'
             'ConfigFile=other.ini\nConfigSection=S\n')
 
+    def test_config_section_is_the_pages_default(self):
+        result, text = self.generate({'id': 'Demo', 'name': 'Demo', 'config_section': 'Pack.Demo',
+                                      'settings': [{'id': 'Flag', 'type': 'toggle'}]})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(text, '[Mod]\nId=Demo\nName=Demo\nConfigSection=Pack.Demo\n'
+                               '\n[Setting.Flag]\nId=Flag\nType=toggle\n')
+
     def test_no_settings_writes_the_mod_section_only(self):
         result, text = self.generate({'id': 'Demo', 'name': 'Demo'})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -60,6 +67,7 @@ class ModSettingsTests(unittest.TestCase):
             'not an array': {'settings': {'id': 'A'}},
             'no id': {'settings': [{'type': 'toggle'}]},
             'bad id': {'settings': [{'id': 'a b'}]},
+            'bad config_section': {'config_section': 'a b', 'settings': []},
             'repeated id': {'settings': [{'id': 'A'}, {'id': 'A'}]},
             'unknown field': {'settings': [{'id': 'A', 'Label': 'x'}]},
             'values not pairs': {'settings': [{'id': 'A', 'values': [1, 2]}]},
@@ -81,7 +89,8 @@ class ModSettingsTests(unittest.TestCase):
                 manifest = json.loads((bridge / 'mod.json').read_text(encoding='utf-8'))
                 result, text = self.generate(manifest)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue(text.startswith(f"[Mod]\nId={manifest['id']}\n"))
+                self.assertTrue(text.startswith(f"[Mod]\nId={manifest['id']}\nName={manifest['name']}\n"
+                                                f"ConfigSection={manifest['config_section']}\n"))
                 self.assertIn(f"[Setting.EnableVerifications]\nId=EnableVerifications\nType=toggle\n", text)
                 self.assertNotIn('ConfigFile=', text)
 

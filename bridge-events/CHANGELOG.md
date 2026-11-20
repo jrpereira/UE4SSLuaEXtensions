@@ -5,7 +5,7 @@
 ### Changes
 
 - Breaking: settings move from `settings.ini` `[Settings]` to `config.ini`
-  `[UE4SSLuaEventBridge]` (`EnableHooks` and `EnableVerifications`), as in other ModCore mods. `settings.ini`
+  `[UE4SSLuaEXtensions.Events]` (`EnableHooks` and `EnableVerifications`). `settings.ini`
   is no longer read, so switches return to their defaults until set again.
 
 ## v1.3.0

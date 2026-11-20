@@ -3,12 +3,13 @@
 -- Scripts/main.lua, which loads it with require("lex_verify").
 --
 --   local Verify = require("lex_verify")
---   if not Verify.enabled("UE4SSLuaFileBridge") then return end
+--   if not Verify.enabled("UE4SSLuaEXtensions.Files") then return end
 --   local V = Verify.new("[UE4SSLuaFileBridge verify] ")
 --   V.run(function() ... V.check("name", condition) ... end)
 --
--- Verify.enabled(id) reads [<id>] EnableVerifications from the mod's config.ini
--- (written by the MCS toggle; <id> is the mod.json id). A missing file or an
+-- Verify.enabled(section) reads [<section>] EnableVerifications from the mod's
+-- config.ini (written by the MCS toggle; <section> is mod.json's
+-- config_section). A missing file or an
 -- unreadable value means off: configuration never blocks an extension.
 
 local Verify = {}
@@ -20,8 +21,8 @@ function Verify.modFolder()
     return scripts and scripts:match("^(.*)[/\\][^/\\]+$")
 end
 
-function Verify.enabled(id)
-    local own = tostring(id):lower()
+function Verify.enabled(section)
+    local own = tostring(section):lower()
     local folder = Verify.modFolder()
     local file = folder and io.open(folder .. "/config.ini", "r")
     if not file then return false end

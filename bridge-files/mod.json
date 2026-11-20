@@ -16,6 +16,7 @@
   "links": {
     "source": "https://github.com/jrpereira/UE4SSLuaEXtensions"
   },
+  "config_section": "UE4SSLuaEXtensions.Files",
   "settings": [
     {
       "id": "EnableVerifications",

@@ -1,6 +1,6 @@
 -- Offline checks of an extension's load-time verifications (lua/main_*.lua,
 -- shipped as Scripts/main.lua with the shared Scripts/lex_verify.lua): the
--- MCS setting gates them, they are off unless config.ini says [<mod id>] EnableVerifications=1, and
+-- MCS setting gates them, they are off unless config.ini says [<config_section>] EnableVerifications=1, and
 -- a failure inside them never escapes main.lua. The in-game checks themselves
 -- need the game. Run from the repository root:
 --
@@ -31,6 +31,8 @@ end
 local script = {
     source = scriptOf(extension),
     global = assert(read(extension .. "/mod.json"):match('"id"%s*:%s*"([^"]+)"'), "mod.json has no id"),
+    section = assert(read(extension .. "/mod.json"):match('"config_section"%s*:%s*"([^"]+)"'),
+        "mod.json has no config_section"),
 }
 local HARNESS = "shared/lua/lex_verify.lua"
 
@@ -86,7 +88,7 @@ end
 
 do
     local label = script.source .. ": "
-    local own = "[" .. script.global .. "]"
+    local own = "[" .. script.section .. "]"
     local function off(settings)
         local touched, ok, printed = run(script, settings)
         assert(ok, "main.lua raised")

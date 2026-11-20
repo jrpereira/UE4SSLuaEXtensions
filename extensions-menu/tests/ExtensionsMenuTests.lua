@@ -50,22 +50,29 @@ assert(events.label == 'Events Extension' and files.label == 'Files Extension' a
 assert(Menu.slotAddress(sounds) == 'UE4SSLuaEXtensions:Sounds' and sounds.contributor == 'UE4SSLuaEXtensions.Sounds')
 
 -- The source page is the extension's own mod_settings.ini under the contributor's Mod Id.
-local ini = '[Mod]\r\nId=UE4SSLuaEventBridge\r\nName=UE4SS Lua Event Bridge\r\n\r\n'
-    .. '[Setting.A]\r\nId=EnableVerifications\r\nType=toggle\r\nConfigFile=config.ini\r\n\r\n'
+local ini = '[Mod]\r\nId=UE4SSLuaEventBridge\r\nName=UE4SS Lua Event Bridge\r\nConfigSection=UE4SSLuaEXtensions.Events\r\n\r\n'
+    .. '[Setting.A]\r\nId=EnableVerifications\r\nType=toggle\r\n\r\n'
     .. '[Setting.B]\r\nId=EnableHooks\r\nType=toggle\r\nVisibleWhen=EnableVerifications\r\n'
-    .. 'VisibleValues=1\r\n'
+    .. 'VisibleValues=1\r\n\r\n'
+    .. '[Setting.C]\r\nId=Volume\r\nType=toggle\r\nConfigKey=Loudness\r\n'
 local source = Menu.sourceManifest(events, ini)
-assert(source:find('[Mod]\nId=UE4SSLuaEXtensions.Events\nName=UE4SS Lua Event Bridge\n', 1, true), 'Mod Id replaced')
+assert(source:find('[Mod]\nId=UE4SSLuaEXtensions.Events\nName=UE4SS Lua Event Bridge\nConfigSection=UE4SSLuaEXtensions.Events\n', 1, true),
+    'Mod Id replaced, the storage section kept')
 assert(not source:find('Id=UE4SSLuaEventBridge', 1, true) and not source:find('\r', 1, true))
 -- Ids are unique on the shared page: each takes the extension's prefix, rules naming them too.
-assert(table.concat(Menu.settingIds(source), ',') == 'Events_EnableVerifications,Events_EnableHooks', 'every setting, in order')
-assert(source:find('[Setting.Events_A]\nId=Events_EnableVerifications\nType=toggle\nConfigFile=config.ini\n', 1, true))
+assert(table.concat(Menu.settingIds(source), ',') == 'Events_EnableVerifications,Events_EnableHooks,Events_Volume',
+    'every setting, in order')
+-- Storage keeps the original key: stated by the extension, or its unprefixed id.
+assert(source:find('[Setting.Events_A]\nId=Events_EnableVerifications\nConfigKey=EnableVerifications\nType=toggle\n', 1, true))
+assert(source:find('Id=Events_EnableHooks\nConfigKey=EnableHooks\n', 1, true))
+assert(source:find('Id=Events_Volume\nType=toggle\nConfigKey=Loudness', 1, true) and not source:find('ConfigKey=Volume', 1, true))
 assert(source:find('VisibleWhen=Events_EnableVerifications\n', 1, true), 'rules follow the ids')
 -- Without that file, the verification switch alone, with the extension's storage.
 for _, extension in ipairs(Menu.extensions) do
     local fallback = Menu.sourceManifest(extension)
     assert(fallback:find('Id=' .. extension.contributor .. '\n', 1, true))
-    assert(not fallback:find('ConfigFile=', 1, true), 'storage is the menu default')
+    assert(not fallback:find('ConfigFile=', 1, true) and fallback:find('ConfigKey=EnableVerifications', 1, true),
+        'config.ini at [<contributor>] EnableVerifications')
     assert(fallback:find('Type=toggle', 1, true) and fallback:find('Default=0', 1, true), 'off by default')
     assert(table.concat(Menu.settingIds(fallback), ',') == extension.slot .. '_EnableVerifications')
 end
@@ -92,7 +99,7 @@ for n, extension in ipairs(both) do
     local row = contribution.rows[1]
     assert(row.page == extension.contributor and row.slot == Menu.slotAddress(extension))
 end
-assert(table.concat(list[2].contribution.rows[1].settings, ',') == 'Events_EnableVerifications,Events_EnableHooks', 'read from the file')
+assert(table.concat(list[2].contribution.rows[1].settings, ',') == 'Events_EnableVerifications,Events_EnableHooks,Events_Volume', 'read from the file')
 assert(table.concat(list[3].contribution.rows[1].settings, ',') == 'Files_EnableVerifications', 'fallback without the file')
 for _, entry in ipairs(list) do
     assert(Contributions.validate(entry.id, entry.contribution), 'valid for ' .. entry.id)

@@ -130,7 +130,7 @@ inline std::optional<std::string> level_key(std::string_view key)
 
 using LevelTable = std::unordered_map<std::string, int>;
 
-// Levels from config.ini: `[UE4SSLuaLogBridge] GlobalLevel=4` (the menu's
+// Levels from config.ini: `[UE4SSLuaEXtensions.Logs] GlobalLevel=4` (the menu's
 // row) is the global level (key ""), and `[Levels]` holds `Module=DEBUG` and
 // `Module.category=TRACE`. Sections and keys are case-insensitive; other
 // sections, comments, unknown keys and unknown levels are ignored
@@ -152,7 +152,7 @@ inline LevelTable parse_level_settings(std::string_view text, std::vector<std::s
             const auto close = line.find(']');
             const auto name = close == std::string_view::npos ? std::string() : lower(trim(line.substr(1, close - 1)));
             in_levels = name == "levels";
-            in_own = name == "ue4sslualogbridge";
+            in_own = name == "ue4ssluaextensions.logs";
             continue;
         }
         if (!in_levels && !in_own) continue;

@@ -1,6 +1,6 @@
 -- UE4SSLuaFileBridge load-time verifications. Ships as Scripts/main.lua in the
 -- bridge's own mod folder and runs only when the MCS setting "Enable load-time
--- verifications" is on (config.ini: [UE4SSLuaFileBridge] EnableVerifications=1); it is off by
+-- verifications" is on (config.ini: [UE4SSLuaEXtensions.Files] EnableVerifications=1); it is off by
 -- default. Results go to UE4SS.log as PASS, FAIL and SKIP lines, followed by a
 -- SUMMARY line once the asynchronous Tail checks finish. The harness (settings
 -- gate, logging, groups) is the shared Scripts/lex_verify.lua.
@@ -10,7 +10,7 @@
 -- refused write that must not create a file.
 
 local Verify = require("lex_verify")
-if not Verify.enabled("UE4SSLuaFileBridge") then return end
+if not Verify.enabled("UE4SSLuaEXtensions.Files") then return end
 
 local V = Verify.new("[UE4SSLuaFileBridge verify] ")
 local log, pass, fail, skip, check, group = V.log, V.pass, V.fail, V.skip, V.check, V.group

@@ -76,19 +76,22 @@ end
 -- The hidden page holding an extension's settings: its own mod_settings.ini (text) under the
 -- contributor's Mod Id, so storage stays the extension's. Every extension's rows land on one
 -- page, where setting ids must be unique, so each id (and any rule naming it) takes the
--- extension's slot as a prefix; storage is keyed by ConfigSection and ConfigKey, not by id.
--- Without that file, the startup verification switch its Scripts read from config.ini [<id>],
--- stored where the menu stores a row by default.
+-- extension's slot as a prefix. Storage must not follow: a row without its own ConfigKey
+-- gets its original id as ConfigKey, and [Mod] ConfigSection is kept, so values stay in the
+-- extension's config.ini at [UE4SSLuaEXtensions.<Slot>] <id>.
+-- Without that file, the startup verification switch its Scripts read: config.ini
+-- [<contributor>] EnableVerifications, the contributor being this page's [Mod] Id.
 local RULES = {VisibleWhen = true, mcLabelWhen = true}
 function M.sourceManifest(extension, text)
     local prefix = extension.slot .. '_'
     if text then
         text = text:gsub('\r\n', '\n')
-        local ids, section = {}, nil
+        local ids, keyed, section = {}, {}, nil
         for line in (text .. '\n'):gmatch('([^\n]*)\n') do
             section = line:match('^%s*%[([^%]]+)%]%s*$') or section
             local id = section and section:match('^Setting%.') and line:match('^%s*Id%s*=%s*(.-)%s*$')
             if id then ids[id] = true end
+            if section and section:match('^Setting%.') and line:match('^%s*ConfigKey%s*=') then keyed[section] = true end
         end
         local out = {}
         section = nil
@@ -101,7 +104,9 @@ function M.sourceManifest(extension, text)
             else
                 local key, value = line:match('^%s*([%w_]+)%s*=%s*(.-)%s*$')
                 if section == 'Mod' and key == 'Id' then line = 'Id=' .. extension.contributor
-                elseif key == 'Id' and section and section:match('^Setting%.') then line = 'Id=' .. prefix .. value
+                elseif key == 'Id' and section and section:match('^Setting%.') then
+                    line = 'Id=' .. prefix .. value
+                    if not keyed[section] then line = line .. '\nConfigKey=' .. value end
                 elseif key and RULES[key] and ids[value] then line = key .. '=' .. prefix .. value end
             end
             out[#out + 1] = line
@@ -112,7 +117,8 @@ function M.sourceManifest(extension, text)
     block(lines, 'Mod', {{'Id', extension.contributor}, {'Name', extension.title}})
     block(lines, 'Setting.' .. prefix .. 'EnableVerifications', {{'Id', prefix .. 'EnableVerifications'},
         {'Type', 'toggle'}, {'Label', 'Enable load-time verifications'}, {'Description', DESCRIPTION},
-        {'Group', 'Diagnostics'}, {'PresetValues', '0|1'}, {'PresetLabels', 'Off|On'}, {'Default', '0'}})
+        {'Group', 'Diagnostics'}, {'PresetValues', '0|1'}, {'PresetLabels', 'Off|On'}, {'Default', '0'},
+        {'ConfigKey', 'EnableVerifications'}})
     return table.concat(lines, '\n')
 end
 

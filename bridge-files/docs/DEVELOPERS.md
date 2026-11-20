@@ -356,7 +356,7 @@ of this API (source: [`lua/main_files.lua`](../lua/main_files.lua)), and
 `Scripts/lex_verify.lua`, the harness all extensions share
 ([`shared/lua/lex_verify.lua`](../../shared/lua/lex_verify.lua)). They run
 only when **Enable load-time verifications** is on in the bridge's ModCore
-Settings page (`config.ini`: `[UE4SSLuaFileBridge] EnableVerifications=1`). It is off by
+Settings page (`config.ini`: `[UE4SSLuaEXtensions.Files] EnableVerifications=1`). It is off by
 default and takes effect on the next launch. Results are `PASS`, `FAIL` and
 `SKIP` lines tagged `[UE4SSLuaFileBridge verify]` in UE4SS.log, ending with a
 `SUMMARY` line once the `Tail` checks finish (at most 10 seconds). They write

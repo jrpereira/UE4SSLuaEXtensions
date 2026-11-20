@@ -1,6 +1,6 @@
 -- UE4SSLuaLogBridge load-time verifications. Ships as Scripts/main.lua in the
 -- bridge's own mod folder and runs only when the MCS setting "Enable load-time
--- verifications" is on (config.ini: [UE4SSLuaLogBridge] EnableVerifications=1); it is off by
+-- verifications" is on (config.ini: [UE4SSLuaEXtensions.Logs] EnableVerifications=1); it is off by
 -- default. Results go to UE4SS.log as PASS, FAIL and SKIP lines, followed by a
 -- SUMMARY line once the timed delivery checks finish. The harness is the
 -- shared Scripts/lex_verify.lua.
@@ -8,7 +8,7 @@
 -- It writes logs/lexverify*.log files into this mod's own folder and removes them again.
 
 local Verify = require("lex_verify")
-if not Verify.enabled("UE4SSLuaLogBridge") then return end
+if not Verify.enabled("UE4SSLuaEXtensions.Logs") then return end
 
 local V = Verify.new("[UE4SSLuaLogBridge verify] ")
 local log, check, group, ok, refused, raises, skip, summary =

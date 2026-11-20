@@ -144,7 +144,9 @@ class ProductChecks(unittest.TestCase):
         self.assertEqual(manifest['id'], EXTENSION.product)
         rows = {row['id']: row for row in manifest['settings']}
         verify = rows['EnableVerifications']
-        # Stored at the defaults: config.ini, [<mod id>], EnableVerifications (lex_verify.lua reads it there).
+        # Stored at the defaults: config.ini, the page's section, EnableVerifications (lex_verify.lua reads it there).
+        self.assertRegex(manifest['config_section'], r'^UE4SSLuaEXtensions\.[A-Z][a-z]+$')
+        self.assertIn(f"Verify.enabled(\"{manifest['config_section']}\")", script.read_text(encoding='utf-8'))
         self.assertFalse({'file', 'section', 'key'} & verify.keys())
         self.assertEqual((verify['type'], verify['default'], verify['values']), ('toggle', 0, [[0, 'Off'], [1, 'On']]))
         self.assertFalse((EXTENSION.folder / 'packaging/mod_settings.ini').exists(),

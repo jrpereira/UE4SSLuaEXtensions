@@ -120,7 +120,7 @@ written when its level is at or above the effective level of its
 Settings live in the bridge's own folder, `0_ModCore_UE4SSLuaLogBridge/config.ini`:
 
 ```ini
-[UE4SSLuaLogBridge]
+[UE4SSLuaEXtensions.Logs]
 GlobalLevel=4
 
 [Levels]

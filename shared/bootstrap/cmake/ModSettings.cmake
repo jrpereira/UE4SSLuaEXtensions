@@ -7,6 +7,9 @@
 #
 # mod.json:
 #   "id", "name"          become [Mod] Id and Name
+#   "config_section"      optional: [Mod] ConfigSection, the section every row
+#                         stores in unless it states its own (the menu's
+#                         default is the page's [Mod] Id)
 #   "settings": [ {...} ] one [Setting.<id>] section per row, in array order
 #
 # A row:
@@ -40,6 +43,14 @@ function(lex_mod_settings_text out_var manifest)
     string(JSON mod_id GET "${json}" id)
     string(JSON mod_name GET "${json}" name)
     set(text "[Mod]\nId=${mod_id}\nName=${mod_name}\n")
+    string(JSON section_kind ERROR_VARIABLE no_section TYPE "${json}" config_section)
+    if(NOT no_section)
+        _lex_setting_scalar(mod_section "${json}" "${manifest}: config_section" config_section)
+        if(NOT mod_section MATCHES "^[A-Za-z][A-Za-z0-9_.]*$")
+            message(FATAL_ERROR "${manifest}: config_section ${mod_section} must be a letter, then letters, digits, _ or .")
+        endif()
+        string(APPEND text "ConfigSection=${mod_section}\n")
+    endif()
     string(JSON settings_kind ERROR_VARIABLE missing TYPE "${json}" settings)
     if(missing)
         set(count 0)
