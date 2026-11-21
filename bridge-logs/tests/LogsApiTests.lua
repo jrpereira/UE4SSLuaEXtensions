@@ -9,11 +9,17 @@ local API_PATH = "bridge-logs/lua/logs_api.lua"
 local Kit = require("TestKit")
 local expect, expectFailure, expectRaise = Kit.expect, Kit.expectFailure, Kit.expectRaise
 
+-- The layer captures os.clock when it loads; fake.now is that clock.
+local realClock = os.clock
+
 local function fresh()
     local fake = Fake.new()
     fake.install()
+    fake.now = 0
+    os.clock = function() return fake.now end
     local chunk = assert(loadfile(API_PATH))
     chunk()
+    os.clock = realClock
     return fake, UE4SSLuaLogBridge
 end
 
@@ -50,7 +56,15 @@ test("version, capabilities and stats", function(_, bridge, logs)
     expect(bridge.GetVersion() == "1.0.0" and logs:GetVersion() == "1.0.0")
     local caps = logs.GetCapabilities()
     expect(caps.api == 1 and caps.journal_bytes == 4194304 and caps.max_message_bytes == 65536 and caps.frame == true)
-    expect(#caps.levels == 7 and caps.default_categories[1] == "main" and #caps.default_categories == 4)
+    expect(#caps.levels == 7 and caps.levels[1] == "TRACE" and caps.levels[7] == "OFF")
+    expect(caps.default_categories[1] == "main" and #caps.default_categories == 4)
+    expect(caps.targets[1] == "default" and caps.targets[2] == "module" and #caps.targets == 2)
+    expect(caps.frequencies[1] == "immediate" and caps.frequencies[2] == "frame"
+        and caps.frequencies[3] == "periodic" and #caps.frequencies == 3)
+    caps.levels[1] = "LOUD"
+    caps.default_categories[1] = "x"
+    local again = logs.GetCapabilities()
+    expect(again.levels[1] == "TRACE" and again.default_categories[1] == "main", "callers get copies")
     local stats = bridge.GetStats()
     expect(stats.written == 0 and stats.generation == 1 and stats.loggers == 0)
 end)
@@ -196,15 +210,28 @@ test("a new generation from a write refreshes the cache", function(fake, _, logs
     expect(#fake.lines == 2 and last(fake).message == "now shown")
 end)
 
-test("filtered calls poll the generation", function(fake, _, logs)
+test("filtered calls see a level change after a second", function(fake, _, logs)
     local log = logs.Register("Mod")
     log.debug("first")
     fake.setLevel("", 1)
-    for _ = 1, 62 do log.trace("hidden") end -- with "first": 63 filtered calls
-    expect(#fake.lines == 0)
-    log.trace("the 64th filtered call polls")
+    for _ = 1, 100 do log.trace("hidden") end
+    expect(#fake.lines == 0, "within the second the cached level holds")
+    fake.now = 1
     log.trace("shown")
     expect(#fake.lines == 1 and last(fake).message == "shown")
+end)
+
+test("enabled and the level field alone see a level change", function(fake, _, logs)
+    local log = logs.Register("Mod", { categories = { "combat" } })
+    expect(not log.enabled("trace") and log.level == "WARN")
+    fake.setLevel("mod", 1)
+    expect(not log.enabled("trace"), "cached for up to a second")
+    fake.now = 1.5
+    expect(log.enabled("trace") and log.level == "TRACE" and log.combat.enabled("trace"))
+    expect(#fake.lines == 0, "no line was written to carry the generation")
+    local polls = fake.counts.Generation
+    for _ = 1, 10 do log.enabled("trace") end
+    expect(fake.counts.Generation == polls, "at most one poll per second")
 end)
 
 test("registered defaults and per-category levels", function(fake, _, logs)
@@ -254,7 +281,27 @@ test("a refused coroutine falls back to print", function(fake, _, logs)
     expect(ok, tostring(err))
     expect(#fake.lines == 1)
     expect(printed[1] == "[Mod] WARN from a coroutine\n", printed[1])
-    expect(printed[2] == nil or printed[2] == "[Mod:combat] ERROR category\n")
+    expect(printed[2] == "[Mod:combat] ERROR category\n", printed[2])
+end)
+
+test("a refused coroutine filters an uncached category at the module's level", function(fake, _, logs)
+    local log = logs.Register("Mod", { categories = { "combat" } })
+    fake.setLevel("mod", 2)
+    expect(log.enabled("debug"), "the main thread caches main at DEBUG")
+    local printed = {}
+    local savedPrint = print
+    print = function(text) printed[#printed + 1] = text end
+    local co = coroutine.create(function()
+        log.combat.debug("uncached category")
+        return log.combat.enabled("debug"), log.combat.enabled("trace")
+    end)
+    local ok, debugOn, traceOn = coroutine.resume(co)
+    print = savedPrint
+    expect(ok, tostring(debugOn))
+    expect(printed[1] == "[Mod:combat] DEBUG uncached category\n", tostring(printed[1]))
+    expect(debugOn == true and traceOn == false)
+    fake.setLevel("mod.combat", 1)
+    expect(log.combat.enabled("trace"), "the fallback was not cached")
 end)
 
 suite.finish()

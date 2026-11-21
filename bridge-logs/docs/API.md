@@ -103,7 +103,8 @@ and not a method name (`write`, `level`, ...); names are folded to lower case.
 
 `log:warn(...)` works as well as `log.warn(...)`. From a coroutine the mod
 created, UE4SS refuses native calls; the line then goes to UE4SS.log through
-`print`.
+`print`, and a category whose level the main thread has not asked for yet is
+filtered at the module's last known level (WARN if none is known).
 
 ## Levels
 
@@ -133,8 +134,8 @@ name works too). The file is re-read within half a
 second of a change. Unknown keys and levels are ignored and noted in UE4SS.log.
 
 The Lua layer keeps levels it has asked for, so a filtered call makes no native
-call; a written line tells it when any level changed, and filtered calls check
-every 64 calls.
+call; a written line tells it when any level changed, and any call (a filtered
+line, `enabled`, the `level` field) checks again once a second has passed.
 
 ## Crash safety
 

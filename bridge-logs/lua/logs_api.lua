@@ -32,7 +32,10 @@ local __OFF = 7
 local __DEFAULT_CATEGORIES = { "main", "config", "ui", "input" }
 local __TARGETS = { default = 0, module = 1 }
 local __FREQUENCIES = { immediate = 0, frame = 1, periodic = 2 }
-local __POLL_EVERY = 64
+-- How long a cached level is trusted before the native generation is asked again.
+local __REFRESH_SECONDS = 1
+-- Wall-clock seconds since process start on Windows (MSVC's clock()).
+local __clock = os.clock
 
 local function __fail(message)
     return nil, "invalid", message
@@ -71,7 +74,8 @@ end
 
 -- Every cached rank belongs to an epoch; a new generation from the native
 -- side starts a new epoch, and each logger drops its cache when it sees one.
-local __generation, __epoch, __filtered = nil, 0, 0
+local __generation, __epoch = nil, 0
+local __refreshedAt = __clock()
 
 local function __seen(generation)
     if math.type(generation) == "integer" and generation ~= __generation then
@@ -80,29 +84,38 @@ local function __seen(generation)
     end
 end
 
-local function __threshold(state, category)
+-- A level changed elsewhere (config.ini, the menu, another mod's SetLevel)
+-- reaches this environment within __REFRESH_SECONDS, whatever the mod calls:
+-- a line, enabled() or the level field.
+local function __refresh()
+    local now = __clock()
+    if now - __refreshedAt < __REFRESH_SECONDS then return end
+    __refreshedAt = now
+    __seen((__native("Generation")))
+end
+
+-- Drops a logger's cached ranks when they belong to an older epoch.
+local function __fresh(state)
     if state.epoch ~= __epoch then
         state.ranks = {}
         state.epoch = __epoch
     end
+end
+
+local function __threshold(state, category)
+    __refresh()
+    __fresh(state)
     local rank = state.ranks[category]
     if rank then return rank end
     local found, generation = __native("Level", __session, state.id, category)
-    if math.type(found) ~= "integer" then return __DEFAULT_RANK end
+    -- Refused (a coroutine the mod created): use the module's last known
+    -- rank, not cached, so the main thread still asks for this category.
+    if math.type(found) ~= "integer" then return state.known or __DEFAULT_RANK end
     __seen(generation)
-    if state.epoch ~= __epoch then
-        state.ranks = {}
-        state.epoch = __epoch
-    end
+    __fresh(state)
     state.ranks[category] = found
+    if category == "main" or state.known == nil then state.known = found end
     return found
-end
-
-local function __poll()
-    __filtered = __filtered + 1
-    if __filtered < __POLL_EVERY then return end
-    __filtered = 0
-    __seen((__native("Generation")))
 end
 
 -- Writing ---------------------------------------------------------------------
@@ -117,10 +130,7 @@ local function __message(count, ...)
 end
 
 local function __emit(state, category, rank, count, ...)
-    if rank < __threshold(state, category) then
-        __poll()
-        return
-    end
+    if rank < __threshold(state, category) then return end
     local ok, message = pcall(__message, count, ...)
     if not ok then message = "<unprintable: " .. tostring(message) .. ">" end
     local generation = __native("Write", __session, state.id, rank, category, message)
@@ -346,6 +356,13 @@ local function __GetVersion()
     return version
 end
 
+-- The names of a name -> code map, in code order (codes run from 0).
+local function __byCode(map)
+    local names = {}
+    for name, code in pairs(map) do names[code + 1] = name end
+    return names
+end
+
 local function __GetCapabilities()
     local api, journal, maxMessage, frame = __native("GetCapabilities")
     if api == nil then return nil, journal, maxMessage end
@@ -354,10 +371,10 @@ local function __GetCapabilities()
         journal_bytes = journal,
         max_message_bytes = maxMessage,
         frame = frame == 1,
-        levels = { "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL", "OFF" },
-        targets = { "default", "module" },
-        frequencies = { "immediate", "frame", "periodic" },
-        default_categories = { "main", "config", "ui", "input" },
+        levels = table.move(__LEVELS, 1, #__LEVELS, 1, {}),
+        targets = __byCode(__TARGETS),
+        frequencies = __byCode(__FREQUENCIES),
+        default_categories = table.move(__DEFAULT_CATEGORIES, 1, #__DEFAULT_CATEGORIES, 1, {}),
     }
 end
 
