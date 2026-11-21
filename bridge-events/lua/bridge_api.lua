@@ -5,6 +5,7 @@ local __callbacks = {}
 local __bindings = {}
 local __targetFaultHandlers = {}
 local __loopStartCallbacks = {}
+local __focusCallbacks = {}
 local __nextCallbackToken = 0
 
 local function __forget(handle)
@@ -27,7 +28,7 @@ local function __forgetTarget(target)
     end
 end
 
--- Bindings only: loop-start callbacks have their own cancel function, and a
+-- Bindings only: loop-start and focus-regained callbacks have their own cancel function, and a
 -- target's fault handler goes when the target is closed.
 local function __clearCallbacks()
     __callbacks = {}
@@ -86,9 +87,20 @@ local function __dispatchInput(
     end
 end
 
+-- Focus regained (-20): every registered callback, which stays registered.
+local __FOCUS_MESSAGE = -20
+local function __dispatchFocus(token, awayMs)
+    local callback = __focusCallbacks[token]
+    if callback == nil then return end
+    local ok, callbackError = xpcall(callback, __traceback, { away_ms = awayMs })
+    if not ok then error(callbackError, 0) end
+end
+
 -- The one dispatcher closure the native side keeps per session. Input messages
--- are -2, -1, 0 and positive callback tokens; hook messages are -3 and below.
+-- are -2, -1, 0 and positive callback tokens; focus regained is -20; hook
+-- messages are the rest of -3 and below.
 local function __dispatch(token, ...)
+    if token == __FOCUS_MESSAGE then return __dispatchFocus(...) end
     if type(token) == "number" and token <= -3 then return __hookDispatch(token, ...) end
     return __dispatchInput(token, ...)
 end
@@ -288,6 +300,25 @@ bridge.onLoopStart = function(callback)
         if __loopStartCallbacks[token] == nil then return false end
         __loopStartCallbacks[token] = nil
         return UE4SSLuaEventBridge_CancelLoopStart(__session, token) == true
+    end
+end
+
+-- Repeating: callback({away_ms = n}) each time the game window comes back to
+-- the foreground, until the returned cancel function runs.
+bridge.onFocusRegained = function(callback)
+    if type(callback) ~= "function" then return nil, "callback must be a function" end
+    __nextCallbackToken = __nextCallbackToken + 1
+    local token = __nextCallbackToken
+    __focusCallbacks[token] = callback
+    local registered, why = UE4SSLuaEventBridge_RegisterFocusRegained(__session, token)
+    if not registered then
+        __focusCallbacks[token] = nil
+        return nil, why or "failed to register the focus-regained callback"
+    end
+    return function()
+        if __focusCallbacks[token] == nil then return false end
+        __focusCallbacks[token] = nil
+        return UE4SSLuaEventBridge_CancelFocusRegained(__session, token) == true
     end
 end
 

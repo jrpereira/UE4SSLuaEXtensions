@@ -4,6 +4,10 @@
 
 ### Changes
 
+- `onFocusRegained(callback)` runs a callback each time the game window comes
+  back to the foreground, with the time it spent in the background. ModCore
+  Settings uses it to reload config files edited while the game was in the
+  background.
 - Breaking: settings move from `settings.ini` `[Settings]` to `config.ini`
   `[UE4SSLuaEXtensions.Events]` (`EnableHooks` and `EnableVerifications`). `settings.ini`
   is no longer read, so switches return to their defaults until set again.

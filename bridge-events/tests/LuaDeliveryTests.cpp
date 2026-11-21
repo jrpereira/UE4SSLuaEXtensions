@@ -165,6 +165,7 @@ struct Sink
     std::atomic_bool finished{};
     std::mutex order_mutex;
     std::vector<uint64_t> loop_starts;
+    std::vector<std::pair<uint64_t, int64_t>> focus_calls; // (token, away_ms)
 
     class Entry
     {
@@ -212,6 +213,13 @@ struct Sink
         const Entry entry(*this, session);
         std::scoped_lock lock(order_mutex);
         loop_starts.push_back(token);
+    }
+    void focus(FakeSession& session, uint64_t token, int64_t away_ms)
+    {
+        const Entry entry(*this, session);
+        std::scoped_lock lock(order_mutex);
+        focus_calls.emplace_back(token, away_ms);
+        if (token == 13) throw std::runtime_error("focus callback failed");
     }
     void hook(FakeSession& session)
     {
@@ -550,6 +558,54 @@ void undecided()
 }
 }
 
+// The focus watch: no event on the first sample, a regain reports the time
+// away, probes are spaced, regains within a second merge; the pass delivers
+// in order and a failing callback is only reported.
+void focus()
+{
+    const auto t0 = FocusWatch::Clock::time_point{} + 100h;
+    FocusWatch watch;
+    CHECK(watch.due(t0));
+    CHECK(!watch.sample(t0, true));                        // first answer: state only
+    CHECK(!watch.due(t0 + 100ms) && watch.due(t0 + 250ms));
+    CHECK(!watch.sample(t0 + 250ms, true));
+    CHECK(!watch.sample(t0 + 500ms, false));               // left
+    const auto away = watch.sample(t0 + 2500ms, true);     // back after 2 s
+    CHECK(away && *away == 2000);
+    CHECK(!watch.sample(t0 + 2750ms, false));
+    CHECK(!watch.sample(t0 + 3000ms, true));               // within 1 s of the last regain: merged
+    CHECK(!watch.sample(t0 + 3250ms, false));
+    const auto later = watch.sample(t0 + 4000ms, true);
+    CHECK(later && *later == 750);
+
+    FocusWatch background;
+    CHECK(!background.sample(t0, false));                  // started in the background
+    const auto first = background.sample(t0 + 1s, true);
+    CHECK(first && *first == 1000);
+
+    FocusCallbacks callbacks;
+    callbacks.callbacks = {12, 3, 13};
+    CHECK(callbacks.accepts() && (callbacks.due() == std::vector<uint64_t>{3, 12, 13}));
+    CHECK(callbacks.due().size() == 3); // repeating: due() does not consume
+
+    FakeBackend backend;
+    Sink sink;
+    LuaPass<FakeBackend, Sink> pass{backend, sink, 64, 0};
+    FakeSession live, stopped;
+    live.id = 1;
+    stopped.id = 2;
+    stopped.active = false;
+    std::vector<std::pair<FakeSession*, uint64_t>> due;
+    for (const auto token : callbacks.due()) due.emplace_back(&live, token);
+    due.emplace_back(&stopped, 99);
+    pass.focus(due, 1500);
+    CHECK((sink.focus_calls == std::vector<std::pair<uint64_t, int64_t>>{{3, 1500}, {12, 1500}, {13, 1500}}));
+    CHECK(sink.reports == 1);
+
+    callbacks.stop();
+    CHECK(!callbacks.accepts() && callbacks.due().empty());
+}
+
 int main()
 {
     tick_mode();
@@ -557,5 +613,6 @@ int main()
     stop_waits_for_pass();
     unload();
     undecided();
+    focus();
     return LexTests::finish("LuaDeliveryTests");
 }

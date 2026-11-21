@@ -64,7 +64,7 @@ if(WIN32)
     target_include_directories(UE4SSLuaEventBridgeImplementation PRIVATE
         "${UE4SSLEB_GENERATED_INCLUDE_DIR}" include contract "${LEX_SHARED_DIR}/contract" "${LEX_SHARED_DIR}/ue4ss-abi"
         "${LEX_SHARED_DIR}/native")
-    target_link_libraries(UE4SSLuaEventBridgeImplementation PRIVATE "${UE4SS_IMPORT_LIB}" kernel32 UE4SSXBDispatch)
+    target_link_libraries(UE4SSLuaEventBridgeImplementation PRIVATE "${UE4SS_IMPORT_LIB}" kernel32 user32 UE4SSXBDispatch)
     target_compile_options(UE4SSLuaEventBridgeImplementation PRIVATE /W4 /WX /GR- /permissive-)
     set_property(TARGET UE4SSLuaEventBridgeImplementation PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
     set_target_properties(UE4SSLuaEventBridgeImplementation PROPERTIES

@@ -103,6 +103,20 @@ local function fixture()
             session.loopToken = nil
             return true
         end
+        session.focusTokens = {}
+        env.UE4SSLuaEventBridge_RegisterFocusRegained = function(id, token)
+            own(id)
+            if self.focusRefusal then return false, self.focusRefusal end
+            session.focusTokens[token] = true
+            session.focusToken = token
+            return true
+        end
+        env.UE4SSLuaEventBridge_CancelFocusRegained = function(id, token)
+            own(id)
+            if not session.focusTokens[token] then return false end
+            session.focusTokens[token] = nil
+            return true
+        end
         env.UE4SSLuaEventBridge_LifetimeCapture = function(id, address)
             own(id)
             -- Native capture rejects objects without a serial, as it does dead ones.
@@ -243,6 +257,31 @@ cases["loop start is one-shot and cancellation releases callbacks"] = function()
     check(cancel(), "pending loop callback was not canceled")
     s.dispatch(-2, canceled)
     check(calls == 1, "canceled loop callback ran")
+end
+
+cases["focus-regained callbacks repeat until cancelled and survive UnbindAll"] = function()
+    local f, seen = fixture(), {}
+    local s = f:loadSession()
+    local cancel = check(s.api.onFocusRegained(function(event) seen[#seen + 1] = event.away_ms end))
+    local token = check(s.focusToken)
+    s.dispatch(-20, token, 1500)
+    s.api.UnbindAll()
+    s.dispatch(-20, token, 20)
+    check(#seen == 2 and seen[1] == 1500 and seen[2] == 20, "focus callback did not repeat")
+    check(cancel() and not cancel(), "cancel should report once")
+    check(s.focusTokens[token] == nil, "cancel left the native registration")
+    s.dispatch(-20, token, 5)
+    check(#seen == 2, "a cancelled focus callback ran")
+    local value, why = s.api.onFocusRegained("nope")
+    check(value == nil and why == "callback must be a function")
+    f.focusRefusal = "focus-regained callback capacity exceeded"
+    value, why = s.api.onFocusRegained(function() end)
+    check(value == nil and why == f.focusRefusal)
+    f.focusRefusal = nil
+    local failing = check(s.api.onFocusRegained(function() error("boom") end))
+    check(not pcall(s.dispatch, -20, s.focusToken, 1), "a failing focus callback must raise to the native side")
+    check(s.focusTokens[s.focusToken], "a failing focus callback stays registered")
+    failing()
 end
 
 cases["lifetime wrapper preserves decimal tokens and drains losses"] = function()

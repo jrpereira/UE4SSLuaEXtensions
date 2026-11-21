@@ -5,7 +5,7 @@ There are four independent extensions. Each has its own mod folder, version and 
 [size=4][b]UE4SS Lua Event Bridge (1.3.0)[/b][/size]
 Connects Unreal Enhanced Input to UE4SS Lua callbacks. Bind existing Input Actions or create key bindings with native Tap and Hold triggers: Unreal handles the stopwatch, your mod handles the action. Lua receives copied event values outside Unreal's native input-dispatch stack.
 
-It also provides native object-lifetime validation and weak handles, so a mod can tell that an object has been freed instead of reading it, plus session-owned handles, explicit cleanup, binding inspection, dispatch statistics and configurable queue budgets.
+It also provides native object-lifetime validation and weak handles, so a mod can tell that an object has been freed instead of reading it, plus session-owned handles, explicit cleanup, binding inspection, dispatch statistics, configurable queue budgets and a callback when the game window regains focus.
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaEventBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-events/README.md]Event Bridge README[/url].
 

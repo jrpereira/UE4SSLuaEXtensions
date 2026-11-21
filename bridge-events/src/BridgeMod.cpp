@@ -53,6 +53,12 @@ extern "C" __declspec(dllimport) unsigned long UE4SSLEB_WINAPI GetEnvironmentVar
 
 extern "C" __declspec(dllimport) void UE4SSLEB_WINAPI OutputDebugStringA(const char* message);
 
+// The game window's focus (onFocusRegained): user32 and kernel32.
+extern "C" __declspec(dllimport) void* UE4SSLEB_WINAPI GetForegroundWindow();
+extern "C" __declspec(dllimport) unsigned long UE4SSLEB_WINAPI GetWindowThreadProcessId(
+    void* window, unsigned long* process_id);
+extern "C" __declspec(dllimport) unsigned long UE4SSLEB_WINAPI GetCurrentProcessId();
+
 #undef UE4SSLEB_WINAPI
 
 namespace UE4SSLuaEventBridge
@@ -63,7 +69,8 @@ struct LuaSession
     RC::LuaMadeSimple::Lua* lua{};
     int32_t dispatcher_ref{};
     std::atomic_bool active{true};
-    LoopStart loop_start; // guarded by the bridge's session_mutex_
+    LoopStart loop_start;      // guarded by the bridge's session_mutex_
+    FocusCallbacks focus;      // guarded by the bridge's session_mutex_
     // Function hooks: the transport helpers built from the dispatcher at Lua
     // start (hook_transport_source in BridgeMod.cpp).
     int32_t hook_push_ref{};
@@ -809,6 +816,16 @@ struct LuaSink
         lua.call_function(2, 0);
     }
 
+    static void focus(Session& session, uint64_t token, int64_t away_ms)
+    {
+        const auto& lua = *session.lua;
+        lua.registry().get_function_ref(session.dispatcher_ref);
+        lua.set_integer(-20); // Reserved focus-regained message (bridge_api.lua __dispatch).
+        lua.set_integer(static_cast<int64_t>(token));
+        lua.set_integer(away_ms);
+        lua.call_function(3, 0);
+    }
+
     static void report(std::string_view message, std::string_view detail) { ::report(message, detail); }
 };
 
@@ -879,6 +896,7 @@ public:
     {
         const auto now = [] { return UE4SSLuaEventBridge::DispatchBudget::Clock::now(); };
         lua_pass_.loop_start(take_due_loop_starts());
+        if (const auto away_ms = poll_focus()) lua_pass_.focus(take_focus_callbacks(), *away_ms);
         if (!input_due) return;
         lua_pass_.faults();
         lua_pass_.input(now);
@@ -946,6 +964,8 @@ public:
         lua.register_function("UE4SSLuaEventBridge_TraceScope", &trace_scope);
         lua.register_function("UE4SSLuaEventBridge_RegisterLoopStart", &register_loop_start);
         lua.register_function("UE4SSLuaEventBridge_CancelLoopStart", &cancel_loop_start);
+        lua.register_function("UE4SSLuaEventBridge_RegisterFocusRegained", &register_focus_regained);
+        lua.register_function("UE4SSLuaEventBridge_CancelFocusRegained", &cancel_focus_regained);
         lua.register_function("UE4SSLuaEventBridge_LifetimeCapture", &lifetime_capture);
         lua.register_function("UE4SSLuaEventBridge_LifetimeValid", &lifetime_valid);
         lua.register_function("UE4SSLuaEventBridge_LifetimeTakeLost", &lifetime_take_lost);
@@ -1024,6 +1044,7 @@ public:
         {
             std::scoped_lock lock(session_mutex_);
             session->loop_start.stop();
+            session->focus.stop();
         }
 
         if (RC::Unreal::IsInGameThread())
@@ -1196,6 +1217,33 @@ private:
         return due;
     }
 
+    // Consumer thread: whether the game window came back to the foreground,
+    // with the milliseconds it spent in the background.
+    std::optional<int64_t> poll_focus()
+    {
+        const auto now = UE4SSLuaEventBridge::FocusWatch::Clock::now();
+        if (!focus_watch_.due(now)) return std::nullopt;
+        unsigned long process = 0;
+        void* window = GetForegroundWindow();
+        if (window) GetWindowThreadProcessId(window, &process);
+        return focus_watch_.sample(now, window && process == GetCurrentProcessId());
+    }
+
+    // Consumer thread: every session's onFocusRegained callbacks, per session
+    // in registration order.
+    std::vector<std::pair<UE4SSLuaEventBridge::LuaSession*, uint64_t>> take_focus_callbacks()
+    {
+        std::vector<std::pair<UE4SSLuaEventBridge::LuaSession*, uint64_t>> due;
+        std::scoped_lock lock(session_mutex_);
+        for (auto& [_, owned] : sessions_)
+        {
+            auto* session = owned.get();
+            if (!session || !session->active.load(std::memory_order_acquire)) continue;
+            for (const auto token : session->focus.due()) due.emplace_back(session, token);
+        }
+        return due;
+    }
+
     static int get_version(const Lua& lua)
     {
         lua.set_string(UE4SSLEB_VERSION);
@@ -1312,6 +1360,48 @@ private:
         }
         std::scoped_lock lock(active_mod->session_mutex_);
         lua.set_bool(session->loop_start.callbacks.erase(static_cast<uint64_t>(token)) != 0);
+        return 1;
+    }
+
+    static int register_focus_regained(const Lua& lua)
+    {
+        auto* session = consume_session(lua);
+        const auto token = lua.get_integer(1);
+        if (!session || token <= 0)
+        {
+            lua.set_bool(false);
+            lua.set_string("invalid or stopping Lua session");
+            return 2;
+        }
+        std::scoped_lock lock(active_mod->session_mutex_);
+        if (!session->focus.accepts())
+        {
+            lua.set_bool(false);
+            lua.set_string("invalid or stopping Lua session");
+            return 2;
+        }
+        if (session->focus.callbacks.size() >= UE4SSLuaEventBridge::FocusCallbacks::capacity)
+        {
+            lua.set_bool(false);
+            lua.set_string("focus-regained callback capacity exceeded");
+            return 2;
+        }
+        session->focus.callbacks.insert(static_cast<uint64_t>(token));
+        lua.set_bool(true);
+        return 1;
+    }
+
+    static int cancel_focus_regained(const Lua& lua)
+    {
+        auto* session = consume_session(lua);
+        const auto token = lua.get_integer(1);
+        if (!session || token <= 0)
+        {
+            lua.set_bool(false);
+            return 1;
+        }
+        std::scoped_lock lock(active_mod->session_mutex_);
+        lua.set_bool(session->focus.callbacks.erase(static_cast<uint64_t>(token)) != 0);
         return 1;
     }
 
@@ -2503,6 +2593,7 @@ private:
 
     UE4SSLuaEventBridge::EnhancedInputBackend backend_;
     LuaSink lua_sink_;
+    UE4SSLuaEventBridge::FocusWatch focus_watch_; // consumer thread only
     UE4SSLuaEventBridge::LuaPass<UE4SSLuaEventBridge::EnhancedInputBackend, LuaSink> lua_pass_{backend_, lua_sink_,
         configured_limit("UE4SSLEB_MAX_EVENTS_PER_PASS", UE4SSLuaEventBridge::default_max_events_per_pass, 1000000),
         configured_limit("UE4SSLEB_MAX_DISPATCH_US", UE4SSLuaEventBridge::default_max_dispatch_us, 1000000)};

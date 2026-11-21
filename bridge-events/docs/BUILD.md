@@ -170,7 +170,7 @@ index/serial pair locally using the verified object-array offsets.
    re-enters Lua.
 4. The Lua consumer drains the queue and invokes one dispatcher closure in the
    owning Lua state. Every bridge-to-Lua call of the process (input, delivery
-   faults, traces, loop-start callbacks, hook events and notices) runs on one
+   faults, traces, loop-start and focus-regained callbacks, hook events and notices) runs on one
    thread, so no two ever share a Lua state (`include/LuaDelivery.hpp`). With
    UE4SS's engine-tick detour, decided once in `on_unreal_init`, that thread is
    the game thread: one engine-tick post-callback, registered there, drains the
@@ -486,8 +486,10 @@ GetHookStats() -> queued, high_water, rejected, deliveryIsTick, ticks, update_ca
   `lua_checkstack`), which is why `GetCapabilities` and `HooksEnabled` are
   separate natives.
 
-The session's one dispatcher closure carries hook messages too: Lua routes
-codes at or below -3 to the hooks block.
+The session's one dispatcher closure carries every message: positive input
+tokens, 0 trace, -1 delivery fault, -2 loop start, -20 focus regained
+(`token, away_ms`) and the hook messages; Lua routes -20 to the focus
+callbacks first, then the other codes at or below -3 to the hooks block.
 
 ```
 dispatcher(code, hookId, sequence, phase, gameThread, objAddress, objIndex, objSerial, objPath|nil,

@@ -143,6 +143,33 @@ local unsubscribe = UE4SSLuaEventBridge.onLoopStart(function()
 end)
 ```
 
+## Focus regained
+
+`onFocusRegained(callback)` runs `callback({ away_ms = n })` each time the game
+window comes back to the foreground, `n` being the milliseconds it spent in
+the background. It repeats until the returned function cancels it; that
+function returns `true` the first time and `false` after. A non-function
+callback, a stopping session or more than 4096 callbacks in one session return
+`nil, reason`.
+
+The window is asked at most every 250 ms from the same pass that delivers
+every other callback: with `frame_delivery` on the game thread (so the
+callback may touch UObjects and run console commands directly), otherwise
+from `on_update`. The first answer after the bridge starts only sets the
+state, so the callback never fires at startup, and a regain within one second
+of the last reported one is merged into it. Callbacks of one session run in
+registration order. A failing callback is logged to UE4SS.log and stays
+registered. `UnbindAll` leaves these callbacks alone; they end with the Lua
+session. "Foreground" means the foreground window belongs to the game's
+process. Check for the feature with
+`type(UE4SSLuaEventBridge.onFocusRegained) == "function"`.
+
+```lua
+local cancel = UE4SSLuaEventBridge.onFocusRegained(function(event)
+    -- Re-read settings the player may have edited while away.
+end)
+```
+
 The lifetime API assigns a non-owning decimal-string token to a live UObject
 address:
 
@@ -559,7 +586,7 @@ stay referenced while their contexts or bindings are owned by the scope.
 If helper cleanup fails, native removal preserves targets for retry and clears
 obsolete subscription handles when removal succeeds. Retry `Close()` or
 `UnbindAll()` to finish cleanup. Failed attempts do not resume delivery.
-`UnbindAll()` removes bindings only: pending `onLoopStart` callbacks stay
+`UnbindAll()` removes bindings only: pending `onLoopStart` and `onFocusRegained` callbacks stay
 registered (cancel them with the function `onLoopStart` returned), and a
 target's delivery-fault handler stays until the target is closed.
 

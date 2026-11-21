@@ -20,8 +20,8 @@
 // recycle_traces (EnhancedInputBackend.hpp).
 // Sink: live(session*), input(session, subscription, event),
 // fault(session, target, reason), trace(session, line),
-// loop_start(session, token), report(message, detail). The four calls raise on
-// a Lua error.
+// loop_start(session, token), focus(session, token, away_ms),
+// report(message, detail). The five calls raise on a Lua error.
 
 #include <SharedDispatch.hpp>
 #include <dispatch/LuaDispatchGate.hpp>
@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <optional>
 #include <set>
 #include <string>
 #include <type_traits>
@@ -70,6 +71,74 @@ struct LoopStart
         callbacks.clear();
         delivered = true;
     }
+};
+
+// A session's onFocusRegained callbacks. Guarded by the bridge's session lock.
+struct FocusCallbacks
+{
+    static constexpr std::size_t capacity = 4096;
+
+    std::set<uint64_t> callbacks; // tokens ascend: registration order
+    bool stopped{};               // the session stopped: no more registrations
+
+    bool accepts() const { return !stopped; }
+    std::vector<uint64_t> due() const
+    {
+        if (stopped) return {};
+        return {callbacks.begin(), callbacks.end()};
+    }
+    void stop()
+    {
+        callbacks.clear();
+        stopped = true;
+    }
+};
+
+// Whether the game window came back to the foreground. Consumer thread only.
+// The window is asked at most every probe_every; the first answer only sets
+// the state; a regain within min_gap of the last reported one is merged.
+class FocusWatch
+{
+public:
+    using Clock = std::chrono::steady_clock;
+    static constexpr auto probe_every = std::chrono::milliseconds(250);
+    static constexpr auto min_gap = std::chrono::seconds(1);
+
+    bool due(Clock::time_point now) const { return !probed_ || now - last_probe_ >= probe_every; }
+
+    // One answer to "is the game window in the foreground"; on a regain to
+    // report, the milliseconds spent in the background.
+    std::optional<int64_t> sample(Clock::time_point now, bool foreground)
+    {
+        const bool first = !probed_;
+        probed_ = true;
+        last_probe_ = now;
+        if (first)
+        {
+            foreground_ = foreground;
+            if (!foreground) left_ = now;
+            return std::nullopt;
+        }
+        if (foreground == foreground_) return std::nullopt;
+        foreground_ = foreground;
+        if (!foreground)
+        {
+            left_ = now;
+            return std::nullopt;
+        }
+        if (reported_ && now - last_regain_ < min_gap) return std::nullopt;
+        reported_ = true;
+        last_regain_ = now;
+        return std::chrono::duration_cast<std::chrono::milliseconds>(now - left_).count();
+    }
+
+private:
+    bool probed_{};
+    bool foreground_{};
+    bool reported_{};
+    Clock::time_point last_probe_{};
+    Clock::time_point left_{};
+    Clock::time_point last_regain_{};
 };
 
 // Which thread runs a delivery pass. The gate and the schedule have static
@@ -147,6 +216,29 @@ public:
             catch (...)
             {
                 sink_.report("loop-start callback failed: unknown exception", {});
+            }
+        }
+    }
+
+    // onFocusRegained callbacks, as (session, token) in registration order.
+    // A failing callback is reported and stays registered.
+    template <typename Session>
+    void focus(const std::vector<std::pair<Session*, uint64_t>>& due, int64_t away_ms)
+    {
+        for (const auto& [session, token] : due)
+        {
+            if (!sink_.live(session)) continue;
+            try
+            {
+                sink_.focus(*session, token, away_ms);
+            }
+            catch (const std::exception& error)
+            {
+                sink_.report("focus-regained callback failed: ", error.what());
+            }
+            catch (...)
+            {
+                sink_.report("focus-regained callback failed: unknown exception", {});
             }
         }
     }
