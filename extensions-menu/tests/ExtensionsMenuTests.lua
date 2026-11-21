@@ -188,4 +188,93 @@ do
     assert(not ok and why:find('ReloadSettings: no', 1, true), why)
 end
 
+-- The Log Bridge's level rows.
+do
+    -- [Levels] values become ranks; a repeated key (any case) keeps its first place and spelling and
+    -- its last value; other sections and lines stay as they are.
+    local text = '[UE4SSLuaEXtensions.Logs]\r\nGlobalLevel=DEBUG\r\n\r\n[Levels]\r\n; note\r\nPreymonition = DEBUG\r\n'
+        .. 'Fangdango.combat=trace\r\nOld=loud\r\npreymonition=5\r\nKept=3\r\nLater=inherit\r\n[Other]\r\nX=DEBUG'
+    local normalized, changed, keys = Menu.normalizeLevels(text)
+    assert(changed)
+    assert(normalized == '[UE4SSLuaEXtensions.Logs]\r\nGlobalLevel=DEBUG\r\n\r\n[Levels]\r\n; note\r\nPreymonition=5\r\n'
+        .. 'Fangdango.combat=1\r\nOld=0\r\nKept=3\r\nLater=0\r\n[Other]\r\nX=DEBUG', normalized)
+    assert(keys.preymonition == 'Preymonition' and keys['fangdango.combat'] == 'Fangdango.combat' and keys.kept == 'Kept')
+    local again, changedAgain = Menu.normalizeLevels(normalized)
+    assert(again == normalized and not changedAgain, 'normalizing twice changes nothing')
+    local same, untouched = Menu.normalizeLevels('[Levels]\nA=1\n')
+    assert(same == '[Levels]\nA=1\n' and not untouched)
+    assert(select(2, Menu.normalizeLevels('')) == false and select(2, Menu.normalizeLevels(nil)) == false)
+    assert(Menu.rankOf(' Warning ') == 4 and Menu.rankOf('0') == 0 and Menu.rankOf('8') == nil)
+
+    -- A row per module, sorted, then its categories indented under it; keys keep config.ini's spelling.
+    local list = {
+        {name = 'Zeta', loaded = true, categories = {{name = 'main', loaded = true}}},
+        {name = 'Preymonition', loaded = true, categories = {{name = 'main', loaded = true},
+            {name = 'combat', loaded = true}, {name = 'net', loaded = false}}},
+        {name = 'Gone Mod', loaded = false, categories = {}},
+    }
+    local rows, count = Menu.levelRows(list, {preymonition = 'preymonition', ['preymonition.combat'] = 'PREYMONITION.Combat'})
+    assert(count == 7)
+    local order = {}
+    for label in rows:gmatch('\nLabel=([^\n]+)') do order[#order + 1] = label end
+    local I = Menu.INDENT
+    assert(table.concat(order, ',') == table.concat({'Gone Mod (not loaded)', 'Preymonition', I .. 'main', I .. 'combat',
+        I .. 'net (not loaded)', 'Zeta', I .. 'main'}, ','), table.concat(order, ','))
+    assert(rows:find('Id=Level_Gone_Mod\n', 1, true) and rows:find('ConfigKey=Gone Mod\n', 1, true))
+    assert(rows:find('ConfigKey=preymonition\n', 1, true) and rows:find('ConfigKey=PREYMONITION.Combat\n', 1, true))
+    assert(rows:find('ConfigKey=preymonition.main\n', 1, true) and rows:find('ConfigKey=preymonition.net\n', 1, true))
+    assert(rows:find('Group=Levels\nPresetValues=0|1|2|3|4|5|6|7\nPresetLabels=Inherit|Trace|Debug|Info|Warn|Error|Critical|Off\n'
+        .. 'Default=0\nConfigSection=Levels\n', 1, true))
+    assert(select(2, rows:gsub('%[Setting%.', '')) == 7)
+    assert(select(2, Menu.levelRows(nil)) == 0 and Menu.levelRows({}) == '')
+    -- Ids stay unique when names differ only in characters an id can't hold.
+    local twins = Menu.levelRows({{name = 'A B', categories = {}}, {name = 'A-B', categories = {}}})
+    assert(twins:find('Id=Level_A_B\n', 1, true) and twins:find('Id=Level_A_B_2\n', 1, true))
+    -- At most MAX_LEVEL_ROWS rows.
+    local many = {}
+    for n = 1, 100 do
+        many[n] = {name = string.format('Mod%03d', n), categories = {{name = 'main'}, {name = 'ui'}}}
+    end
+    assert(select(2, Menu.levelRows(many)) == Menu.MAX_LEVEL_ROWS)
+
+    -- The rows follow the Global level row, in its group, before the next section.
+    local ini = '[Mod]\r\nId=UE4SSLuaLogBridge\r\nConfigSection=UE4SSLuaEXtensions.Logs\r\n\r\n[Setting.GlobalLevel]\r\n'
+        .. 'Id=GlobalLevel\r\nType=picker\r\nGroup=Levels\r\nPresetValues=1|2\r\nPresetLabels=A|B\r\nDefault=1\r\n\r\n'
+        .. '[Setting.EnableVerifications]\r\nId=EnableVerifications\r\nType=toggle\r\nGroup=Diagnostics\r\n'
+    local LOGS = Menu.extensions[4]
+    assert(LOGS.levels and LOGS.slot == 'Logs')
+    local placed = Menu.withLevelRows(ini, rows)
+    assert(placed:find('Default=1\n\n[Setting.Level_', 1, true) and placed:find('ConfigKey=Zeta.main\n\n[Setting.EnableVerifications]', 1, true))
+    assert(Menu.withLevelRows(ini, '') == ini)
+    assert(Menu.withLevelRows('[Mod]\nId=X\n', '[Setting.Y]\nId=Y\n'):find('Id=X\n\n[Setting.Y]', 1, true))
+
+    -- The contribution: prefixed ids, the stored keys kept, rows in entries of at most 32.
+    local entry = Menu.extensionContribution(LOGS, '/mods/' .. LOGS.folder, ini, {list = many})
+    local ids = Menu.settingIds(entry.contribution.pages[1].manifest)
+    assert(#ids == 2 + Menu.MAX_LEVEL_ROWS and ids[1] == 'Logs_GlobalLevel' and ids[2] == 'Logs_Level_Mod001'
+        and ids[#ids] == 'Logs_EnableVerifications', ids[2])
+    local manifest = entry.contribution.pages[1].manifest
+    assert(manifest:find('[Setting.Logs_Level_Mod001]\nId=Logs_Level_Mod001\nType=picker', 1, true))
+    assert(manifest:find('ConfigSection=Levels\nConfigKey=Mod001\n', 1, true) and not manifest:find('ConfigKey=Level_', 1, true))
+    local entries = entry.contribution.rows
+    assert(#entries == math.ceil(#ids / 32))
+    local joined = {}
+    for _, row in ipairs(entries) do
+        assert(#row.settings <= 32 and row.slot == 'UE4SSLuaEXtensions:Logs' and row.page == LOGS.contributor)
+        for _, id in ipairs(row.settings) do joined[#joined + 1] = id end
+    end
+    assert(table.concat(joined, ',') == table.concat(ids, ','), 'every setting once, in order')
+    assert(Contributions.validate(entry.id, entry.contribution))
+    -- Without the bridge's list (an older bridge, or none) the page is its file alone.
+    local plain = Menu.extensionContribution(LOGS, '/mods/' .. LOGS.folder, ini, nil)
+    assert(table.concat(Menu.settingIds(plain.contribution.pages[1].manifest), ',') == 'Logs_GlobalLevel,Logs_EnableVerifications')
+    -- Other extensions never get level rows.
+    local other = Menu.extensionContribution(Menu.extensions[1], '/mods/x', ini, {list = many})
+    assert(#Menu.settingIds(other.contribution.pages[1].manifest) == 2)
+    -- contributions passes the list on to the Log Bridge's page.
+    local withLogs = Menu.contributions({LOGS}, '/mods/0_ModCore_UE4SSLuaEXtensions', '/mods', '1.1.0',
+        function(path) return path == '/mods/' .. LOGS.folder .. '/mod_settings.ini' and ini or nil end, {list = list})
+    assert(#Menu.settingIds(withLogs[2].contribution.pages[1].manifest) == 9)
+end
+
 print('PASS extensions menu: detection, count, sections, settings files, storage and publishing as a ModCore Settings module')

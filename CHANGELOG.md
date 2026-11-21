@@ -7,6 +7,13 @@ extension keeps its own changelog in its folder.
 
 ### Changes
 
+- The Logs section lists, under the global level, every mod that registered
+  a logger with the Log Bridge (1.0.0, API 2) and each of its categories,
+  each set to Inherit or a level from Trace to Off; mods named only in the
+  bridge's `[Levels]` show as not loaded. The section is republished when a
+  mod or category registers later and shows the change the next time the
+  menu opens. `[Levels]` values are stored as ranks, 0 for Inherit; level
+  names written by hand become ranks.
 - The Log Bridge re-reads its config.ini when ModCore Settings applies the
   Logs page or reloads config (its Reload Config button, or the game window
   regaining focus). This folder subscribes for it, with ModCore Settings'

@@ -19,7 +19,8 @@ M.name = 'ModCore Lua Extensions'
 -- extension's settings; it must differ from the extension's own id, which its mod_settings.ini
 -- already puts in the menu. slot names the extension's section and slot on this folder's page.
 -- reload names the global of an extension whose settings apply while the game runs: its
--- environment's ReloadSettings() re-reads them (see M.subscribeReloads).
+-- environment's ReloadSettings() re-reads them (see M.subscribeReloads). levels marks the Log
+-- Bridge, whose page also gets a row per module and category (see M.levelRows).
 M.extensions = {
     {id = 'UE4SSLuaEventBridge', folder = '0_ModCore_UE4SSLuaEventBridge', label = 'Events Extension',
         title = 'UE4SS Lua Event Bridge', slot = 'Events', contributor = 'UE4SSLuaEXtensions.Events'},
@@ -29,7 +30,7 @@ M.extensions = {
         title = 'UE4SS Lua Sound Bridge', slot = 'Sounds', contributor = 'UE4SSLuaEXtensions.Sounds'},
     {id = 'UE4SSLuaLogBridge', folder = '0_ModCore_UE4SSLuaLogBridge', label = 'Logs Extension',
         title = 'UE4SS Lua Log Bridge', slot = 'Logs', contributor = 'UE4SSLuaEXtensions.Logs',
-        reload = 'UE4SSLuaLogBridge'},
+        reload = 'UE4SSLuaLogBridge', levels = true},
 }
 
 -- The address of an extension's slot on this folder's page.
@@ -139,24 +140,181 @@ function M.settingIds(manifest)
     return ids
 end
 
+-- The Log Bridge's level rows ----------------------------------------------------------------
+--
+-- Under the Global level row, one picker per module the bridge lists (ListLoggers), then one
+-- per category, indented. Each stores its rank in the bridge's config.ini, [Levels]
+-- <Module>=<rank> or <Module>.<category>=<rank>; 0 is Inherit, which the bridge reads as no
+-- level of its own. ModCore Settings writes every row's key when the page opens, so Inherit
+-- cannot be a missing key.
+
+local RANKS = {trace = 1, debug = 2, info = 3, warn = 4, warning = 4, error = 5, critical = 6, off = 7, none = 7,
+    inherit = 0}
+for rank = 0, 7 do RANKS[tostring(rank)] = rank end
+local LEVEL_VALUES = '0|1|2|3|4|5|6|7'
+local LEVEL_LABELS = 'Inherit|Trace|Debug|Info|Warn|Error|Critical|Off'
+-- Category rows sit under their module: non-breaking spaces, which the menu does not trim.
+M.INDENT = string.rep('\u{A0}', 4)
+-- DMM reads at most 256 settings per page; the bridge's own rows take a few.
+M.MAX_LEVEL_ROWS = 240
+-- A slot rows entry names at most 32 settings.
+local ROWS_PER_ENTRY = 32
+
+local function trim(text) return (text:match('^%s*(.-)%s*$')) end
+
+-- The rank a [Levels] value gives (0 for Inherit), or nil.
+function M.rankOf(value) return RANKS[trim(value):lower()] end
+
+local function lines(text)
+    local out = {}
+    for line, ending in (text):gmatch('([^\n]*)(\n?)') do
+        if line == '' and ending == '' then break end
+        out[#out + 1] = {text = line, ending = ending}
+    end
+    return out
+end
+
+-- config.ini text with its [Levels] entries made readable by the menu, which stores ranks: a
+-- level name becomes its rank, an unknown value Inherit (0, as the bridge already reads it),
+-- and repeated keys (any case) one entry with the last value, where the first was. Other
+-- lines are kept as they are. Returns the text and whether it changed, and the keys, folded
+-- to their spelling in the file.
+function M.normalizeLevels(text)
+    local out, keys, at, section = {}, {}, {}, nil
+    for _, entry in ipairs(lines(text or '')) do
+        local line = entry.text:gsub('\r$', '')
+        local cr = entry.text:sub(-1) == '\r' and '\r' or ''
+        local header = line:match('^%s*%[([^%]]+)%]%s*$')
+        if header then section = trim(header):lower() end
+        local key, value = line:match('^%s*([^=;#]-)%s*=%s*(.-)%s*$')
+        if not header and section == 'levels' and key and key ~= '' then
+            local folded = key:lower()
+            local rank = M.rankOf(value) or 0
+            local rewritten = key .. '=' .. rank
+            if at[folded] then
+                local first = out[at[folded]]
+                first.text = keys[folded] .. '=' .. rank .. first.cr
+                out[#out + 1] = false
+            else
+                keys[folded] = key
+                out[#out + 1] = {text = rewritten .. cr, cr = cr, ending = entry.ending}
+                at[folded] = #out
+            end
+        else
+            out[#out + 1] = {text = entry.text, cr = cr, ending = entry.ending}
+        end
+    end
+    local parts = {}
+    for _, entry in ipairs(out) do
+        if entry then parts[#parts + 1] = entry.text .. entry.ending end
+    end
+    local result = table.concat(parts)
+    return result, result ~= (text or ''), keys
+end
+
+local function rowId(key, used)
+    local base = 'Level_' .. key:gsub('[^%w]', '_')
+    local id, n = base, 1
+    while used[id] do n = n + 1; id = base .. '_' .. n end
+    used[id] = true
+    return id
+end
+
+-- The level rows (manifest text) for list (ListLoggers' modules, nil or empty for none) and
+-- keys (normalizeLevels' keys: the spelling of each [Levels] key in config.ini). Modules are
+-- sorted by name; a module that has not registered this session, or a category only
+-- [Levels] names, says so. Returns the text and the number of rows.
+function M.levelRows(list, keys)
+    keys = keys or {}
+    local modules = {}
+    for _, module in ipairs(list or {}) do modules[#modules + 1] = module end
+    table.sort(modules, function(a, b)
+        if a.name:lower() ~= b.name:lower() then return a.name:lower() < b.name:lower() end
+        return a.name < b.name
+    end)
+    local out, used, count = {}, {}, 0
+    local function row(key, label, description)
+        if count >= M.MAX_LEVEL_ROWS then return false end
+        count = count + 1
+        local id = rowId(key, used)
+        block(out, 'Setting.' .. id, {{'Id', id}, {'Type', 'picker'}, {'Label', label}, {'Description', description},
+            {'Group', 'Levels'}, {'PresetValues', LEVEL_VALUES}, {'PresetLabels', LEVEL_LABELS}, {'Default', '0'},
+            {'ConfigSection', 'Levels'}, {'ConfigKey', key}})
+        return true
+    end
+    for _, module in ipairs(modules) do
+        local moduleKey = keys[module.name:lower()] or module.name
+        local absent = module.loaded == false and ' (not loaded)' or ''
+        if not row(moduleKey, module.name .. absent, 'The level of ' .. module.name .. "'s lines. Inherit: the "
+            .. "module's own default level when it sets one, else the global level. Takes effect at once.") then
+            break
+        end
+        for _, category in ipairs(module.categories or {}) do
+            local folded = (module.name .. '.' .. category.name):lower()
+            local key = keys[folded] or (moduleKey .. '.' .. category.name)
+            local missing = category.loaded == false and ' (not loaded)' or ''
+            if not row(key, M.INDENT .. category.name .. missing, 'The level of ' .. module.name .. "'s "
+                .. category.name .. ' lines. Inherit: the level of ' .. module.name .. '. Takes effect at once.') then
+                break
+            end
+        end
+    end
+    return table.concat(out, '\n'), count
+end
+
+-- A settings manifest with rows inserted after the Global level row's section (the end
+-- when it has none), so they share its group.
+function M.withLevelRows(text, rows)
+    if not rows or rows == '' then return text end
+    text = text:gsub('\r\n', '\n')
+    local out, inserted, inGlobal = {}, false, false
+    for line in (text .. '\n'):gmatch('([^\n]*)\n') do
+        local header = line:match('^%s*%[([^%]]+)%]%s*$')
+        if header and inGlobal and not inserted then
+            out[#out + 1] = rows
+            inserted = true
+        end
+        if header then inGlobal = header == 'Setting.GlobalLevel' end
+        out[#out + 1] = line
+    end
+    while out[#out] == '' do out[#out] = nil end
+    if not inserted then out[#out + 1] = '\n' .. rows end
+    return table.concat(out, '\n') .. '\n'
+end
+
+-- One contributor's entry: the hidden page holding an extension's settings and the rows
+-- that fill its slot. levels (the Log Bridge's only): {list=, keys=} as for M.levelRows.
+function M.extensionContribution(extension, directory, text, levels)
+    if extension.levels and levels and text then
+        text = M.withLevelRows(text:gsub('\r\n', '\n'), (M.levelRows(levels.list, levels.keys)))
+    end
+    local manifest = M.sourceManifest(extension, text)
+    local ids, rows = M.settingIds(manifest), {}
+    for first = 1, #ids, ROWS_PER_ENTRY do
+        rows[#rows + 1] = {page = extension.contributor, slot = M.slotAddress(extension),
+            settings = table.move(ids, first, math.min(first + ROWS_PER_ENTRY - 1, #ids), 1, {})}
+    end
+    return {id = extension.contributor, contribution = {
+        -- An extension with a mod_settings.ini is listed under its Mod Id, not its folder.
+        pages = {{id = extension.contributor, name = extension.title, manifest = manifest,
+            configDirectory = directory, attach = extension.id, visible = false}},
+        rows = rows,
+    }}
+end
+
 -- What to publish: a list of {id=, contribution=} in publishing order. This folder's page comes
 -- first: it hosts the slots. Each contributor needs its own directory: publishers name their
 -- files by generation only. root: this mod's folder. modsDirectory: the folder holding all mods.
--- read(path) returns a file's text, or nil.
-function M.contributions(found, root, modsDirectory, version, read)
+-- read(path) returns a file's text, or nil. levels: as for M.extensionContribution.
+function M.contributions(found, root, modsDirectory, version, read, levels)
     local out = {{id = M.id, contribution = {
         pages = {{id = M.id, name = M.name, version = version, manifest = M.pageManifest(found),
             configDirectory = root, attach = root:match('([^/\\]+)$')}},
     }}}
     for _, extension in ipairs(found) do
         local directory = modsDirectory .. '/' .. extension.folder
-        local manifest = M.sourceManifest(extension, read and read(directory .. '/mod_settings.ini'))
-        out[#out + 1] = {id = extension.contributor, contribution = {
-            -- An extension with a mod_settings.ini is listed under its Mod Id, not its folder.
-            pages = {{id = extension.contributor, name = extension.title, manifest = manifest,
-                configDirectory = directory, attach = extension.id, visible = false}},
-            rows = {{page = extension.contributor, slot = M.slotAddress(extension), settings = M.settingIds(manifest)}},
-        }}
+        out[#out + 1] = M.extensionContribution(extension, directory,
+            read and read(directory .. '/mod_settings.ini'), levels)
     end
     return out
 end
