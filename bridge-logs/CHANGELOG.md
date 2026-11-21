@@ -8,7 +8,9 @@
   by default) with a logger per module and categories (`main`, `config`, `ui`,
   `input` and any the mod registers).
 - Levels per module, per category and global, from config.ini (`[Levels]`),
-  the ModCore Settings menu (global) or `SetLevel`, applied while the game runs.
+  the ModCore Settings menu or `SetLevel`, applied while the game runs. The
+  menu lists every registered module and its categories, each with Inherit or
+  a level; `ListLoggers()` returns the same list with effective levels.
   config.ini is never polled: it is re-read when ModCore Settings applies the
   Logs page or reloads config, and on `ReloadSettings()`.
 - Targets: UE4SS.log, or `<mod folder>/logs/<category>.log` with the previous

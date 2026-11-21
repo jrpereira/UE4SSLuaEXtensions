@@ -318,7 +318,9 @@ private:
         settings_stamp_ = stamp;
         const auto text = Win32::read_file(path, 1024 * 1024);
         std::vector<std::string> ignored;
-        const bool changed = levels_.set_settings(Core::parse_level_settings(text ? *text : std::string(), &ignored));
+        std::vector<std::string> names;
+        auto table = Core::parse_level_settings(text ? *text : std::string(), &ignored, &names);
+        const bool changed = levels_.set_settings(std::move(table), std::move(names));
         for (const auto& line : ignored) report("config.ini: ignored \"" + line + "\"");
         if (changed && !first) report("levels re-read from config.ini");
     }
@@ -438,6 +440,7 @@ Reply register_logger(LogBridgeMod& bridge, Call& call)
     policy.interval_ms = interval;
     const auto id = bridge.core().register_logger(name, session->mod_folder, policy, Win32::monotonic_ms());
     bridge.levels().set_default(name, static_cast<int>(rank));
+    bridge.levels().note(name);
     {
         std::scoped_lock lock(session->mutex);
         session->loggers.insert(id);
@@ -517,8 +520,26 @@ Reply reload_settings(LogBridgeMod& bridge, Call&)
     return success(true);
 }
 
+Reply add_category(LogBridgeMod& bridge, Call& call)
+{
+    auto session = bridge.find_session(call.integer());
+    const auto logger = call.integer();
+    const auto category = call.string();
+    if (!session) return failure(ErrorCode::invalid, session_gone());
+    if (!owns_logger(*session, logger)) return failure(ErrorCode::invalid, "AddCategory: unknown logger");
+    if (!Core::valid_category_name(category)) return failure(ErrorCode::invalid, "AddCategory: bad category name");
+    bridge.levels().note(bridge.core().module(logger), category);
+    return success(true);
+}
+
+Reply list_loggers(LogBridgeMod& bridge, Call&)
+{
+    const auto generation = bridge.levels().generation();
+    return success(bridge.levels().list(), generation);
+}
+
 // Same order as Contract::native_functions; checked at compile time below.
-constexpr std::array<NativeEntry, 11> natives{{
+constexpr std::array<NativeEntry, 13> natives{{
     {"GetVersion", "", &get_version},
     {"GetCapabilities", "", &get_capabilities},
     {"GetStats", "", &get_stats},
@@ -530,6 +551,8 @@ constexpr std::array<NativeEntry, 11> natives{{
     {"GetLevel", "s", &get_level},
     {"Flush", "", &flush},
     {"ReloadSettings", "", &reload_settings},
+    {"AddCategory", "iis", &add_category},
+    {"ListLoggers", "", &list_loggers},
 }};
 
 static_assert(Lex::Natives::natives_match_contract<natives, Contract::native_functions>(),

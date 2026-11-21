@@ -49,13 +49,13 @@ test("load hides natives and the session id", function(_, bridge, logs)
     expectRaise("read-only", function() bridge.Register = 1 end)
     expectRaise("read-only", function() logs.Register = 1 end)
     expect(getmetatable(bridge) == false and getmetatable(logs) == false)
-    expect(bridge.API_VERSION == 1 and logs.API_VERSION == 1)
+    expect(bridge.API_VERSION == 2 and logs.API_VERSION == 2)
 end)
 
 test("version, capabilities and stats", function(_, bridge, logs)
     expect(bridge.GetVersion() == "1.0.0" and logs:GetVersion() == "1.0.0")
     local caps = logs.GetCapabilities()
-    expect(caps.api == 1 and caps.journal_bytes == 4194304 and caps.max_message_bytes == 65536 and caps.frame == true)
+    expect(caps.api == 2 and caps.journal_bytes == 4194304 and caps.max_message_bytes == 65536 and caps.frame == true)
     expect(#caps.levels == 7 and caps.levels[1] == "TRACE" and caps.levels[7] == "OFF")
     expect(caps.default_categories[1] == "main" and #caps.default_categories == 4)
     expect(caps.targets[1] == "default" and caps.targets[2] == "module" and #caps.targets == 2)
@@ -308,6 +308,41 @@ test("a refused coroutine filters an uncached category at the module's level", f
     expect(debugOn == true and traceOn == false)
     fake.setLevel("mod.combat", 1)
     expect(log.combat.enabled("trace"), "the fallback was not cached")
+end)
+
+-- The registry ---------------------------------------------------------------------
+
+test("categories beyond the defaults reach the native registry once", function(fake, _, logs)
+    local log = logs.Register("Mod", { categories = { "Combat", "main" } })
+    log.register("ai", "combat", "ui")
+    logs.Register("Mod", { categories = { "AI", "net" } })
+    local added = {}
+    for _, call in ipairs(fake.added) do added[#added + 1] = call.category end
+    expect(table.concat(added, ",") == "combat,ai,net", table.concat(added, ","))
+end)
+
+test("ListLoggers parses the native listing", function(fake, _, logs)
+    fake.listing = "M\tPreymonition\t3\toption\t1\nC\tmain\t3\tmodule\t1\nC\tcombat\t1\tlevels\t1\n"
+        .. "M\tGone Mod\t7\tlevels\t0\nC\tnet\t2\tlevels\t0\ngarbage line\n"
+    fake.generation = 9
+    local list, generation = logs.ListLoggers()
+    expect(generation == 9)
+    expect(#list == 2)
+    local first, second = list[1], list[2]
+    expect(first.name == "Preymonition" and first.level == "INFO" and first.source == "option" and first.loaded == true)
+    expect(#first.categories == 2 and first.categories[2].name == "combat" and first.categories[2].level == "TRACE")
+    expect(first.categories[1].source == "module" and first.categories[1].loaded == true)
+    expect(second.name == "Gone Mod" and second.level == "OFF" and second.loaded == false)
+    expect(#second.categories == 1 and second.categories[1].loaded == false)
+    fake.listing = ""
+    list = logs:ListLoggers()
+    expect(type(list) == "table" and #list == 0)
+end)
+
+test("ListLoggers from a refused coroutine fails without raising", function(_, _, logs)
+    local co = coroutine.create(function() return logs.ListLoggers() end)
+    local ok, list, code = coroutine.resume(co)
+    expect(ok and list == nil and code == "invalid", tostring(code))
 end)
 
 suite.finish()

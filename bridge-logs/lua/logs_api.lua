@@ -1,15 +1,15 @@
--- UE4SSLuaLogBridge Lua layer (API 1). Embedded in the native DLL and run once
+-- UE4SSLuaLogBridge Lua layer (API 2). Embedded in the native DLL and run once
 -- per Lua environment from on_lua_start. Public API: bridge-logs/docs/API.md.
 -- Native boundary: bridge-logs/include/LogBridgeNativeContract.hpp.
 local __session = __UE4SSLuaLogBridge_SessionId
 __UE4SSLuaLogBridge_SessionId = nil
 assert(math.type(__session) == "integer", "log bridge session id is missing")
 
-local __API_VERSION = 1
+local __API_VERSION = 2
 local __NATIVE_PREFIX = "UE4SSLuaLogBridge_"
 local __NATIVE_NAMES = {
     "GetVersion", "GetCapabilities", "GetStats", "Register", "Write", "Level", "Generation", "SetLevel", "GetLevel",
-    "Flush", "ReloadSettings",
+    "Flush", "ReloadSettings", "AddCategory", "ListLoggers",
 }
 
 -- Only this layer may reach the natives: capture each one and remove the
@@ -30,6 +30,8 @@ for rank, name in ipairs(__LEVELS) do __RANK[name:lower()] = rank end
 local __DEFAULT_RANK = 4
 local __OFF = 7
 local __DEFAULT_CATEGORIES = { "main", "config", "ui", "input" }
+local __IS_DEFAULT = {}
+for _, name in ipairs(__DEFAULT_CATEGORIES) do __IS_DEFAULT[name] = true end
 local __TARGETS = { default = 0, module = 1 }
 local __FREQUENCIES = { immediate = 0, frame = 1, periodic = 2 }
 -- How long a cached level is trusted before the native generation is asked again.
@@ -227,6 +229,8 @@ local function __newLogger(id, name)
             found = __newCategory(state, key)
             state.categories[key] = found
             methods[key] = found
+            -- The bridge lists it for every mod (ListLoggers); the defaults it knows already.
+            if not __IS_DEFAULT[key] then __native("AddCategory", __session, state.id, key) end
         end
         return found
     end
@@ -359,6 +363,31 @@ local function __ReloadSettings()
     return true
 end
 
+-- Every module registered this session by any Lua mod, then those config.ini's
+-- [Levels] names that have not registered (loaded = false), each
+-- { name, level, source, loaded, categories = { { name, level, source, loaded }, ... } },
+-- and the generation they belong to.
+local function __ListLoggers()
+    local text, generation, message = __native("ListLoggers")
+    if text == nil then return nil, generation, message end
+    local list, current = {}, nil
+    for line in text:gmatch("[^\n]+") do
+        local kind, name, rank, source, loaded = line:match("^([MC])\t([^\t]+)\t(%d+)\t(%a+)\t([01])$")
+        if kind then
+            local entry = { name = name, level = __LEVELS[tonumber(rank)] or "WARN", source = source,
+                loaded = loaded == "1" }
+            if kind == "M" then
+                entry.categories = {}
+                list[#list + 1] = entry
+                current = entry
+            elseif current then
+                current.categories[#current.categories + 1] = entry
+            end
+        end
+    end
+    return list, generation
+end
+
 local function __GetVersion()
     local version = __native("GetVersion")
     return version
@@ -420,6 +449,7 @@ __environment = setmetatable({}, {
         GetLevel = __method(__GetLevel),
         Flush = __method(__Flush),
         ReloadSettings = __method(__ReloadSettings),
+        ListLoggers = __method(__ListLoggers),
         GetVersion = __method(__GetVersion),
         GetCapabilities = __method(__GetCapabilities),
         GetStats = __method(__GetStats),

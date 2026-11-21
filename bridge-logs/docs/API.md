@@ -1,4 +1,4 @@
-# UE4SS Lua Log Bridge API (API 1)
+# UE4SS Lua Log Bridge API (API 2)
 
 ```lua
 local Logs = UE4SSLuaLogBridge()   -- this Lua mod's environment
@@ -17,7 +17,7 @@ or `busy`); logging calls never raise.
 | | |
 |---|---|
 | `UE4SSLuaLogBridge()` | this Lua mod's environment (the same table on every call) |
-| `UE4SSLuaLogBridge.API_VERSION` | `1` |
+| `UE4SSLuaLogBridge.API_VERSION` | `2` (`ListLoggers` is new in 2) |
 | `GetVersion()`, `GetCapabilities()`, `GetStats()` | as on the environment |
 
 ## The environment
@@ -74,9 +74,31 @@ Asks the bridge to re-read config.ini. The bridge's thread reads it shortly
 after; when levels changed, every logger sees them within a second, as with
 `SetLevel`. ModCore Settings' extensions menu calls it for you (see Levels).
 
+### `ListLoggers()` → list, generation
+
+Every module registered this session, by any Lua mod, in registration order,
+then each module that config.ini's `[Levels]` names but that has not
+registered, in file order:
+
+```lua
+{ name = "MyMod", level = "DEBUG", source = "levels", loaded = true,
+  categories = { { name = "main", level = "DEBUG", source = "module", loaded = true },
+                 { name = "combat", level = "TRACE", source = "levels", loaded = true }, ... } }
+```
+
+`level` is the effective level (see Levels). A module's `source` says where it
+comes from: `override` (`SetLevel`), `levels` (config.ini `[Levels]`),
+`option` (the module's `level` option) or `global`. A category's is
+`override` or `levels` when its own key decides, else `module`. A category
+lists the defaults first, then those registered, then those only `[Levels]`
+names (`loaded = false`). A module's spelling is its first registration's, or
+the key's in `[Levels]` when it has not registered. `generation` changes
+whenever a module or category registers or any level may have changed, like
+`GetStats().generation`.
+
 ### `GetCapabilities()`
 
-`{ api = 1, journal_bytes, max_message_bytes = 65536, frame = <engine tick>,
+`{ api = 2, journal_bytes, max_message_bytes = 65536, frame = <engine tick>,
 levels, targets, frequencies, default_categories }`.
 
 ### `GetStats()`
@@ -136,7 +158,10 @@ MyMod.combat=TRACE
 ```
 
 The ModCore Settings menu edits `GlobalLevel` (1 for TRACE to 7 for OFF; a
-name works too). The bridge reads the file when the game starts and never
+name works too) and, under it, each module listed by `ListLoggers` and its
+categories, stored in `[Levels]` as ranks. A `[Levels]` value of `0` or
+`inherit` (the menu's Inherit) sets no level, so the key falls through to the
+next step above. The bridge reads the file when the game starts and never
 polls it: it is re-read when ModCore Settings applies the Logs page, when
 ModCore Settings reloads config (its Reload Config button, or the game window
 regaining focus), and on `ReloadSettings()`. Without ModCore Settings, an edit

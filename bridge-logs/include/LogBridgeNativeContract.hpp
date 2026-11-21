@@ -50,6 +50,17 @@
 // Write copies the line into the journal (a memory-mapped file) before it
 // returns; delivery to the target follows the logger's policy. See Journal.hpp
 // and LogCore.hpp.
+//
+// ---------------------------------------------------------------------------
+// 5. The registry (API 2)
+// ---------------------------------------------------------------------------
+// The native side is the only place every Lua mod's loggers meet, so it keeps
+// the list of modules registered this session: Register records the module
+// with the default categories, AddCategory one category the Lua layer
+// registered after them. ListLoggers returns that list, plus the modules and
+// categories config.ini's [Levels] names that have not registered (not
+// loaded), each with its effective level and where it comes from. A new
+// module or category, like any level change, changes the generation.
 
 #include <array>
 #include <cstdint>
@@ -59,7 +70,7 @@ namespace UE4SSLuaLogBridge::NativeContract
 {
 // --- Identity -------------------------------------------------------------
 
-inline constexpr int64_t api_version = 1;
+inline constexpr int64_t api_version = 2;
 inline constexpr uint32_t implementation_magic = 0x4C4C4231; // 'LLB1'
 inline constexpr std::string_view lua_global = "UE4SSLuaLogBridge";
 inline constexpr std::string_view native_prefix = "UE4SSLuaLogBridge_";
@@ -110,7 +121,7 @@ struct NativeFunction
     std::string_view results;
 };
 
-inline constexpr std::array<NativeFunction, 11> native_functions{{
+inline constexpr std::array<NativeFunction, 13> native_functions{{
     {"GetVersion", "", "", "version:str"},
     {"GetCapabilities", "", "", "api:int, journal_bytes:int, max_message_bytes:int, frame:int (1 = engine tick)"},
     {"GetStats", "", "",
@@ -126,6 +137,9 @@ inline constexpr std::array<NativeFunction, 11> native_functions{{
     {"GetLevel", "s", "key:str", "level:str (effective)"},
     {"Flush", "", "", "true"},
     {"ReloadSettings", "", "", "true (the worker re-reads config.ini when it changed)"},
+    // API 2: the registry of modules and categories (section 5).
+    {"AddCategory", "iis", "session, logger, category:str", "true"},
+    {"ListLoggers", "", "", "text:str (LevelResolver::list), generation:int"},
 }};
 
 } // namespace UE4SSLuaLogBridge::NativeContract

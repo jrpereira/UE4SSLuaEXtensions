@@ -56,6 +56,79 @@ void settings()
     CHECK(parse_level_settings("[UE4SSLuaEXtensions.Logs]\nGlobalLevel=loud\n", &ignored).empty() && ignored.size() == 1);
 }
 
+void inherit_and_names()
+{
+    std::vector<std::string> ignored;
+    std::vector<std::string> names;
+    const auto table = parse_level_settings(
+        "[Levels]\nPreymonition=0\nFangdango = DEBUG\nfangdango=1\nFangdango.Combat=inherit\nOld=3\nOld=0\n"
+        "Broken=loud\nbad/key=1\n[UE4SSLuaEXtensions.Logs]\nGlobalLevel=0\n",
+        &ignored, &names);
+    CHECK(table.size() == 1 && table.at("fangdango") == 1); // the last entry of a key wins; Inherit sets nothing
+    CHECK(ignored.size() == 3);                              // Broken, bad/key and GlobalLevel=0, never Inherit
+    CHECK(names.size() == 4 && names[0] == "Preymonition" && names[1] == "Fangdango" &&
+          names[2] == "Fangdango.Combat" && names[3] == "Old");
+    CHECK(inherits(" 0 ") && inherits("Inherit") && !inherits("") && !inherits("00"));
+}
+
+void registry()
+{
+    LevelResolver levels;
+    const auto start = levels.generation();
+    levels.note("Preymonition");
+    const auto noted = levels.generation();
+    CHECK(noted > start);
+    levels.note("preymonition");
+    levels.note("Preymonition", "main");
+    CHECK(levels.generation() == noted); // nothing new
+    levels.note("PREYMONITION", "Combat");
+    CHECK(levels.generation() > noted);
+    levels.set_default("Preymonition", 3);
+    levels.note("Fangdango");
+
+    std::vector<std::string> names;
+    auto table = parse_level_settings(
+        "[UE4SSLuaEXtensions.Logs]\nGlobalLevel=5\n[Levels]\nfangdango=DEBUG\nFangdango.ai=0\n"
+        "Preymonition.combat=TRACE\nGone=OFF\nGone.net=2\nLater=0\n",
+        nullptr, &names);
+    CHECK(levels.set_settings(table, names));
+    CHECK(!levels.set_settings(table, names));
+    auto fewer = names;
+    fewer.pop_back();
+    CHECK(levels.set_settings(table, fewer)); // the names alone are a change
+    CHECK(levels.set_settings(table, names));
+
+    CHECK(levels.explain("Preymonition", "").rank == 3 && levels.explain("Preymonition", "").source == LevelSource::option);
+    CHECK(levels.explain("Preymonition", "combat").rank == 1 &&
+          levels.explain("Preymonition", "combat").source == LevelSource::levels);
+    CHECK(levels.explain("Preymonition", "ui").rank == 3 && levels.explain("Preymonition", "ui").source == LevelSource::module);
+    CHECK(levels.explain("Fangdango", "").source == LevelSource::levels && levels.explain("Fangdango", "").rank == 2);
+    CHECK(levels.explain("Nobody", "").rank == 5 && levels.explain("Nobody", "").source == LevelSource::global);
+    levels.set_override("fangdango.main", 6);
+    CHECK(levels.explain("Fangdango", "main").source == LevelSource::override_);
+    levels.set_override("fangdango.main", std::nullopt);
+    CHECK(source_name(LevelSource::override_) == "override" && source_name(LevelSource::module) == "module");
+
+    const std::string expected =
+        "M\tPreymonition\t3\toption\t1\n"
+        "C\tmain\t3\tmodule\t1\n"
+        "C\tconfig\t3\tmodule\t1\n"
+        "C\tui\t3\tmodule\t1\n"
+        "C\tinput\t3\tmodule\t1\n"
+        "C\tcombat\t1\tlevels\t1\n"
+        "M\tFangdango\t2\tlevels\t1\n"
+        "C\tmain\t2\tmodule\t1\n"
+        "C\tconfig\t2\tmodule\t1\n"
+        "C\tui\t2\tmodule\t1\n"
+        "C\tinput\t2\tmodule\t1\n"
+        "C\tai\t2\tmodule\t0\n"
+        "M\tGone\t7\tlevels\t0\n"
+        "C\tnet\t2\tlevels\t0\n"
+        "M\tLater\t5\tglobal\t0\n";
+    const auto listed = levels.list();
+    CHECK(listed == expected);
+}
+
 void resolution()
 {
     LevelResolver levels;
@@ -104,6 +177,8 @@ int main()
     levels();
     names();
     settings();
+    inherit_and_names();
+    registry();
     resolution();
     formats();
     return LexTests::finish("LevelsTests");

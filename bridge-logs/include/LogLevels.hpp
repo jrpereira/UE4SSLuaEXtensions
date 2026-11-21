@@ -5,6 +5,7 @@
 
 #include <LogBridgeNativeContract.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdint>
@@ -13,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace UE4SSLuaLogBridge::Core
@@ -45,6 +47,9 @@ inline std::string lower(std::string_view text)
     for (auto& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return out;
 }
+
+// The four categories every logger has, in this order.
+inline constexpr std::array<std::string_view, 4> default_categories{"main", "config", "ui", "input"};
 
 // The rank a level name (any case) or a rank digit 1..7 gives; surrounding
 // spaces are ignored.
@@ -128,6 +133,14 @@ inline std::optional<std::string> level_key(std::string_view key)
     return lower(module) + "." + lower(category);
 }
 
+// Whether a [Levels] value says "no level of its own": 0 (what the menu's
+// Inherit stores) or "inherit", any case.
+inline bool inherits(std::string_view text)
+{
+    const auto value = lower(trim(text));
+    return value == "0" || value == "inherit";
+}
+
 using LevelTable = std::unordered_map<std::string, int>;
 
 // Levels from config.ini: `[UE4SSLuaEXtensions.Logs] GlobalLevel=4` (the menu's
@@ -135,10 +148,15 @@ using LevelTable = std::unordered_map<std::string, int>;
 // `Module.category=TRACE`. Sections and keys are case-insensitive; other
 // sections, comments, unknown keys and unknown levels are ignored
 // (configuration never blocks the bridge), each unknown [Levels] entry and an
-// unknown GlobalLevel noted in `ignored` when given.
-inline LevelTable parse_level_settings(std::string_view text, std::vector<std::string>* ignored = nullptr)
+// unknown GlobalLevel noted in `ignored` when given. A [Levels] value of 0 or
+// "inherit" sets nothing and is not noted. `names`, when given, receives the
+// keys of [Levels] entries with a level or Inherit, as written, first spelling
+// of each folded key, in file order.
+inline LevelTable parse_level_settings(std::string_view text, std::vector<std::string>* ignored = nullptr,
+    std::vector<std::string>* names = nullptr)
 {
     LevelTable table;
+    std::unordered_set<std::string> seen;
     bool in_levels = false;
     bool in_own = false;
     while (!text.empty())
@@ -167,29 +185,60 @@ inline LevelTable parse_level_settings(std::string_view text, std::vector<std::s
             continue;
         }
         const auto key = level_key(line.substr(0, equals));
-        const auto rank = parse_level(line.substr(equals + 1));
-        if (!key || key->empty() || !rank) // the global level lives in the bridge's own section
+        const auto value = line.substr(equals + 1);
+        const bool inherit = inherits(value);
+        const auto rank = inherit ? std::nullopt : parse_level(value);
+        if (!key || key->empty() || (!rank && !inherit)) // the global level lives in the bridge's own section
         {
             if (ignored) ignored->emplace_back(line);
             continue;
         }
-        table[*key] = *rank;
+        if (names && !seen.contains(*key))
+        {
+            seen.insert(*key);
+            names->emplace_back(trim(line.substr(0, equals)));
+        }
+        if (rank) table[*key] = *rank;
+        else table.erase(*key); // a later Inherit undoes an earlier level, as a later level would
     }
     return table;
 }
 
+// Where an effective level comes from (ListLoggers). A module's: a runtime
+// override, [Levels], its registered `level` option or the global level. A
+// category's: its own override or [Levels] entry, else its module.
+enum class LevelSource : uint8_t { override_, levels, option, global, module };
+
+inline std::string_view source_name(LevelSource source)
+{
+    static constexpr std::array<std::string_view, 5> names{"override", "levels", "option", "global", "module"};
+    return names[static_cast<std::size_t>(source)];
+}
+
+struct ResolvedLevel
+{
+    int rank{};
+    LevelSource source{};
+};
+
 // Effective levels. Order, first found: runtime override of the category, of
 // the module; settings of the category, of the module; the module's registered
 // default; the global runtime override; the global setting; WARN.
+//
+// It also keeps the registry of the modules and categories registered this
+// session (every Lua mod's, since this is the one native object they share)
+// and the keys config.ini's [Levels] names, for ListLoggers.
 class LevelResolver
 {
 public:
-    // Replaces the settings; true when anything changed.
-    bool set_settings(LevelTable table)
+    // Replaces the settings; true when anything changed. names: the [Levels]
+    // keys as written (parse_level_settings' `names`).
+    bool set_settings(LevelTable table, std::vector<std::string> names = {})
     {
         std::scoped_lock lock(mutex_);
-        if (table == settings_) return false;
+        if (table == settings_ && names == settings_names_) return false;
         settings_ = std::move(table);
+        settings_names_ = std::move(names);
         ++generation_;
         return true;
     }
@@ -216,24 +265,41 @@ public:
         ++generation_;
     }
 
+    // Records a registered module (with the default categories) and, when not
+    // empty, one of its categories. The first spelling of a module is kept;
+    // categories are folded. A new name changes the generation.
+    void note(std::string_view module, std::string_view category = {})
+    {
+        std::scoped_lock lock(mutex_);
+        const auto key = lower(module);
+        auto found = known_index_.find(key);
+        bool changed = false;
+        if (found == known_index_.end())
+        {
+            Known entry{std::string(module), {}};
+            for (auto name : default_categories) entry.categories.emplace_back(name);
+            found = known_index_.emplace(key, known_.size()).first;
+            known_.push_back(std::move(entry));
+            changed = true;
+        }
+        if (!category.empty())
+        {
+            auto& categories = known_[found->second].categories;
+            const auto folded = lower(category);
+            if (std::find(categories.begin(), categories.end(), folded) == categories.end())
+            {
+                categories.push_back(folded);
+                changed = true;
+            }
+        }
+        if (changed) ++generation_;
+    }
+
     // An empty category resolves the module itself.
     int resolve(std::string_view module, std::string_view category) const
     {
-        const auto module_key = lower(module);
-        const auto category_key = category.empty() ? std::string() : module_key + "." + lower(category);
         std::scoped_lock lock(mutex_);
-        for (const auto* table : {&overrides_, &settings_})
-        {
-            if (!category_key.empty())
-            {
-                if (auto found = table->find(category_key); found != table->end()) return found->second;
-            }
-            if (auto found = table->find(module_key); found != table->end()) return found->second;
-        }
-        if (auto found = defaults_.find(module_key); found != defaults_.end()) return found->second;
-        if (auto found = overrides_.find(std::string()); found != overrides_.end()) return found->second;
-        if (auto found = settings_.find(std::string()); found != settings_.end()) return found->second;
-        return default_rank;
+        return explain_locked(lower(module), lower(category)).rank;
     }
 
     // The effective rank of a level_key ("" = global).
@@ -242,13 +308,86 @@ public:
         if (key.empty())
         {
             std::scoped_lock lock(mutex_);
-            if (auto found = overrides_.find(key); found != overrides_.end()) return found->second;
-            if (auto found = settings_.find(key); found != settings_.end()) return found->second;
-            return default_rank;
+            return global_locked();
         }
         const auto dot = key.find('.');
         if (dot == std::string::npos) return resolve(key, "");
         return resolve(key.substr(0, dot), key.substr(dot + 1));
+    }
+
+    // The effective rank of <module>.<category> (empty: the module) and where it comes from.
+    ResolvedLevel explain(std::string_view module, std::string_view category) const
+    {
+        std::scoped_lock lock(mutex_);
+        return explain_locked(lower(module), lower(category));
+    }
+
+    // Every registered module, in registration order, then the modules only
+    // [Levels] names, in file order. One line per module, each followed by a
+    // line per category (registered ones first, then those only [Levels]
+    // names), fields separated by tabs:
+    //   M <name> <rank> <source> <loaded 1|0>
+    //   C <name> <rank> <source> <loaded 1|0>
+    // Names never hold tabs or line breaks (valid_module_name, valid_category_name).
+    std::string list() const
+    {
+        std::scoped_lock lock(mutex_);
+        struct Row
+        {
+            std::string name;
+            bool loaded;
+            std::vector<std::pair<std::string, bool>> categories;
+        };
+        std::vector<Row> rows;
+        std::unordered_map<std::string, std::size_t> index;
+        for (const auto& known : known_)
+        {
+            Row row{known.name, true, {}};
+            for (const auto& category : known.categories) row.categories.emplace_back(category, true);
+            index.emplace(lower(known.name), rows.size());
+            rows.push_back(std::move(row));
+        }
+        for (const auto& name : settings_names_)
+        {
+            const auto dot = name.find('.');
+            const auto module = name.substr(0, dot);
+            const auto key = lower(module);
+            auto found = index.find(key);
+            if (found == index.end())
+            {
+                found = index.emplace(key, rows.size()).first;
+                rows.push_back(Row{module, false, {}});
+            }
+            if (dot == std::string::npos) continue;
+            auto& categories = rows[found->second].categories;
+            const auto category = lower(name.substr(dot + 1));
+            const bool listed = std::any_of(categories.begin(), categories.end(),
+                [&](const auto& entry) { return entry.first == category; });
+            if (!listed) categories.emplace_back(category, false);
+        }
+        std::string out;
+        const auto line = [&out](char kind, const std::string& name, ResolvedLevel level, bool loaded) {
+            out.push_back(kind);
+            out.push_back('\t');
+            out.append(name);
+            out.push_back('\t');
+            out.append(std::to_string(level.rank));
+            out.push_back('\t');
+            out.append(source_name(level.source));
+            out.push_back('\t');
+            out.push_back(loaded ? '1' : '0');
+            out.push_back('\n');
+        };
+        for (const auto& row : rows)
+        {
+            const auto module = lower(row.name);
+            line('M', row.name, explain_locked(module, ""), row.loaded);
+            for (const auto& [category, loaded] : row.categories)
+            {
+                line('C', category, explain_locked(module, category), loaded);
+            }
+        }
+        return out;
     }
 
     int64_t generation() const
@@ -258,10 +397,50 @@ public:
     }
 
 private:
+    struct Known
+    {
+        std::string name;
+        std::vector<std::string> categories;
+    };
+
     mutable std::mutex mutex_;
     LevelTable settings_;
+    std::vector<std::string> settings_names_;
     LevelTable overrides_;
     std::unordered_map<std::string, int> defaults_;
+    std::vector<Known> known_;
+    std::unordered_map<std::string, std::size_t> known_index_;
     int64_t generation_ = 1;
+
+    int global_locked() const
+    {
+        if (auto found = overrides_.find(std::string()); found != overrides_.end()) return found->second;
+        if (auto found = settings_.find(std::string()); found != settings_.end()) return found->second;
+        return default_rank;
+    }
+
+    // module and category folded; an empty category explains the module.
+    ResolvedLevel explain_locked(const std::string& module, const std::string& category) const
+    {
+        const auto category_key = category.empty() ? std::string() : module + "." + category;
+        const bool own = category.empty();
+        for (const auto* table : {&overrides_, &settings_})
+        {
+            const auto source = table == &overrides_ ? LevelSource::override_ : LevelSource::levels;
+            if (!category_key.empty())
+            {
+                if (auto found = table->find(category_key); found != table->end()) return {found->second, source};
+            }
+            if (auto found = table->find(module); found != table->end())
+            {
+                return {found->second, own ? source : LevelSource::module};
+            }
+        }
+        if (auto found = defaults_.find(module); found != defaults_.end())
+        {
+            return {found->second, own ? LevelSource::option : LevelSource::module};
+        }
+        return {global_locked(), own ? LevelSource::global : LevelSource::module};
+    }
 };
 } // namespace UE4SSLuaLogBridge::Core

@@ -1,4 +1,4 @@
--- A fake of the 11 UE4SSLuaLogBridge natives, following
+-- A fake of the 13 UE4SSLuaLogBridge natives, following
 -- bridge-logs/include/LogBridgeNativeContract.hpp. It checks every call's
 -- arity and argument types (contract R2) and records violations instead of
 -- crashing, refuses calls from coroutines like UE4SS (R6), and records lines.
@@ -10,7 +10,8 @@ Fake.MOD = "FakeMod"
 
 local SHAPES = {
     GetVersion = "", GetCapabilities = "", GetStats = "", Register = "isiiii", Write = "iiiss", Level = "iis",
-    Generation = "", SetLevel = "ss", GetLevel = "s", Flush = "", ReloadSettings = "",
+    Generation = "", SetLevel = "ss", GetLevel = "s", Flush = "", ReloadSettings = "", AddCategory = "iis",
+    ListLoggers = "",
 }
 Fake.SHAPES = SHAPES
 
@@ -29,6 +30,9 @@ function Fake.new()
         nextLogger = 1,
         flushed = 0,
         reloads = 0,
+        added = {},     -- {logger=, category=} per AddCategory call
+        -- ListLoggers' reply, as the native writes it (LevelResolver::list)
+        listing = "",
     }
 
     local function check(name, ...)
@@ -71,7 +75,7 @@ function Fake.new()
 
     function natives.GetCapabilities(...)
         if not check("GetCapabilities", ...) then return nil, "invalid", "bad arguments" end
-        return 1, 4194304, 65536, 1
+        return 2, 4194304, 65536, 1
     end
 
     function natives.GetStats(...)
@@ -145,6 +149,19 @@ function Fake.new()
         if not check("ReloadSettings", ...) then return nil, "invalid", "bad arguments" end
         fake.reloads = fake.reloads + 1
         return true
+    end
+
+    function natives.AddCategory(...)
+        if not check("AddCategory", ...) then return nil, "invalid", "AddCategory: bad arguments" end
+        local session, logger, category = ...
+        if session ~= SESSION or not fake.loggers[logger] then return nil, "invalid", "AddCategory: unknown logger" end
+        fake.added[#fake.added + 1] = { logger = logger, category = category }
+        return true
+    end
+
+    function natives.ListLoggers(...)
+        if not check("ListLoggers", ...) then return nil, "invalid", "bad arguments" end
+        return fake.listing, fake.generation
     end
 
     function fake.install()

@@ -7,7 +7,8 @@ crash-safe delivery.
 - Each mod registers a logger with categories (`main`, `config`, `ui`, `input`
   and any it registers).
 - Levels change per mod, per category or globally, from config.ini, the
-  ModCore Settings menu or Lua, and apply while the game runs.
+  ModCore Settings menu (a row for every mod that registered and each of its
+  categories) or Lua, and apply while the game runs.
 - Lines go to UE4SS.log or to the mod's own `logs/<category>.log`.
 - Written at once, once per frame or every few seconds, always by the
   bridge's own thread, so disk writes never touch a frame.
