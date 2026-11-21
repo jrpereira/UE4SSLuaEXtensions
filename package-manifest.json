@@ -135,6 +135,33 @@
           "to": "docs/LICENSE"
         }
       ]
+    },
+    {
+      "name": "UE4SSLuaLogBridge",
+      "folder": "bridge-logs",
+      "mod_folder": "0_ModCore_UE4SSLuaLogBridge",
+      "documents": [
+        {
+          "from": "README.md",
+          "to": "docs/README.md"
+        },
+        {
+          "from": "docs/*.md",
+          "to": "docs/",
+          "except": [
+            "BUILD.md",
+            "SPEC-REVIEW.md"
+          ]
+        },
+        {
+          "from": "examples/**/*.lua",
+          "to": "docs/examples/"
+        },
+        {
+          "from": "/LICENSE",
+          "to": "docs/LICENSE"
+        }
+      ]
     }
   ]
 }

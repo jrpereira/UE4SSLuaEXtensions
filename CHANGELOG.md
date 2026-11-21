@@ -7,8 +7,8 @@ extension keeps its own changelog in its folder.
 
 ### Changes
 
-- The extensions menu lists UE4SSLuaLogBridge as a fourth section, "Logs
-  Extension".
+- The package includes UE4SSLuaLogBridge, and the extensions menu lists it as
+  a fourth section, "Logs Extension".
 - Each extension's settings are stored in its own `config.ini` under
   `[UE4SSLuaEXtensions.<Slot>]`, keyed by the setting's own id. An extension
   without a `mod_settings.ini` keeps its load-time verification switch in

@@ -72,9 +72,20 @@ class ManifestTests(unittest.TestCase):
     def test_the_manifest_describes_every_extension_and_what_is_not_deployed(self):
         self.assertEqual([e['mod_folder'] for e in MANIFEST['extensions']],
                          ['0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge',
-                          '0_ModCore_UE4SSLuaSoundBridge'])
+                          '0_ModCore_UE4SSLuaSoundBridge', '0_ModCore_UE4SSLuaLogBridge'])
         self.assertEqual(MANIFEST['not_deployed'], ['NEXUS.bb', 'DEVELOPMENT.md', 'CHANGELOG.md'])
         self.assertEqual(MANIFEST['nexus_description'], {'source': 'README.md', 'output': 'NEXUS.bb'})
+
+    def test_every_extension_the_menu_lists_is_in_the_package(self):
+        menu = (ROOT / 'extensions-menu' / build.MENU_SCRIPT).read_text(encoding='utf-8')
+        listed = build.menu_extensions(menu)
+        self.assertEqual(listed, [e['mod_folder'] for e in MANIFEST['extensions']])
+        build.check_menu_extensions(MANIFEST, menu)
+        without_logs = dict(MANIFEST, extensions=MANIFEST['extensions'][:3])
+        with self.assertRaisesRegex(ValueError, '0_ModCore_UE4SSLuaLogBridge'):
+            build.check_menu_extensions(without_logs, menu)
+        with self.assertRaisesRegex(ValueError, 'no M.extensions'):
+            build.check_menu_extensions(MANIFEST, 'return {}\n')
 
     def test_release_notes_open_with_the_package_changes_only_when_it_has_some(self):
         products = [{'product_name': 'UE4SSLuaEventBridge', 'version': '1.3.0', 'tag': 'bridge-events/v1.3.0'}]

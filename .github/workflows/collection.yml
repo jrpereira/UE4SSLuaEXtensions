@@ -18,6 +18,9 @@ on:
       sounds_tag:
         description: Sound Bridge release tag, for example bridge-sounds/v1.0.0
         required: true
+      logs_tag:
+        description: Log Bridge release tag, for example bridge-logs/v1.0.0
+        required: true
 
 permissions:
   contents: read
@@ -42,6 +45,7 @@ jobs:
       EVENTS_TAG: ${{ inputs.events_tag }}
       FILES_TAG: ${{ inputs.files_tag }}
       SOUNDS_TAG: ${{ inputs.sounds_tag }}
+      LOGS_TAG: ${{ inputs.logs_tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -53,7 +57,7 @@ jobs:
         run: |
           git fetch --tags --force
           python tools/build_collection.py --version "$PACKAGE_VERSION" \
-            --tag "$EVENTS_TAG" --tag "$FILES_TAG" --tag "$SOUNDS_TAG" \
+            --tag "$EVENTS_TAG" --tag "$FILES_TAG" --tag "$SOUNDS_TAG" --tag "$LOGS_TAG" \
             --output collection-dist --output-file "$GITHUB_ENV"
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4

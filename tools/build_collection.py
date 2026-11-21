@@ -35,6 +35,27 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+# Each extension the extensions menu lists, by its mod folder (M.extensions in extensions_menu.lua).
+MENU_SCRIPT = 'Scripts/extensions_menu.lua'
+MENU_FOLDER = re.compile(r"\{\s*id\s*=\s*'[^']+'\s*,\s*folder\s*=\s*'([^']+)'")
+
+
+def menu_extensions(text):
+    """The mod folders of the extensions a menu script lists, in order."""
+    block = re.search(r'^M\.extensions\s*=\s*\{(.*?)^\}', text, re.M | re.S)
+    if not block:
+        raise ValueError(f'{MENU_SCRIPT} has no M.extensions list')
+    return MENU_FOLDER.findall(block[1])
+
+
+def check_menu_extensions(manifest, menu_text):
+    """Every extension the menu lists must ship in the package."""
+    packaged = {extension['mod_folder'] for extension in manifest['extensions']}
+    missing = [folder for folder in menu_extensions(menu_text) if folder not in packaged]
+    if missing:
+        raise ValueError('The extensions menu lists extensions the package lacks: ' + ', '.join(missing))
+
+
 def load_manifest(path=ROOT / 'package-manifest.json'):
     manifest = json.loads(Path(path).read_text(encoding='utf-8'))
     if manifest.get('schema') != 1:
@@ -45,6 +66,10 @@ def load_manifest(path=ROOT / 'package-manifest.json'):
     for extension in manifest['extensions'] + manifest.get('folders', []):
         if extension['mod_folder'] != f'0_ModCore_{extension["name"]}':
             raise ValueError(f'{extension["name"]}: the mod folder must be 0_ModCore_<name>')
+    for folder in manifest.get('folders', []):
+        menu = Path(path).parent / folder['source'] / MENU_SCRIPT
+        if menu.is_file():
+            check_menu_extensions(manifest, menu.read_text(encoding='utf-8'))
     return manifest
 
 

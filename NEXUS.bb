@@ -1,6 +1,6 @@
-UE4SS runs Lua mods inside the game, but Lua alone cannot reach everything a mod may need. Lua cannot ask Unreal's input system for native Tap and Hold triggers, cannot tell whether an object it still holds has been freed, has no notion of which files a mod should be allowed to touch, and cannot play a sound the game doesn't ship. UE4SS Lua Extensions are native C++ mods that add these abilities to UE4SS and expose them to other Lua mods through small Lua APIs.
+UE4SS runs Lua mods inside the game, but Lua alone cannot reach everything a mod may need. Lua cannot ask Unreal's input system for native Tap and Hold triggers, cannot tell whether an object it still holds has been freed, has no notion of which files a mod should be allowed to touch, cannot play a sound the game doesn't ship, and has no log that survives a crash. UE4SS Lua Extensions are native C++ mods that add these abilities to UE4SS and expose them to other Lua mods through small Lua APIs.
 
-There are three independent extensions. Each has its own mod folder, version and documentation. A mod depends on whichever it uses, and you can keep all of them installed. They do nothing on their own: install them when a mod asks for them.
+There are four independent extensions. Each has its own mod folder, version and documentation. A mod depends on whichever it uses, and you can keep all of them installed. They do nothing on their own: install them when a mod asks for them.
 
 [size=4][b]UE4SS Lua Event Bridge (1.3.0)[/b][/size]
 Connects Unreal Enhanced Input to UE4SS Lua callbacks. Bind existing Input Actions or create key bindings with native Tap and Hold triggers: Unreal handles the stopwatch, your mod handles the action. Lua receives copied event values outside Unreal's native input-dispatch stack.
@@ -19,13 +19,19 @@ Lets Lua mods play WAV files outside the game's audio engine. A mod loads sounds
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaSoundBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-sounds/README.md]Sound Bridge README[/url].
 
+[size=4][b]UE4SS Lua Log Bridge (1.0.0)[/b][/size]
+Leveled logging for Lua mods: TRACE to CRITICAL, WARN by default, set per mod, per category or globally from config.ini, the ModCore Settings menu or Lua, and applied while the game runs. Lines go to UE4SS.log or to the mod's own [font=Courier New]logs/<category>.log[/font], written by the bridge's own thread. Every line reaches a memory-mapped journal before the call returns, so a crash loses nothing: the next start writes the previous session's lines to [font=Courier New]logs/previous-session.log[/font].
+
+Mod folder: [font=Courier New]0_ModCore_UE4SSLuaLogBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-logs/README.md]Log Bridge README[/url].
+
 [size=4][b]Installation[/b][/size]
-The Nexus download is one ZIP holding all three extensions. Extract it into the UE4SS [font=Courier New]Mods[/font] directory, or install it with your mod manager. It adds a folder for each extension and a fourth, Lua-only folder for the menu:
+The Nexus download is one ZIP holding all four extensions. Extract it into the UE4SS [font=Courier New]Mods[/font] directory, or install it with your mod manager. It adds a folder for each extension and a fifth, Lua-only folder for the menu:
 
 [code]Mods/
 ├── 0_ModCore_UE4SSLuaEXtensions/
 ├── 0_ModCore_UE4SSLuaEventBridge/
 ├── 0_ModCore_UE4SSLuaFileBridge/
+├── 0_ModCore_UE4SSLuaLogBridge/
 └── 0_ModCore_UE4SSLuaSoundBridge/[/code]
 
 [font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] lists the installed extensions in ModCore Settings' mod list as one module, ModCore Lua Extensions. Its page shows how many extensions are installed, then a section for each one holding that extension's own settings (from its mod_settings.ini). The extensions are then not listed as separate mods. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
@@ -42,5 +48,6 @@ Windows x64 (the Sound Bridge needs Windows 10 or later), Unreal Engine 5.5, and
 [*][url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-events/README.md]Event Bridge README[/url] and [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-events/docs/DEVELOPERS.md]developer guide[/url]
 [*][url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-files/README.md]File Bridge README[/url], [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-files/docs/DEVELOPERS.md]developer guide[/url] and [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-files/docs/API.md]API reference[/url]
 [*][url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-sounds/README.md]Sound Bridge README[/url] and [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-sounds/docs/API.md]API reference[/url]
+[*][url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-logs/README.md]Log Bridge README[/url] and [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-logs/docs/API.md]API reference[/url]
 [*]Source, issues and releases: [url=https://github.com/jrpereira/UE4SSLuaEXtensions]GitHub[/url]
 [/list]
