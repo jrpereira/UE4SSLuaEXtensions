@@ -263,6 +263,11 @@ test("Flush", function(fake, _, logs)
     expect(logs.Flush() == true and fake.flushed == 1)
 end)
 
+test("ReloadSettings", function(fake, bridge, logs)
+    expect(logs.ReloadSettings() == true and logs:ReloadSettings() == true and fake.reloads == 2)
+    expect(bridge.ReloadSettings == nil, "only the environment table reloads")
+end)
+
 -- Refused threads -----------------------------------------------------------------------
 
 test("a refused coroutine falls back to print", function(fake, _, logs)
@@ -275,6 +280,7 @@ test("a refused coroutine falls back to print", function(fake, _, logs)
         log.warn("from a coroutine")
         log.combat.error("category")
         expectFailure("invalid", logs.Flush())
+        expectFailure("invalid", logs.ReloadSettings())
     end)
     local ok, err = coroutine.resume(co)
     print = savedPrint

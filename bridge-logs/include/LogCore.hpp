@@ -132,7 +132,9 @@ public:
     struct Written
     {
         bool ok{};
-        bool wake_worker{}; // an immediate line: the worker should run now
+        // The worker should run now: an immediate line, or the first pending
+        // line of a periodic logger (the worker then sleeps until its deadline).
+        bool wake_worker{};
     };
 
     // Copies one line into the journal. A full journal is first delivered
@@ -153,7 +155,7 @@ public:
                 std::scoped_lock lock(mutex_);
                 const auto found = loggers_.find(logger);
                 if (found == loggers_.end()) return {};
-                const auto& owner = found->second;
+                auto& owner = found->second;
                 const auto policy = effective(owner.policy);
                 JournalEntry entry{next_seq_, time, rank, static_cast<uint8_t>(owner.policy.target), owner.module,
                     owner.folder, category, message};
@@ -164,7 +166,9 @@ public:
                     ++written_;
                     pending_.push_back(Pending{slot, logger});
                     if (owner.policy.frequency == Frequency::frame) frame_lines_.fetch_add(1, std::memory_order_release);
-                    return Written{true, policy.frequency == Frequency::immediate};
+                    const bool first = ++owner.pending == 1;
+                    return Written{true, policy.frequency == Frequency::immediate ||
+                                             (policy.frequency == Frequency::periodic && first)};
                 }
                 ++stalls_;
             }
@@ -227,6 +231,7 @@ private:
         std::string folder;
         Policy policy;
         int64_t last_delivery_ms{};
+        int64_t pending{}; // its lines in pending_
     };
 
     struct Pending
@@ -297,6 +302,7 @@ private:
                 }
                 journal_.mark(pending.slot, RecordState::delivering);
                 batch.push_back(Line{pending.slot, logger.policy.target, journal_.read(pending.slot)});
+                --logger.pending;
                 if (logger.policy.frequency == Frequency::frame) ++frame_lines;
             }
             for (const auto& [id, is_due] : due)

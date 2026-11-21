@@ -87,7 +87,7 @@ void policies()
     const auto slow = f.core.register_logger("C", "F", policy(Target::ue4ss, Frequency::periodic, 2000), 0);
     CHECK(f.core.write(now, 4, "main", "a", time, 0).wake_worker);
     CHECK(!f.core.write(frame, 4, "main", "b", time, 0).wake_worker);
-    CHECK(!f.core.write(slow, 4, "main", "c", time, 0).wake_worker);
+    CHECK(f.core.write(slow, 4, "main", "c", time, 0).wake_worker); // first pending periodic line
     CHECK(f.core.worker_wait_ms(0, 500) == 0);
     CHECK(f.core.due(100) == 1);              // immediate only
     CHECK(f.core.due(100, true) == 1);        // the frame logger once a frame passed
@@ -95,9 +95,10 @@ void policies()
     CHECK(f.core.due(1999) == 0);
     CHECK(f.core.due(2000) == 1);             // periodic, due
     CHECK(f.sink.ue4ss_lines.size() == 3 && f.sink.ue4ss_lines[2] == "[C] WARN c");
-    CHECK(f.core.write(slow, 4, "main", "d", time, 2100).ok);
+    CHECK(f.core.write(slow, 4, "main", "d", time, 2100).wake_worker); // pending again from none
+    CHECK(!f.core.write(slow, 4, "main", "e", time, 2100).wake_worker); // already waiting for its deadline
     CHECK(f.core.worker_wait_ms(2100, 5000) == 1900);
-    CHECK(f.core.due(3000) == 0 && f.core.all(3000) == 1);
+    CHECK(f.core.due(3000) == 0 && f.core.all(3000) == 2);
 }
 
 void periodic_limits()

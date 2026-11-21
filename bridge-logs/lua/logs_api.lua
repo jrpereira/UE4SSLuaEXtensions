@@ -9,7 +9,7 @@ local __API_VERSION = 1
 local __NATIVE_PREFIX = "UE4SSLuaLogBridge_"
 local __NATIVE_NAMES = {
     "GetVersion", "GetCapabilities", "GetStats", "Register", "Write", "Level", "Generation", "SetLevel", "GetLevel",
-    "Flush",
+    "Flush", "ReloadSettings",
 }
 
 -- Only this layer may reach the natives: capture each one and remove the
@@ -351,6 +351,14 @@ local function __Flush()
     return true
 end
 
+-- Asks the bridge to re-read config.ini; new levels arrive through the
+-- generation like any other level change.
+local function __ReloadSettings()
+    local ok, code, message = __native("ReloadSettings")
+    if ok == nil then return nil, code, message end
+    return true
+end
+
 local function __GetVersion()
     local version = __native("GetVersion")
     return version
@@ -411,6 +419,7 @@ __environment = setmetatable({}, {
         SetLevel = __method(__SetLevel),
         GetLevel = __method(__GetLevel),
         Flush = __method(__Flush),
+        ReloadSettings = __method(__ReloadSettings),
         GetVersion = __method(__GetVersion),
         GetCapabilities = __method(__GetCapabilities),
         GetStats = __method(__GetStats),

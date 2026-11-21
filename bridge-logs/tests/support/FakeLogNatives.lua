@@ -1,4 +1,4 @@
--- A fake of the 10 UE4SSLuaLogBridge natives, following
+-- A fake of the 11 UE4SSLuaLogBridge natives, following
 -- bridge-logs/include/LogBridgeNativeContract.hpp. It checks every call's
 -- arity and argument types (contract R2) and records violations instead of
 -- crashing, refuses calls from coroutines like UE4SS (R6), and records lines.
@@ -10,7 +10,7 @@ Fake.MOD = "FakeMod"
 
 local SHAPES = {
     GetVersion = "", GetCapabilities = "", GetStats = "", Register = "isiiii", Write = "iiiss", Level = "iis",
-    Generation = "", SetLevel = "ss", GetLevel = "s", Flush = "",
+    Generation = "", SetLevel = "ss", GetLevel = "s", Flush = "", ReloadSettings = "",
 }
 Fake.SHAPES = SHAPES
 
@@ -28,6 +28,7 @@ function Fake.new()
         generation = 1,
         nextLogger = 1,
         flushed = 0,
+        reloads = 0,
     }
 
     local function check(name, ...)
@@ -137,6 +138,12 @@ function Fake.new()
     function natives.Flush(...)
         if not check("Flush", ...) then return nil, "invalid", "bad arguments" end
         fake.flushed = fake.flushed + 1
+        return true
+    end
+
+    function natives.ReloadSettings(...)
+        if not check("ReloadSettings", ...) then return nil, "invalid", "bad arguments" end
+        fake.reloads = fake.reloads + 1
         return true
     end
 

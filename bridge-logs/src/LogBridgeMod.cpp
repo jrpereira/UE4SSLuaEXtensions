@@ -190,6 +190,17 @@ public:
         return tick_decided_.load(std::memory_order_acquire) && tick_available_.load(std::memory_order_acquire);
     }
 
+    // Any thread: asks the worker to re-read config.ini (ReloadSettings).
+    void request_reload()
+    {
+        {
+            std::scoped_lock lock(wake_mutex_);
+            reload_ = true;
+            woken_ = true;
+        }
+        wake_cv_.notify_one();
+    }
+
     void wake()
     {
         {
@@ -237,6 +248,7 @@ private:
     std::mutex wake_mutex_;
     std::condition_variable wake_cv_;
     bool woken_{};
+    bool reload_{};
     bool stop_{};
     std::thread worker_;
 
@@ -311,27 +323,28 @@ private:
         if (changed && !first) report("levels re-read from config.ini");
     }
 
+    // Sleeps until a line, a periodic logger's deadline, a frame, a reload
+    // request or stop. No timer of its own: with nothing pending it waits
+    // without a timeout (a periodic deadline is at most max_interval_ms away).
     void worker_loop()
     {
-        auto last_settings = Win32::monotonic_ms();
+        constexpr int64_t idle = Contract::max_interval_ms + 1;
         std::unique_lock lock(wake_mutex_);
         while (!stop_)
         {
             const auto now = Win32::monotonic_ms();
-            const auto wait = core_->worker_wait_ms(now, Contract::settings_poll_ms);
-            wake_cv_.wait_for(lock, std::chrono::milliseconds(wait), [this] { return stop_ || woken_; });
+            const auto wait = core_->worker_wait_ms(now, idle);
+            const auto woken = [this] { return stop_ || woken_; };
+            if (wait >= idle) wake_cv_.wait(lock, woken);
+            else wake_cv_.wait_for(lock, std::chrono::milliseconds(wait), woken);
             if (stop_) break;
             woken_ = false;
+            const bool reload = std::exchange(reload_, false);
             lock.unlock();
             try
             {
-                const auto later = Win32::monotonic_ms();
-                core_->due(later, frame_.exchange(false, std::memory_order_acq_rel));
-                if (later - last_settings >= Contract::settings_poll_ms)
-                {
-                    last_settings = later;
-                    read_settings(false);
-                }
+                core_->due(Win32::monotonic_ms(), frame_.exchange(false, std::memory_order_acq_rel));
+                if (reload) read_settings(false);
             }
             catch (...)
             {
@@ -498,8 +511,14 @@ Reply flush(LogBridgeMod& bridge, Call&)
     return success(true);
 }
 
+Reply reload_settings(LogBridgeMod& bridge, Call&)
+{
+    bridge.request_reload();
+    return success(true);
+}
+
 // Same order as Contract::native_functions; checked at compile time below.
-constexpr std::array<NativeEntry, 10> natives{{
+constexpr std::array<NativeEntry, 11> natives{{
     {"GetVersion", "", &get_version},
     {"GetCapabilities", "", &get_capabilities},
     {"GetStats", "", &get_stats},
@@ -510,6 +529,7 @@ constexpr std::array<NativeEntry, 10> natives{{
     {"SetLevel", "ss", &set_level},
     {"GetLevel", "s", &get_level},
     {"Flush", "", &flush},
+    {"ReloadSettings", "", &reload_settings},
 }};
 
 static_assert(Lex::Natives::natives_match_contract<natives, Contract::native_functions>(),

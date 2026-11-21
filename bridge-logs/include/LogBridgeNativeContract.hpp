@@ -40,7 +40,9 @@
 // L is written when L >= the effective rank of its <module>.<category>. The
 // Lua layer filters with ranks it caches; the generation counter changes
 // whenever any level may have changed (config.ini re-read, SetLevel), and
-// the layer then asks again.
+// the layer then asks again. config.ini is read at start and re-read only on
+// ReloadSettings (ModCore Settings' Apply of the Logs page or its config
+// reload); the bridge never polls it.
 //
 // ---------------------------------------------------------------------------
 // 4. Writing and delivery
@@ -74,7 +76,6 @@ inline constexpr int64_t max_category_name = 32;
 inline constexpr int64_t max_loggers_per_session = 256;
 inline constexpr int64_t min_interval_ms = 50;
 inline constexpr int64_t max_interval_ms = 3600LL * 1000;
-inline constexpr int64_t settings_poll_ms = 500;
 
 // --- Policies -------------------------------------------------------------
 
@@ -109,7 +110,7 @@ struct NativeFunction
     std::string_view results;
 };
 
-inline constexpr std::array<NativeFunction, 10> native_functions{{
+inline constexpr std::array<NativeFunction, 11> native_functions{{
     {"GetVersion", "", "", "version:str"},
     {"GetCapabilities", "", "", "api:int, journal_bytes:int, max_message_bytes:int, frame:int (1 = engine tick)"},
     {"GetStats", "", "",
@@ -124,6 +125,7 @@ inline constexpr std::array<NativeFunction, 10> native_functions{{
     {"SetLevel", "ss", "key:str (\"\" = global, module or module.category), level:str (\"\" clears)", "true"},
     {"GetLevel", "s", "key:str", "level:str (effective)"},
     {"Flush", "", "", "true"},
+    {"ReloadSettings", "", "", "true (the worker re-reads config.ini when it changed)"},
 }};
 
 } // namespace UE4SSLuaLogBridge::NativeContract

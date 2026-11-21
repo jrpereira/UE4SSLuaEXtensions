@@ -68,6 +68,12 @@ The effective level of a key, as `SetLevel` takes it.
 
 Writes every pending line now, from the calling thread.
 
+### `ReloadSettings()` → true
+
+Asks the bridge to re-read config.ini. The bridge's thread reads it shortly
+after; when levels changed, every logger sees them within a second, as with
+`SetLevel`. ModCore Settings' extensions menu calls it for you (see Levels).
+
 ### `GetCapabilities()`
 
 `{ api = 1, journal_bytes, max_message_bytes = 65536, frame = <engine tick>,
@@ -130,8 +136,12 @@ MyMod.combat=TRACE
 ```
 
 The ModCore Settings menu edits `GlobalLevel` (1 for TRACE to 7 for OFF; a
-name works too). The file is re-read within half a
-second of a change. Unknown keys and levels are ignored and noted in UE4SS.log.
+name works too). The bridge reads the file when the game starts and never
+polls it: it is re-read when ModCore Settings applies the Logs page, when
+ModCore Settings reloads config (its Reload Config button, or the game window
+regaining focus), and on `ReloadSettings()`. Without ModCore Settings, an edit
+applies on the next launch or after `ReloadSettings()`. Unknown keys and
+levels are ignored and noted in UE4SS.log.
 
 The Lua layer keeps levels it has asked for, so a filtered call makes no native
 call; a written line tells it when any level changed, and any call (a filtered

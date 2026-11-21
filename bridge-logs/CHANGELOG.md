@@ -9,6 +9,8 @@
   `input` and any the mod registers).
 - Levels per module, per category and global, from config.ini (`[Levels]`),
   the ModCore Settings menu (global) or `SetLevel`, applied while the game runs.
+  config.ini is never polled: it is re-read when ModCore Settings applies the
+  Logs page or reloads config, and on `ReloadSettings()`.
 - Targets: UE4SS.log, or `<mod folder>/logs/<category>.log` with the previous
   session kept as `<category>.prev.log`.
 - Delivery immediate, once per frame or periodic, always on the bridge's own
