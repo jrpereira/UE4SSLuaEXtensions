@@ -39,7 +39,7 @@
 // Ranks 1..7: TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL, OFF. A line of level
 // L is written when L >= the effective rank of its <module>.<category>. The
 // Lua layer filters with ranks it caches; the generation counter changes
-// whenever any level may have changed (settings.ini re-read, SetLevel), and
+// whenever any level may have changed (config.ini re-read, SetLevel), and
 // the layer then asks again.
 //
 // ---------------------------------------------------------------------------

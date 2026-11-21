@@ -1,6 +1,6 @@
 #pragma once
 
-// Level ranks, module and category names, the [Levels] section of settings.ini
+// Level ranks, module and category names, the [Levels] section of config.ini
 // and the resolution of a <module>.<category>'s effective level. Portable.
 
 #include <LogBridgeNativeContract.hpp>
