@@ -5,6 +5,7 @@
 
 #include <EmbeddedLuaAPI.hpp>
 #include <LexImplementation.hpp>
+#include <LexNatives.hpp>
 #include <LexReport.hpp>
 #include <SoundBridgeNativeContract.hpp>
 #include <SoundEngine.hpp>
@@ -36,119 +37,23 @@ using UE4SSLuaSoundBridge::Core::SoundData;
 namespace Contract = UE4SSLuaSoundBridge::NativeContract;
 namespace Core = UE4SSLuaSoundBridge::Core;
 namespace Win32 = UE4SSLuaSoundBridge::Win32;
+using Lex::Natives::Call;
+using Lex::Natives::failure;
+using Lex::Natives::Reply;
+using Lex::Natives::session_gone;
+using Lex::Natives::success;
+using Lex::Natives::utf16_to_utf8;
 
 void report(std::string_view message)
 {
     Lex::report("UE4SSLuaSoundBridge", message);
 }
 
-// UTF-16 mod name to UTF-8; unpaired surrogates fail.
-bool utf16_to_utf8(std::wstring_view text, std::string& out)
-{
-    out.clear();
-    for (std::size_t i = 0; i < text.size(); ++i)
-    {
-        uint32_t code = static_cast<uint16_t>(text[i]);
-        if (code >= 0xD800 && code <= 0xDBFF)
-        {
-            if (i + 1 >= text.size()) return false;
-            const uint32_t low = static_cast<uint16_t>(text[i + 1]);
-            if (low < 0xDC00 || low > 0xDFFF) return false;
-            code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
-            ++i;
-        }
-        else if (code >= 0xDC00 && code <= 0xDFFF)
-        {
-            return false;
-        }
-        if (code < 0x80) out.push_back(static_cast<char>(code));
-        else if (code < 0x800)
-        {
-            out.push_back(static_cast<char>(0xC0 | code >> 6));
-            out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
-        }
-        else if (code < 0x10000)
-        {
-            out.push_back(static_cast<char>(0xE0 | code >> 12));
-            out.push_back(static_cast<char>(0x80 | (code >> 6 & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
-        }
-        else
-        {
-            out.push_back(static_cast<char>(0xF0 | code >> 18));
-            out.push_back(static_cast<char>(0x80 | (code >> 12 & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (code >> 6 & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
-        }
-    }
-    return true;
-}
-
 // --- Results ---------------------------------------------------------------
-
-using Value = std::variant<std::monostate, bool, int64_t, double, std::string>;
-
-struct Reply
-{
-    std::vector<Value> values;
-};
-
-Reply failure(ErrorCode code, std::string message)
-{
-    return Reply{{std::monostate{}, std::string(Contract::to_string(code)), std::move(message)}};
-}
 
 Reply failure(const Failure& failed)
 {
     return failure(failed.code, failed.message);
-}
-
-template<class... Values>
-Reply success(Values&&... values)
-{
-    Reply reply;
-    (reply.values.emplace_back(Value(std::forward<Values>(values))), ...);
-    return reply;
-}
-
-int push(const Lua& lua, const Reply& reply)
-{
-    for (const auto& value : reply.values)
-    {
-        if (std::holds_alternative<std::monostate>(value)) lua.set_nil();
-        else if (const auto* flag = std::get_if<bool>(&value)) lua.set_bool(*flag);
-        else if (const auto* integer = std::get_if<int64_t>(&value)) lua.set_integer(*integer);
-        else if (const auto* number = std::get_if<double>(&value)) lua.set_number(*number);
-        else lua.set_string(std::get<std::string>(value));
-    }
-    return static_cast<int>(reply.values.size());
-}
-
-// Arguments are consumed left to right (get_* remove argument 1).
-class Call
-{
-public:
-    explicit Call(const Lua& lua) : lua_(lua) {}
-    int64_t integer() { return lua_.get_integer(1); }
-    std::string string()
-    {
-        const auto view = lua_.get_string(1);
-        return std::string(view.data() ? view : std::string_view{}); // copy before any other Lua call (R3)
-    }
-
-private:
-    const Lua& lua_;
-};
-
-bool shape_matches(const Lua& lua, std::string_view shape)
-{
-    if (lua.get_stack_size() != static_cast<int32_t>(shape.size())) return false;
-    for (std::size_t i = 0; i < shape.size(); ++i)
-    {
-        const auto index = static_cast<int32_t>(i + 1);
-        if (shape[i] == 'i' ? !lua.is_integer(index) : !lua.is_string(index)) return false;
-    }
-    return true;
 }
 
 // --- Sessions --------------------------------------------------------------
@@ -167,11 +72,6 @@ struct Session
 
 class SoundBridgeMod;
 SoundBridgeMod* active_bridge{};
-
-std::string session_gone()
-{
-    return "Lua session is not registered or is stopping";
-}
 
 class SoundBridgeMod final : public RC::CppUserModBase
 {
@@ -317,14 +217,7 @@ private:
 
 // --- Natives -----------------------------------------------------------------
 
-using Body = Reply (*)(SoundBridgeMod&, Call&);
-
-struct NativeEntry
-{
-    std::string_view name;
-    std::string_view shape;
-    Body body;
-};
+using NativeEntry = Lex::Natives::NativeEntry<SoundBridgeMod>;
 
 std::shared_ptr<const SoundData> find_sound(Session& session, int64_t id)
 {
@@ -452,61 +345,18 @@ constexpr std::array<NativeEntry, 8> natives{{
     {"StopSound", "ii", &stop_sound},
 }};
 
-constexpr bool natives_match_contract()
-{
-    if (natives.size() != Contract::native_functions.size()) return false;
-    for (std::size_t i = 0; i < natives.size(); ++i)
-    {
-        if (natives[i].name != Contract::native_functions[i].name) return false;
-        if (natives[i].shape != Contract::native_functions[i].shape) return false;
-    }
-    return true;
-}
-static_assert(natives_match_contract(), "native table differs from SoundBridgeNativeContract.hpp");
+static_assert(Lex::Natives::natives_match_contract<natives, Contract::native_functions>(),
+    "native table differs from SoundBridgeNativeContract.hpp");
 
-template<std::size_t Index>
-int native_entry(const Lua& lua)
+SoundBridgeMod* ready(const NativeEntry& entry, Reply& refusal)
 {
-    const auto& entry = natives[Index];
-    Reply reply;
-    try
-    {
-        if (!shape_matches(lua, entry.shape))
-        {
-            reply = failure(ErrorCode::invalid, std::string(entry.name) + ": bad arguments");
-        }
-        else if (!active_bridge)
-        {
-            reply = failure(ErrorCode::io, std::string(entry.name) + ": the bridge is not active");
-        }
-        else
-        {
-            Call call(lua);
-            reply = entry.body(*active_bridge, call);
-        }
-    }
-    catch (const std::exception& error)
-    {
-        reply = failure(ErrorCode::io, std::string(entry.name) + ": internal error: " + error.what());
-    }
-    catch (...)
-    {
-        reply = failure(ErrorCode::io, std::string(entry.name) + ": internal error");
-    }
-    return push(lua, reply);
-}
-
-template<std::size_t... Index>
-void register_all(Lua& lua, std::index_sequence<Index...>)
-{
-    (lua.register_function(std::string(Contract::native_prefix) + std::string(natives[Index].name),
-         Lua::LuaFunction{&native_entry<Index>}),
-        ...);
+    if (!active_bridge) refusal = Lex::Natives::inactive(entry);
+    return active_bridge;
 }
 
 void SoundBridgeMod::register_natives(Lua& lua)
 {
-    register_all(lua, std::make_index_sequence<natives.size()>{});
+    Lex::Natives::register_natives<natives, &ready>(lua, Contract::native_prefix);
 }
 } // namespace
 

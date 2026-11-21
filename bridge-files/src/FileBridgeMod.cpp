@@ -12,6 +12,7 @@
 #include <FileBridgeTailDelivery.hpp>
 #include <FileBridgeText.hpp>
 #include <LexImplementation.hpp>
+#include <LexNatives.hpp>
 #include <LexReport.hpp>
 #include <Version.hpp>
 #include <Win32Files.hpp>
@@ -51,6 +52,11 @@ using UE4SSLuaFileBridge::Core::TargetKind;
 namespace Contract = UE4SSLuaFileBridge::NativeContract;
 namespace Core = UE4SSLuaFileBridge::Core;
 namespace Win32 = UE4SSLuaFileBridge::Win32;
+using Lex::Natives::Call;
+using Lex::Natives::failure;
+using Lex::Natives::Reply;
+using Lex::Natives::session_gone;
+using Lex::Natives::success;
 
 void report(std::string_view message)
 {
@@ -59,73 +65,12 @@ void report(std::string_view message)
 
 // --- Results ---------------------------------------------------------------
 
-using Value = std::variant<std::monostate, bool, int64_t, double, std::string>;
-
-struct Reply
-{
-    std::vector<Value> values;
-};
-
-Reply failure(ErrorCode code, std::string message)
-{
-    return Reply{{std::monostate{}, std::string(Contract::to_string(code)), std::move(message)}};
-}
-
+// A Lua memory error while pushing a result (for example a ReadBytes result
+// near max_read_bytes) is raised by Lua itself; results are bounded by
+// max_read_bytes; see "Known limitations" in FileBridgeNativeContract.hpp.
 Reply failure(const Failure& failed)
 {
     return failure(failed.code, failed.message);
-}
-
-template<class... Values>
-Reply success(Values&&... values)
-{
-    Reply reply;
-    (reply.values.emplace_back(Value(std::forward<Values>(values))), ...);
-    return reply;
-}
-
-// Runs after the native's try block: a Lua memory error while pushing (for
-// example a ReadBytes result near max_read_bytes) is raised by Lua itself and
-// can't be turned into `nil, code, message` here. Results are bounded by
-// max_read_bytes; see "Known limitations" in FileBridgeNativeContract.hpp.
-int push(const Lua& lua, const Reply& reply)
-{
-    for (const auto& value : reply.values)
-    {
-        if (std::holds_alternative<std::monostate>(value)) lua.set_nil();
-        else if (const auto* flag = std::get_if<bool>(&value)) lua.set_bool(*flag);
-        else if (const auto* integer = std::get_if<int64_t>(&value)) lua.set_integer(*integer);
-        else if (const auto* number = std::get_if<double>(&value)) lua.set_number(*number);
-        else lua.set_string(std::get<std::string>(value));
-    }
-    return static_cast<int>(reply.values.size());
-}
-
-// Arguments are consumed left to right (get_* remove argument 1).
-class Call
-{
-public:
-    explicit Call(const Lua& lua) : lua_(lua) {}
-    int64_t integer() { return lua_.get_integer(1); }
-    std::string string()
-    {
-        const auto view = lua_.get_string(1);
-        return std::string(view.data() ? view : std::string_view{}); // copy before any other Lua call (R3)
-    }
-
-private:
-    const Lua& lua_;
-};
-
-bool shape_matches(const Lua& lua, std::string_view shape)
-{
-    if (lua.get_stack_size() != static_cast<int32_t>(shape.size())) return false;
-    for (std::size_t i = 0; i < shape.size(); ++i)
-    {
-        const auto index = static_cast<int32_t>(i + 1);
-        if (shape[i] == 'i' ? !lua.is_integer(index) : !lua.is_string(index)) return false;
-    }
-    return true;
 }
 
 double seconds(int64_t filetime)
@@ -187,11 +132,6 @@ UE4SSXB::LuaDispatchGate& lua_gate()
 // Set once the engine-tick post-callback is registered. It has no
 // unregister, so the DLL then stays loaded until the game exits.
 std::atomic_bool tick_registered{};
-
-std::string session_gone()
-{
-    return "Lua session is not registered or is stopping";
-}
 
 class FileBridgeMod final : public RC::CppUserModBase
 {
@@ -705,7 +645,7 @@ private:
 
 // --- Natives -----------------------------------------------------------------
 
-using Body = Reply (*)(FileBridgeMod&, Call&);
+using Body = Lex::Natives::Body<FileBridgeMod>;
 
 struct NativeEntry
 {
@@ -1310,65 +1250,26 @@ constexpr std::array<NativeEntry, 26> natives{{
     {"TailClose", "ii", &tail_close, false},
 }};
 
-constexpr bool natives_match_contract()
-{
-    if (natives.size() != Contract::native_functions.size()) return false;
-    for (std::size_t i = 0; i < natives.size(); ++i)
-    {
-        if (natives[i].name != Contract::native_functions[i].name) return false;
-        if (static_cast<int32_t>(natives[i].shape.size()) != Contract::native_functions[i].arity) return false;
-    }
-    return true;
-}
-static_assert(natives_match_contract(), "native table differs from FileBridgeNativeContract.hpp");
+static_assert(Lex::Natives::natives_match_contract<natives, Contract::native_functions>(),
+    "native table differs from FileBridgeNativeContract.hpp");
 
-template<std::size_t Index>
-int native_entry(const Lua& lua)
+FileBridgeMod* ready(const NativeEntry& entry, Reply& refusal)
 {
-    const auto& entry = natives[Index];
-    Reply reply;
-    try
+    if (!active_bridge)
     {
-        if (!shape_matches(lua, entry.shape))
-        {
-            reply = failure(ErrorCode::invalid, std::string(entry.name) + ": bad arguments");
-        }
-        else if (!active_bridge)
-        {
-            reply = failure(ErrorCode::io, std::string(entry.name) + ": the bridge is not active");
-        }
-        else if (entry.needs_roots && !active_bridge->roots_ok())
-        {
-            reply = failure(ErrorCode::io, std::string(entry.name) + ": file access is unavailable: " + active_bridge->roots_error());
-        }
-        else
-        {
-            Call call(lua);
-            reply = entry.body(*active_bridge, call);
-        }
+        refusal = Lex::Natives::inactive(entry);
     }
-    catch (const std::exception& error)
+    else if (entry.needs_roots && !active_bridge->roots_ok())
     {
-        reply = failure(ErrorCode::io, std::string(entry.name) + ": internal error: " + error.what());
+        refusal = failure(ErrorCode::io, std::string(entry.name) + ": file access is unavailable: " + active_bridge->roots_error());
+        return nullptr;
     }
-    catch (...)
-    {
-        reply = failure(ErrorCode::io, std::string(entry.name) + ": internal error");
-    }
-    return push(lua, reply);
-}
-
-template<std::size_t... Index>
-void register_all(Lua& lua, std::index_sequence<Index...>)
-{
-    (lua.register_function(std::string(Contract::native_prefix) + std::string(natives[Index].name),
-         Lua::LuaFunction{&native_entry<Index>}),
-        ...);
+    return active_bridge;
 }
 
 void FileBridgeMod::register_natives(Lua& lua)
 {
-    register_all(lua, std::make_index_sequence<natives.size()>{});
+    Lex::Natives::register_natives<natives, &ready>(lua, Contract::native_prefix);
 }
 }
 

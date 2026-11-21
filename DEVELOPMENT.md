@@ -14,7 +14,7 @@ shared/
   contract/                     ImplementationABI.h, the private ABI between the bootstrap and a DLL
   dispatch/                     queue and dispatch code both extensions build against
   ue4ss-abi/                    the pinned UE4SS 97b7e501 headers and import list every extension uses
-  native/                       UE4SS.log reporting and the descriptor export
+  native/                       UE4SS.log reporting, the descriptor export and the native-call scaffolding (LexNatives.hpp)
   cmake/                        LexProduct.cmake: Lua embedding, version resource, selector, import library
   templates/                    Implementation.rc.in, main.json.in, EmbeddedLuaAPI.hpp.in
   lua/                          lex_verify.lua, the harness of every extension's load-time verifications
