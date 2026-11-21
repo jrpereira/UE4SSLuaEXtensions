@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -48,6 +49,37 @@ public:
     // Appends `text` (whole lines) to <folder>/logs/<category>.log.
     virtual void file(const std::string& folder, const std::string& category, const std::string& text) = 0;
 };
+
+// What a start makes of the previous session's journal records: the text of
+// logs/previous-session.log (every record, undelivered ones marked), the lines
+// each `module` file still lacks, keyed by <folder>/logs/<category>.log, and
+// how many records never reached their target.
+struct Recovery
+{
+    std::string previous_session;
+    std::map<std::string, std::string> file_appends;
+    int64_t undelivered{};
+};
+
+inline Recovery assemble_recovery(const std::vector<RecoveredRecord>& records)
+{
+    Recovery recovery;
+    for (const auto& record : records)
+    {
+        const bool lost = record.state != RecordState::delivered;
+        recovery.previous_session +=
+            recovery_line(record.time, record.rank, record.module, record.category, record.message, lost);
+        if (!lost) continue;
+        ++recovery.undelivered;
+        if (record.target == static_cast<uint8_t>(Target::module) && !record.folder.empty() &&
+            valid_category_name(record.category))
+        {
+            recovery.file_appends[record.folder + "/logs/" + record.category + ".log"] +=
+                file_line(record.time, record.rank, record.message);
+        }
+    }
+    return recovery;
+}
 
 struct CoreStats
 {

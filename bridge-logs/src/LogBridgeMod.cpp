@@ -279,24 +279,10 @@ private:
     {
         const auto records = journal_->recover(previous);
         if (records.empty()) return;
-        std::string text;
-        int64_t undelivered = 0;
-        std::unordered_map<std::string, std::string> files;
-        for (const auto& record : records)
-        {
-            const bool lost = record.state != Core::RecordState::delivered;
-            text += Core::recovery_line(record.time, record.rank, record.module, record.category, record.message, lost);
-            if (!lost) continue;
-            ++undelivered;
-            if (record.target == static_cast<uint8_t>(Contract::Target::module) && !record.folder.empty() &&
-                Core::valid_category_name(record.category))
-            {
-                files[record.folder + "/logs/" + record.category + ".log"] +=
-                    Core::file_line(record.time, record.rank, record.message);
-            }
-        }
-        Win32::write_file(logs_folder() + "/previous-session.log", text);
-        for (const auto& [path, lines] : files)
+        const auto recovery = Core::assemble_recovery(records);
+        const auto undelivered = recovery.undelivered;
+        Win32::write_file(logs_folder() + "/previous-session.log", recovery.previous_session);
+        for (const auto& [path, lines] : recovery.file_appends)
         {
             const auto slash = path.rfind('/');
             Win32::make_folder(path.substr(0, slash));

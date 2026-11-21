@@ -1,5 +1,5 @@
 // Loggers and delivery: what is due for each policy, order, periodic timing,
-// a full journal and the no-tick fallback.
+// a full journal, the no-tick fallback and the assembly of crash recovery.
 #include <LogCore.hpp>
 #include <TestSupport.hpp>
 
@@ -181,6 +181,55 @@ void threads()
     CHECK(f.sink.ue4ss_lines.size() == 1000 && lines == 1000);
     CHECK(f.core.stats().delivered == 2000 && f.journal.empty() && !f.core.has_frame_lines());
 }
+// A previous session's journal: what previous-session.log holds and which
+// module files get the lines they never received.
+void recovery_assembly()
+{
+    std::vector<uint8_t> region(Journal::header_bytes + 8192);
+    {
+        Journal journal(region.data(), region.size());
+        journal.open();
+        const auto module = static_cast<uint8_t>(Target::module);
+        const auto ue4ss = static_cast<uint8_t>(Target::ue4ss);
+        const auto add = [&](uint64_t seq, uint8_t target, std::string_view folder, std::string_view category,
+                             std::string_view message, RecordState state) {
+            const auto id = journal.append(JournalEntry{seq, time, 3, target, "Mod", folder, category, message});
+            CHECK(id != 0);
+            if (state != RecordState::written) journal.mark(id, state);
+        };
+        add(1, module, "C:/Mods/Mod", "main", "delivered", RecordState::delivered);
+        add(2, module, "C:/Mods/Mod", "main", "lost main", RecordState::written);
+        add(3, module, "C:/Mods/Mod", "combat", "lost combat", RecordState::delivering);
+        add(4, ue4ss, "C:/Mods/Mod", "main", "lost to UE4SS.log", RecordState::written);
+        add(5, module, "", "main", "lost without a folder", RecordState::written);
+        add(6, module, "C:/Mods/Mod", "main", "lost main again", RecordState::written);
+        // The process "crashes" here.
+    }
+    Journal next(region.data(), region.size());
+    const auto records = next.recover(next.open());
+    CHECK(records.size() == 6);
+    const auto recovery = assemble_recovery(records);
+    CHECK(recovery.undelivered == 5);
+
+    // Every record, in order; only the delivered one is unmarked.
+    std::string expected;
+    for (const auto& record : records)
+    {
+        expected += recovery_line(record.time, record.rank, record.module, record.category, record.message,
+            record.seq != 1);
+    }
+    CHECK(recovery.previous_session == expected);
+    CHECK(recovery.previous_session.find(" * ") != std::string::npos);
+    CHECK(recovery.previous_session.starts_with("2026-11-18 14:03:22.123 INFO"));
+
+    // Only undelivered `module` lines with a folder, grouped per file in order.
+    CHECK(recovery.file_appends.size() == 2);
+    CHECK(recovery.file_appends.at("C:/Mods/Mod/logs/main.log") ==
+        "2026-11-18 14:03:22.123 INFO lost main\n2026-11-18 14:03:22.123 INFO lost main again\n");
+    CHECK(recovery.file_appends.at("C:/Mods/Mod/logs/combat.log") == "2026-11-18 14:03:22.123 INFO lost combat\n");
+
+    CHECK(assemble_recovery({}).previous_session.empty() && assemble_recovery({}).undelivered == 0);
+}
 } // namespace
 
 int main()
@@ -193,5 +242,6 @@ int main()
     full_journal_stalls();
     truncation();
     threads();
+    recovery_assembly();
     return LexTests::finish("CoreTests");
 }
