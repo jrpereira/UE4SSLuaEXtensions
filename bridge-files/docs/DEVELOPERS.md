@@ -30,7 +30,7 @@ Engine 5.5 and Windows x64, the same pin as UE4SSLuaEventBridge.
 Every Lua mod receives its own `UE4SSLuaFileBridge` table when its Lua state
 starts. Everything a mod creates through it (environments, streams,
 subscriptions) belongs to that mod's Lua environment and is closed when it
-stops or reloads.
+stops.
 
 File operations are synchronous. They run on the calling thread and don't need
 the game thread: call them from the mod's main chunk, `LoopAsync`,
@@ -316,7 +316,7 @@ grant is a programming error.
 ## Lifecycle and cleanup
 
 - **Streams and subscriptions** are closed automatically when the mod's Lua
-  environment stops or reloads. Close them yourself when you are done:
+  environment stops. Close them yourself when you are done:
   `stream:Close()` and `subscription:Close()` are idempotent.
 - A stream dropped without `Close` is closed after it is garbage-collected, at
   the latest when its Lua environment stops. Collection timing is not a
@@ -324,8 +324,7 @@ grant is a programming error.
 - **Environments** need no cleanup. Unreferenced ones are released when
   collected. A function taken from an environment
   (`local read = files.ReadText`) keeps that environment alive.
-- **`temp`** is emptied when the bridge starts (once per game launch), not on a
-  Lua reload.
+- **`temp`** is emptied when the bridge starts, once per game launch.
 - **`moddata`** survives uninstalling the mod. Its `.owner` file records which
   mod created it and when it was last written, so leftovers can be found and
   removed by hand.

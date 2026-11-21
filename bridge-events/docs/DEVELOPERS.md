@@ -516,7 +516,7 @@ contexts, and closes the component target. `Close` is idempotent. If a cleanup
 step fails, ownership is retained so a later game-thread call can retry it.
 `Bind` after a successful close returns `nil, "input scope is closed"`.
 
-Call `Close()` on the game thread before reload or shutdown. See
+Call `Close()` on the game thread before shutdown. See
 [session cleanup](#session-cleanup-and-rebinding) for automatic cleanup limits.
 
 ### `input:Refresh()`
@@ -541,7 +541,7 @@ shutdown. Copy the [sample directory](../examples/EnhancedInputTapHold) to
 sample and bridge.
 
 Set `DEBUG_BRIDGE = true` to trace action phases and delivery. Call
-`EnhancedInputTapHold_Shutdown()` from your reload or shutdown path while the
+`EnhancedInputTapHold_Shutdown()` from your shutdown path while the
 Lua state is still alive.
 
 ## Ownership, errors, and lifecycle
@@ -574,7 +574,7 @@ for optional native delivery-health checks.
 
 ### Session cleanup and rebinding
 
-Close scopes explicitly on the game thread before stopping or reloading Lua.
+Close scopes explicitly on the game thread before Lua stops.
 A game-thread Lua stop also attempts helper cleanup. An off-thread stop disables
 callbacks and defers native binding removal until the next game-thread bridge
 operation, but cannot remove helper mapping contexts after the Lua state dies.
@@ -599,7 +599,6 @@ loaded. Function hooks cause it too, in either mode: once any hook has been
 used in the process, the engine may still reach the hook code, and unhooking
 does not avoid it. A later restart of the C++ mods then starts no Event Bridge
 (UE4SS.log says to restart the process) until the game itself restarts.
-Lua-only hot reload is not affected: sessions still stop and start.
 
 A Lua stop off the game thread marks the session inactive and then waits, for
 at most 250 ms, for a delivery pass already running on the game thread, so no
@@ -946,7 +945,7 @@ only when the native side refuses to detach an active hook, which then stays
 active. `Schema` is a diagnostic: it lists
 what the bridge would copy for a resolved function.
 
-Hot reload removes every hook the session owns when the Lua state stops. Call
+The bridge removes every hook the session owns when the Lua state stops. Call
 `Hooks.RemoveAll()` yourself when you tear down earlier. The bridge DLL itself
 stays loaded once any hook has been used (and always with `frame_delivery`):
 restarting the C++ mods leaves no Event Bridge until the game restarts (see

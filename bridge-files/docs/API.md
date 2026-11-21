@@ -58,7 +58,7 @@ native, Lua and documentation tracks together. One point is still pending; see
   game thread, where Unreal work must be scheduled with `ExecuteInGameThread`.
 - **Isolation.** Every Lua environment (each mod's Lua state) receives its own
   `UE4SSLuaFileBridge`. Environments, streams and subscriptions belong to the Lua
-  environment that created them and are closed when it stops or reloads. After
+  environment that created them and are closed when it stops. After
   the Lua environment starts stopping, operations return `nil, "invalid",
   message`. The native functions behind the table are not reachable from mods.
 
@@ -648,7 +648,7 @@ already has 64 open streams.
 | `stream.path` | string | The normalized path, read-only |
 
 After `Close`, `Write` and `Flush` return `nil, "invalid", "stream is closed"`.
-Streams close automatically when their Lua environment stops or reloads. A
+Streams close automatically when their Lua environment stops. A
 stream that is garbage-collected without `Close` is closed after it is
 collected, at the latest when its Lua environment stops (the close runs at the
 next bridge call from that Lua environment, never inside the collector). Close
@@ -746,7 +746,7 @@ this; check `sub.closed`.
 | `sub.closed` | Read-only boolean: `true` after `Close`, a callback error, or a close by the bridge |
 | `sub.path` | The normalized path, read-only |
 
-Subscriptions close automatically when their Lua environment stops or reloads.
+Subscriptions close automatically when their Lua environment stops.
 
 Errors from `Tail`: `not_found`, `denied`, `outside_root`, `invalid` (`fn` is not
 a function, the path is a folder), `io` (64 subscriptions already open).

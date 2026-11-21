@@ -94,7 +94,7 @@ ExecuteInGameThread(function()
     end
 end)
 
--- Call from your mod's shutdown/reload path while its Lua state is still alive.
+-- Call from your mod's shutdown path while its Lua state is still alive.
 function ShutdownBridgeInput()
     ExecuteInGameThread(function()
         if input then
@@ -138,7 +138,7 @@ else
 end
 
 -- hook:Status().state is "active", "orphaned", "failed" or "removed".
--- When your mod reloads: hook:Remove()  (or Hooks.RemoveAll()).
+-- When your mod shuts down: hook:Remove()  (or Hooks.RemoveAll()).
 ```
 
 Hook callbacks observe a call after it was made (delivery is queued, once per
