@@ -303,7 +303,7 @@ public:
         {
             try
             {
-                if (bridge->core_->has_frame_loggers())
+                if (bridge->core_->has_frame_lines())
                 {
                     bridge->frame_.store(true, std::memory_order_release);
                     bridge->wake();

@@ -59,19 +59,24 @@ void frame_and_files()
 {
     Fixture f;
     const auto logger = f.core.register_logger("Mod", "C:/Mods/Mod", policy(Target::module, Frequency::frame), 0);
-    CHECK(f.core.has_frame_loggers());
+    CHECK(!f.core.has_frame_lines()); // a frame logger with nothing pending: the tick stays quiet
     for (int i = 0; i < 3; ++i)
     {
         const auto written = f.core.write(logger, 3, i == 1 ? "combat" : "main", "line " + std::to_string(i), time, 0);
         CHECK(written.ok && !written.wake_worker);
     }
-    CHECK(f.core.due(0) == 0);
+    CHECK(f.core.has_frame_lines());
+    CHECK(f.core.due(0) == 0 && f.core.has_frame_lines());
     CHECK(f.core.due(0, true) == 3);
+    CHECK(!f.core.has_frame_lines());
     // One sink call per file, lines in order.
     CHECK(f.sink.files.size() == 2);
     CHECK(f.sink.files[0] ==
         "C:/Mods/Mod|main|2026-11-18 14:03:22.123 INFO line 0\n2026-11-18 14:03:22.123 INFO line 2\n");
     CHECK(f.sink.files[1] == "C:/Mods/Mod|combat|2026-11-18 14:03:22.123 INFO line 1\n");
+    CHECK(f.core.due(0, true) == 0); // nothing pending: an early return
+    f.core.write(logger, 3, "main", "flushed", time, 0);
+    CHECK(f.core.has_frame_lines() && f.core.all(0) == 1 && !f.core.has_frame_lines());
 }
 
 void policies()
@@ -113,8 +118,9 @@ void no_tick_fallback()
     const auto now = f.core.register_logger("Now", "F", policy(Target::ue4ss, Frequency::immediate), 0);
     const auto p = f.core.policy(frame);
     CHECK(p.frequency == Frequency::periodic && p.interval_ms == LogCore::frame_fallback_ms);
-    CHECK(f.core.policy(now).frequency == Frequency::immediate && !f.core.has_frame_loggers());
+    CHECK(f.core.policy(now).frequency == Frequency::immediate);
     f.core.write(frame, 4, "main", "late", time, 0);
+    CHECK(!f.core.has_frame_lines()); // no tick to ask
     CHECK(f.core.due(10) == 0 && f.core.due(16) == 1);
 
     // Decided late: a logger registered while the tick was assumed falls back when it turns out missing.
@@ -173,7 +179,7 @@ void threads()
         for (char c : text) lines += c == '\n';
     }
     CHECK(f.sink.ue4ss_lines.size() == 1000 && lines == 1000);
-    CHECK(f.core.stats().delivered == 2000 && f.journal.empty());
+    CHECK(f.core.stats().delivered == 2000 && f.journal.empty() && !f.core.has_frame_lines());
 }
 } // namespace
 

@@ -131,6 +131,7 @@ public:
                     ++next_seq_;
                     ++written_;
                     pending_.push_back(Pending{slot, logger});
+                    if (owner.policy.frequency == Frequency::frame) frame_lines_.fetch_add(1, std::memory_order_release);
                     return Written{true, policy.frequency == Frequency::immediate};
                 }
                 ++stalls_;
@@ -173,14 +174,11 @@ public:
         return wait;
     }
 
-    [[nodiscard]] bool has_frame_loggers() const
+    // Whether a frame-frequency line waits for the next frame. Lock-free: the
+    // engine tick asks every frame.
+    [[nodiscard]] bool has_frame_lines() const
     {
-        std::scoped_lock lock(mutex_);
-        for (const auto& [_, logger] : loggers_)
-        {
-            if (effective(logger.policy).frequency == Frequency::frame) return true;
-        }
-        return false;
+        return tick_.load(std::memory_order_acquire) && frame_lines_.load(std::memory_order_acquire) > 0;
     }
 
     [[nodiscard]] CoreStats stats() const
@@ -224,6 +222,7 @@ private:
     int64_t written_{};
     int64_t delivered_{};
     int64_t stalls_{};
+    std::atomic<int64_t> frame_lines_{0}; // pending lines of frame-frequency loggers
 
     // Without the engine tick, frame becomes periodic at 16 ms.
     Policy effective(Policy policy) const
@@ -252,8 +251,10 @@ private:
         std::vector<Line> batch;
         {
             std::scoped_lock lock(mutex_);
+            if (pending_.empty()) return 0;
             std::unordered_map<int64_t, bool> due;
             std::deque<Pending> kept;
+            int64_t frame_lines = 0;
             for (const auto& pending : pending_)
             {
                 auto& logger = loggers_.at(pending.logger);
@@ -264,12 +265,14 @@ private:
                 }
                 journal_.mark(pending.slot, RecordState::delivering);
                 batch.push_back(Line{pending.slot, logger.policy.target, journal_.read(pending.slot)});
+                if (logger.policy.frequency == Frequency::frame) ++frame_lines;
             }
             for (const auto& [id, is_due] : due)
             {
                 if (is_due) loggers_.at(id).last_delivery_ms = now_ms;
             }
             pending_.swap(kept);
+            if (frame_lines != 0) frame_lines_.fetch_sub(frame_lines, std::memory_order_release);
         }
         if (batch.empty()) return 0;
         emit(batch);
