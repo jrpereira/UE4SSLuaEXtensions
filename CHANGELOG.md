@@ -3,6 +3,19 @@
 Changes to the package's own folder, `0_ModCore_UE4SSLuaEXtensions`. Each
 extension keeps its own changelog in its folder.
 
+## Unreleased
+
+### Changes
+
+- The extensions menu lists UE4SSLuaLogBridge as a fourth section, "Logs
+  Extension".
+- Each extension's settings are stored in its own `config.ini` under
+  `[UE4SSLuaEXtensions.<Slot>]`, keyed by the setting's own id. An extension
+  without a `mod_settings.ini` keeps its load-time verification switch in
+  `config.ini` `[UE4SSLuaEXtensions.<Slot>] EnableVerifications` instead of
+  `settings.ini` `[Settings]`, which is no longer read, so the switch returns
+  to its default until set again.
+
 ## v1.3.3
 
 ### Changes
