@@ -7,6 +7,11 @@ extension keeps its own changelog in its folder.
 
 ### Changes
 
+- The Log Bridge re-reads its config.ini when ModCore Settings applies the
+  Logs page or reloads config (its Reload Config button, or the game window
+  regaining focus). This folder subscribes for it, with ModCore Settings'
+  settings API version 3.
+
 - The package includes UE4SSLuaLogBridge, and the extensions menu lists it as
   a fourth section, "Logs Extension".
 - Each extension's settings are stored in its own `config.ini` under

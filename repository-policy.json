@@ -3,6 +3,7 @@
   "vendored": {
     "tests/support/lifetimes.lua": "UE4SSLuaEXtensions",
     "extensions-menu/Scripts/vendor/menu_contributions.lua": "ModCoreSettings",
-    "extensions-menu/Scripts/vendor/safe_file.lua": "ModCoreSettings"
+    "extensions-menu/Scripts/vendor/safe_file.lua": "ModCoreSettings",
+    "extensions-menu/Scripts/vendor/settings_api.lua": "ModCoreSettings"
   }
 }

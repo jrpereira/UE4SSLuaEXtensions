@@ -18,6 +18,8 @@ M.name = 'ModCore Lua Extensions'
 -- Order here is the order of the sections. contributor publishes the hidden page that holds the
 -- extension's settings; it must differ from the extension's own id, which its mod_settings.ini
 -- already puts in the menu. slot names the extension's section and slot on this folder's page.
+-- reload names the global of an extension whose settings apply while the game runs: its
+-- environment's ReloadSettings() re-reads them (see M.subscribeReloads).
 M.extensions = {
     {id = 'UE4SSLuaEventBridge', folder = '0_ModCore_UE4SSLuaEventBridge', label = 'Events Extension',
         title = 'UE4SS Lua Event Bridge', slot = 'Events', contributor = 'UE4SSLuaEXtensions.Events'},
@@ -26,7 +28,8 @@ M.extensions = {
     {id = 'UE4SSLuaSoundBridge', folder = '0_ModCore_UE4SSLuaSoundBridge', label = 'Sounds Extension',
         title = 'UE4SS Lua Sound Bridge', slot = 'Sounds', contributor = 'UE4SSLuaEXtensions.Sounds'},
     {id = 'UE4SSLuaLogBridge', folder = '0_ModCore_UE4SSLuaLogBridge', label = 'Logs Extension',
-        title = 'UE4SS Lua Log Bridge', slot = 'Logs', contributor = 'UE4SSLuaEXtensions.Logs'},
+        title = 'UE4SS Lua Log Bridge', slot = 'Logs', contributor = 'UE4SSLuaEXtensions.Logs',
+        reload = 'UE4SSLuaLogBridge'},
 }
 
 -- The address of an extension's slot on this folder's page.
@@ -160,6 +163,29 @@ end
 
 -- The publishing directory of one contributor, inside this folder's cache.
 function M.directory(cache, id) return cache .. '/' .. id end
+
+-- For each installed extension with a reload global: when ModCore Settings applies its page
+-- (subscribe, keyed by the page's contributor id) or fans out a config reload (onReload),
+-- call <global>().ReloadSettings(). settings is the vendored settings_api; globals looks a
+-- global up (rawget on _G in the game). Returns the extensions subscribed.
+function M.subscribeReloads(found, settings, globals)
+    local subscribed = {}
+    for _, extension in ipairs(found) do
+        if extension.reload then
+            local function reload()
+                local bridge = globals(extension.reload)
+                if bridge == nil then return end
+                local env = bridge()
+                local ok, code, message = env.ReloadSettings()
+                if not ok then error(extension.reload .. '.ReloadSettings: ' .. tostring(message or code), 0) end
+            end
+            settings.subscribe(extension.contributor, reload)
+            settings.onReload(extension.contributor, reload)
+            subscribed[#subscribed + 1] = extension
+        end
+    end
+    return subscribed
+end
 
 -- Makes sure a directory exists and takes files. Only a file written into it counts: a mkdir's
 -- own result is not trusted, since early in UE4SS's startup a shell mkdir may report failure for

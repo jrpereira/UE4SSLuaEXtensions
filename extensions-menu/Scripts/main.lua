@@ -78,5 +78,10 @@ local ok, why = pcall(function()
             {id = entry.id, directory = directory}):publish(entry.contribution)
     end
     print(string.format('[UE4SSLuaEXtensions] menu published for %d extension(s)\n', menu.count(found)))
+    -- Settings that apply while the game runs (the Log Bridge's levels) are re-read when
+    -- ModCore Settings applies their page or reloads config (its button, the window's focus).
+    local reloading, reloadWhy = pcall(menu.subscribeReloads, found, require('settings_api'),
+        function(name) return rawget(_G, name) end)
+    if not reloading then print('[UE4SSLuaEXtensions] config reload unavailable: ' .. tostring(reloadWhy) .. '\n') end
 end)
 if not ok then print('[UE4SSLuaEXtensions] menu unavailable: ' .. tostring(why) .. '\n') end

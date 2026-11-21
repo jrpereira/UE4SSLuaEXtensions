@@ -159,4 +159,33 @@ do -- a call that reports success without creating it is a failure, with each wa
         and why:find('makeDir: no file can be written there', 1, true) and why:find('shell refused', 1, true), why)
 end
 
+-- Config reload: only the Log Bridge reloads at run time, on its page's Apply and on a reload.
+do
+    local LOGS = '0_ModCore_UE4SSLuaLogBridge'
+    local applied, reloaded, reloads = {}, {}, 0
+    local settings = {
+        subscribe = function(id, callback) applied[id] = callback end,
+        onReload = function(id, callback) reloaded[id] = callback end,
+    }
+    local bridge = function() return {ReloadSettings = function() reloads = reloads + 1 return true end} end
+    local globals = function(name) return name == 'UE4SSLuaLogBridge' and bridge or nil end
+    local found = Menu.installed('/mods', present(EVENTS, FILES, SOUNDS, LOGS))
+    local subscribed = Menu.subscribeReloads(found, settings, globals)
+    assert(#subscribed == 1 and subscribed[1].id == 'UE4SSLuaLogBridge')
+    assert(next(applied) == 'UE4SSLuaEXtensions.Logs' and next(reloaded) == 'UE4SSLuaEXtensions.Logs')
+    applied['UE4SSLuaEXtensions.Logs']({revision = 1})
+    reloaded['UE4SSLuaEXtensions.Logs']({revision = 1, reason = 'focus', time = 0})
+    assert(reloads == 2)
+    -- Without the Log Bridge installed nothing is subscribed; without its global nothing runs.
+    assert(#Menu.subscribeReloads(Menu.installed('/mods', present(EVENTS)), settings, globals) == 0)
+    Menu.subscribeReloads(found, settings, function() return nil end)
+    applied['UE4SSLuaEXtensions.Logs']({revision = 2})
+    assert(reloads == 2)
+    -- A refused reload raises, so settings_api reports it.
+    local refusing = function() return function() return {ReloadSettings = function() return nil, 'invalid', 'no' end} end end
+    Menu.subscribeReloads(found, settings, refusing)
+    local ok, why = pcall(reloaded['UE4SSLuaEXtensions.Logs'], {revision = 3})
+    assert(not ok and why:find('ReloadSettings: no', 1, true), why)
+end
+
 print('PASS extensions menu: detection, count, sections, settings files, storage and publishing as a ModCore Settings module')
