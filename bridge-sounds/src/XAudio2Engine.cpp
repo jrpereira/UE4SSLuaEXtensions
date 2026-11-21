@@ -342,8 +342,14 @@ struct Engine::Impl
             HRESULT error = S_OK;
             {
                 std::unique_lock lock(mutex);
-                const auto wait = backend.xaudio ? std::chrono::milliseconds(100) : std::chrono::milliseconds(1000);
-                wake.wait_for(lock, wait, [this] { return quit || !queue.empty() || device_changed || engine_failed; });
+                const auto woken = [this] { return quit || !queue.empty() || device_changed || engine_failed; };
+                // Idle (nothing playing, no sample waiting to be freed): sleep
+                // until a command or a device event; post and both raise_*
+                // notify. Otherwise reap every 100 ms, or retry a missing
+                // device every second.
+                if (!backend.xaudio) wake.wait_for(lock, std::chrono::milliseconds(1000), woken);
+                else if (pool.playing() == 0 && pool.retired() == 0) wake.wait(lock, woken);
+                else wake.wait_for(lock, std::chrono::milliseconds(100), woken);
                 if (quit) break;
                 work.swap(queue);
                 rebuild = device_changed || engine_failed;
