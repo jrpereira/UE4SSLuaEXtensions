@@ -169,6 +169,11 @@ struct Session
 };
 
 class LogBridgeMod;
+// The unload handshake with the engine tick (which can't be unregistered) is
+// sequentially consistent: the destructor stores active_bridge and then loads
+// tick_users, the tick increments tick_users and then loads active_bridge, so
+// either the tick sees nullptr or the destructor sees the tick. Release and
+// acquire alone would let each side miss the other's write.
 std::atomic<LogBridgeMod*> active_bridge{};
 std::atomic<int> tick_users{};
 std::atomic<bool> tick_registered{};
@@ -208,8 +213,8 @@ public:
 
     ~LogBridgeMod() override
     {
-        active_bridge.store(nullptr, std::memory_order_release);
-        for (int spin = 0; spin < 1000 && tick_users.load(std::memory_order_acquire) != 0; ++spin)
+        active_bridge.store(nullptr, std::memory_order_seq_cst);
+        for (int spin = 0; spin < 1000 && tick_users.load(std::memory_order_seq_cst) != 0; ++spin)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -297,8 +302,8 @@ public:
 
     static void on_engine_tick()
     {
-        tick_users.fetch_add(1, std::memory_order_acq_rel);
-        auto* bridge = active_bridge.load(std::memory_order_acquire);
+        tick_users.fetch_add(1, std::memory_order_seq_cst);
+        auto* bridge = active_bridge.load(std::memory_order_seq_cst);
         if (bridge)
         {
             try
