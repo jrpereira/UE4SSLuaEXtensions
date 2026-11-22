@@ -77,18 +77,26 @@ for _, extension in ipairs(Menu.extensions) do
     assert(table.concat(Menu.settingIds(fallback), ',') == extension.slot .. '_EnableVerifications')
 end
 
--- Publishing: this folder's page comes first and is listed as its mod; each extension's hidden
--- page fills its section, so its own entry is hidden.
+-- Publishing: this folder's page comes first; it is ModCore Settings' Extensions tab, so it is
+-- hidden, its rows fill settings:extensions and its folder's entry opens that tab. Each
+-- extension's hidden page fills its section, so its own entry is hidden.
 local files_read = {['/mods/' .. EVENTS .. '/mod_settings.ini'] = ini}
 local function read(path) return files_read[path] end
 local list = Menu.contributions(both, '/mods/0_ModCore_UE4SSLuaEXtensions', '/mods', '1.1.0', read)
 assert(#list == 3 and list[1].id == 'UE4SSLuaEXtensions' and list[2].id == 'UE4SSLuaEXtensions.Events'
     and list[3].id == 'UE4SSLuaEXtensions.Files')
-local countPage = list[1].contribution.pages[1]
-assert(countPage.visible == nil and countPage.attach == '0_ModCore_UE4SSLuaEXtensions'
-    and countPage.version == '1.1.0' and countPage.name == 'ModCore Lua Extensions',
-    "the folder's entry is this page")
-assert(list[1].contribution.rows == nil, 'the host page fills no slot')
+local countPage, entryPage = list[1].contribution.pages[1], list[1].contribution.pages[2]
+assert(countPage.visible == false and countPage.attach == nil and countPage.id == 'UE4SSLuaEXtensions'
+    and countPage.version == '1.1.0' and countPage.name == 'ModCore Lua Extensions'
+    and countPage.configDirectory == '/mods/0_ModCore_UE4SSLuaEXtensions', 'this page is hidden')
+assert(#list[1].contribution.pages == 2 and entryPage.id == 'UE4SSLuaEXtensions.entry'
+    and entryPage.name == 'ModCore Lua Extensions' and entryPage.attach == '0_ModCore_UE4SSLuaEXtensions'
+    and entryPage.link == 'settings:extensions' and entryPage.manifest == nil and entryPage.version == '1.1.0',
+    "the folder's entry opens the Extensions tab")
+local hostRows = list[1].contribution.rows
+assert(#hostRows == 1 and hostRows[1].page == 'UE4SSLuaEXtensions' and hostRows[1].slot == 'settings:extensions'
+    and table.concat(hostRows[1].settings, ',') == 'LEX_Installed,LEX_Events,LEX_Files',
+    'every row of the page, in order, fills the Extensions tab')
 for n, extension in ipairs(both) do
     local contribution = list[n + 1].contribution
     local page = contribution.pages[1]

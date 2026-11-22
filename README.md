@@ -45,7 +45,7 @@ Mods/
 └── 0_ModCore_UE4SSLuaSoundBridge/
 ```
 
-`0_ModCore_UE4SSLuaEXtensions` lists the installed extensions in ModCore Settings' mod list as one module, ModCore Lua Extensions. Its page shows how many extensions are installed, then a section for each one holding that extension's own settings (from its mod_settings.ini). The extensions are then not listed as separate mods. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
+`0_ModCore_UE4SSLuaEXtensions` gathers the installed extensions' settings on the **Extensions** tab of the ModCore Settings page: how many extensions are installed, then a section for each one holding that extension's own settings (from its mod_settings.ini), each still saved in that extension's config.ini. ModCore Lua Extensions' entry in the mod list opens the tab, and the extensions are not listed as separate mods. With a ModCore Settings that has no Extensions tab, ModCore Lua Extensions is listed as its own page with the same sections. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
 
 Each extension folder's `docs` subfolder holds the README, developer guide, examples and license for mod authors.
 

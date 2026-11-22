@@ -36,7 +36,7 @@ The Nexus download is one ZIP holding all four extensions. Extract it into the U
 ├── 0_ModCore_UE4SSLuaLogBridge/
 └── 0_ModCore_UE4SSLuaSoundBridge/[/code]
 
-[font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] lists the installed extensions in ModCore Settings' mod list as one module, ModCore Lua Extensions. Its page shows how many extensions are installed, then a section for each one holding that extension's own settings (from its mod_settings.ini). The extensions are then not listed as separate mods. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
+[font=Courier New]0_ModCore_UE4SSLuaEXtensions[/font] gathers the installed extensions' settings on the [b]Extensions[/b] tab of the ModCore Settings page: how many extensions are installed, then a section for each one holding that extension's own settings (from its mod_settings.ini), each still saved in that extension's config.ini. ModCore Lua Extensions' entry in the mod list opens the tab, and the extensions are not listed as separate mods. With a ModCore Settings that has no Extensions tab, ModCore Lua Extensions is listed as its own page with the same sections. Without ModCore Settings, or without this folder, the extensions work the same and are listed on their own.
 
 Each extension folder's [font=Courier New]docs[/font] subfolder holds the README, developer guide, examples and license for mod authors.
 

@@ -7,6 +7,11 @@ extension keeps its own changelog in its folder.
 
 ### Changes
 
+- The extensions' settings are the **Extensions** tab of the ModCore Settings page,
+  between Templates and Developer Tools: the installed count, then each extension's
+  section, each saved in its own config.ini as before, and the Log Bridge's levels
+  still applied at once. ModCore Lua Extensions' entry in the mod list opens the tab.
+  A ModCore Settings without the tab lists the page on its own, as before.
 - The Logs section lists, under the global level, a row for every mod that
   registered a logger with the Log Bridge (1.0.0, API 2), which also sets its
   `main` category, and one for each other category it registered, each set to

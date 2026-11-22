@@ -1,12 +1,15 @@
 -- Lists the UE4SS Lua extensions installed beside this folder as one ModCore Settings module.
 --
--- This folder publishes a visible page attached to itself, so it becomes the "ModCore Lua
--- Extensions" entry in the mod list. The page shows how many extensions are installed, then a
--- section per installed extension, each holding one slot. Each extension publishes a hidden page
--- built from its own mod_settings.ini whose rows fill its slot with all of its settings; the page
--- is attached to the extension, so the extension's own entry is hidden and its settings show
--- here instead, each with the extension's own storage. Without the slots (a ModCore Settings that
--- cannot host rows) the hidden pages show as ordinary pages, so nothing becomes unreachable.
+-- This folder's page shows how many extensions are installed, then a section per installed
+-- extension, each holding one slot. It is ModCore Settings' Extensions tab: the page is hidden
+-- and its rows fill the slot settings:extensions, keeping their sections, and the "ModCore Lua
+-- Extensions" entry in the mod list, attached to this folder, opens that tab. Each extension
+-- publishes a hidden page built from its own mod_settings.ini whose rows fill its slot with all
+-- of its settings; the page is attached to the extension, so the extension's own entry is hidden
+-- and its settings show in its section instead, each with the extension's own storage. Without
+-- the tab (an older ModCore Settings) this folder's page is listed on its own, and without the
+-- slots (a ModCore Settings that cannot host rows) the hidden pages show as ordinary pages, so
+-- nothing becomes unreachable.
 --
 -- Everything here is pure: the caller supplies the mods directory, a file test and a reader.
 
@@ -368,14 +371,28 @@ function M.extensionContribution(extension, directory, text, levels)
     }}
 end
 
+-- ModCore Settings' tab this folder's page fills.
+M.TAB = 'settings:extensions'
+
 -- What to publish: a list of {id=, contribution=} in publishing order. This folder's page comes
--- first: it hosts the slots. Each contributor needs its own directory: publishers name their
--- files by generation only. root: this mod's folder. modsDirectory: the folder holding all mods.
--- read(path) returns a file's text, or nil. levels: as for M.extensionContribution.
+-- first: it hosts the slots. It is hidden, its rows fill ModCore Settings' Extensions tab, and
+-- its mod list entry (<id>.entry) opens that tab. Each contributor needs its own directory:
+-- publishers name their files by generation only. root: this mod's folder. modsDirectory: the
+-- folder holding all mods. read(path) returns a file's text, or nil. levels: as for
+-- M.extensionContribution.
 function M.contributions(found, root, modsDirectory, version, read, levels)
+    local manifest = M.pageManifest(found)
+    local ids, rows = M.settingIds(manifest), {}
+    for first = 1, #ids, ROWS_PER_ENTRY do
+        rows[#rows + 1] = {page = M.id, slot = M.TAB,
+            settings = table.move(ids, first, math.min(first + ROWS_PER_ENTRY - 1, #ids), 1, {})}
+    end
     local out = {{id = M.id, contribution = {
-        pages = {{id = M.id, name = M.name, version = version, manifest = M.pageManifest(found),
-            configDirectory = root, attach = root:match('([^/\\]+)$')}},
+        pages = {{id = M.id, name = M.name, version = version, manifest = manifest,
+            configDirectory = root, visible = false},
+            {id = M.id .. '.entry', name = M.name, version = version, attach = root:match('([^/\\]+)$'),
+                link = M.TAB}},
+        rows = rows,
     }}}
     for _, extension in ipairs(found) do
         local directory = modsDirectory .. '/' .. extension.folder
