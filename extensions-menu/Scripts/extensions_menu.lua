@@ -143,8 +143,8 @@ end
 -- The Log Bridge's level rows ----------------------------------------------------------------
 --
 -- Under the Global level row, one picker per module the bridge lists (ListLoggers), then one
--- per category, indented. Each stores its rank in the bridge's config.ini, [Levels]
--- <Module>=<rank> or <Module>.<category>=<rank>; 0 is Inherit, which the bridge reads as no
+-- per category it registered beyond main, indented. Each stores its rank in the bridge's
+-- config.ini, [Levels] <Module>=<rank> or <Module>.<category>=<rank>; 0 is Inherit, which the bridge reads as no
 -- level of its own. ModCore Settings writes every row's key when the page opens, so Inherit
 -- cannot be a missing key.
 
@@ -174,13 +174,32 @@ local function lines(text)
     return out
 end
 
+-- The [Levels] keys a list (ListLoggers' modules) registered this session, folded: each loaded
+-- module and each loaded category other than main.
+function M.registeredKeys(list)
+    local registered = {}
+    for _, module in ipairs(list or {}) do
+        local name = module.name:lower()
+        if module.loaded ~= false then registered[name] = true end
+        for _, category in ipairs(module.categories or {}) do
+            if category.loaded ~= false and category.name:lower() ~= 'main' then
+                registered[name .. '.' .. category.name:lower()] = true
+            end
+        end
+    end
+    return registered
+end
+
 -- config.ini text with its [Levels] entries made readable by the menu, which stores ranks: a
 -- level name becomes its rank, an unknown value Inherit (0, as the bridge already reads it),
--- and repeated keys (any case) one entry with the last value, where the first was. Other
--- lines are kept as they are. Returns the text and whether it changed, and the keys, folded
--- to their spelling in the file.
-function M.normalizeLevels(text)
-    local out, keys, at, section = {}, {}, {}, nil
+-- and repeated keys (any case) one entry with the last value, where the first was. With list
+-- (ListLoggers' modules) the entries are also tidied: <Module>.main folds into <Module>, the
+-- module row's key (the module's own level wins when both are set), and an Inherit entry
+-- that names nothing registered this session goes, since it sets nothing. Other lines are
+-- kept as they are. Returns the text and whether it changed, and the keys left, folded to
+-- their spelling in the file.
+function M.normalizeLevels(text, list)
+    local out, keys, at, ranks, section = {}, {}, {}, {}, nil
     for _, entry in ipairs(lines(text or '')) do
         local line = entry.text:gsub('\r$', '')
         local cr = entry.text:sub(-1) == '\r' and '\r' or ''
@@ -190,19 +209,54 @@ function M.normalizeLevels(text)
         if not header and section == 'levels' and key and key ~= '' then
             local folded = key:lower()
             local rank = M.rankOf(value) or 0
-            local rewritten = key .. '=' .. rank
+            ranks[folded] = rank
             if at[folded] then
                 local first = out[at[folded]]
                 first.text = keys[folded] .. '=' .. rank .. first.cr
                 out[#out + 1] = false
             else
                 keys[folded] = key
-                out[#out + 1] = {text = rewritten .. cr, cr = cr, ending = entry.ending}
+                out[#out + 1] = {text = key .. '=' .. rank .. cr, cr = cr, ending = entry.ending}
                 at[folded] = #out
             end
         else
             out[#out + 1] = {text = entry.text, cr = cr, ending = entry.ending}
         end
+    end
+    local function set(folded, rank)
+        ranks[folded] = rank
+        out[at[folded]].text = keys[folded] .. '=' .. rank .. out[at[folded]].cr
+    end
+    local function drop(folded)
+        out[at[folded]] = false
+        at[folded], keys[folded], ranks[folded] = nil, nil, nil
+    end
+    if list then
+        local mains = {}
+        for folded in pairs(at) do
+            if folded:match('^.+%.main$') then mains[#mains + 1] = folded end
+        end
+        table.sort(mains)
+        for _, folded in ipairs(mains) do
+            local module = folded:sub(1, -6)
+            local rank = ranks[folded]
+            if at[module] then
+                if ranks[module] == 0 and rank ~= 0 then set(module, rank) end
+                drop(folded)
+            elseif rank ~= 0 then
+                at[module], keys[module] = at[folded], keys[folded]:sub(1, #module)
+                at[folded], keys[folded], ranks[folded] = nil, nil, nil
+                set(module, rank)
+            else
+                drop(folded)
+            end
+        end
+        local registered = M.registeredKeys(list)
+        local idle = {}
+        for folded in pairs(at) do
+            if ranks[folded] == 0 and not registered[folded] then idle[#idle + 1] = folded end
+        end
+        for _, folded in ipairs(idle) do drop(folded) end
     end
     local parts = {}
     for _, entry in ipairs(out) do
@@ -222,8 +276,11 @@ end
 
 -- The level rows (manifest text) for list (ListLoggers' modules, nil or empty for none) and
 -- keys (normalizeLevels' keys: the spelling of each [Levels] key in config.ini). Modules are
--- sorted by name; a module that has not registered this session, or a category only
--- [Levels] names, says so. Returns the text and the number of rows.
+-- sorted by name. A module's row is its main category's, so main has no row of its own; a
+-- category row follows for each other category it registered. A module or category that has
+-- not registered this session shows, marked so, only while [Levels] sets it (a module also
+-- when one of its categories shows), so it can be cleared. Returns the text and the number of
+-- rows.
 function M.levelRows(list, keys)
     keys = keys or {}
     local modules = {}
@@ -243,19 +300,28 @@ function M.levelRows(list, keys)
         return true
     end
     for _, module in ipairs(modules) do
-        local moduleKey = keys[module.name:lower()] or module.name
-        local absent = module.loaded == false and ' (not loaded)' or ''
-        if not row(moduleKey, module.name .. absent, 'The level of ' .. module.name .. "'s lines. Inherit: the "
-            .. "module's own default level when it sets one, else the global level. Takes effect at once.") then
-            break
-        end
+        local folded = module.name:lower()
+        local moduleKey = keys[folded] or module.name
+        local categories = {}
         for _, category in ipairs(module.categories or {}) do
-            local folded = (module.name .. '.' .. category.name):lower()
-            local key = keys[folded] or (moduleKey .. '.' .. category.name)
-            local missing = category.loaded == false and ' (not loaded)' or ''
-            if not row(key, M.INDENT .. category.name .. missing, 'The level of ' .. module.name .. "'s "
-                .. category.name .. ' lines. Inherit: the level of ' .. module.name .. '. Takes effect at once.') then
+            local categoryFolded = folded .. '.' .. category.name:lower()
+            if category.name:lower() ~= 'main' and (category.loaded ~= false or keys[categoryFolded]) then
+                categories[#categories + 1] = {name = category.name, loaded = category.loaded,
+                    key = keys[categoryFolded] or (moduleKey .. '.' .. category.name)}
+            end
+        end
+        if module.loaded ~= false or keys[folded] or #categories > 0 then
+            local absent = module.loaded == false and ' (not loaded)' or ''
+            if not row(moduleKey, module.name .. absent, 'The level of ' .. module.name .. "'s lines. Inherit: the "
+                .. "module's own default level when it sets one, else the global level. Takes effect at once.") then
                 break
+            end
+            for _, category in ipairs(categories) do
+                local missing = category.loaded == false and ' (not loaded)' or ''
+                if not row(category.key, M.INDENT .. category.name .. missing, 'The level of ' .. module.name .. "'s "
+                    .. category.name .. ' lines. Inherit: the level of ' .. module.name .. '. Takes effect at once.') then
+                    break
+                end
             end
         end
     end

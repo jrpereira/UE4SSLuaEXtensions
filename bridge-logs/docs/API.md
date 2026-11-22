@@ -156,9 +156,16 @@ MyMod=DEBUG
 MyMod.combat=TRACE
 ```
 
+`MyMod=LEVEL` sets the module, its `main` category included; `MyMod.combat`
+sets one category over it.
+
 The ModCore Settings menu edits `GlobalLevel` (1 for TRACE to 7 for OFF; a
-name works too) and, under it, each module listed by `ListLoggers` and its
-registered categories, stored in `[Levels]` as ranks. A `[Levels]` value of `0` or
+name works too) and, under it, a row per module listed by `ListLoggers` (which also
+sets its `main` category) and one per category it registered beyond `main`,
+stored in `[Levels]` as ranks. The menu folds a `MyMod.main` key into `MyMod`
+and drops Inherit keys for modules and categories that did not register this
+session; a key that still sets a level for one of them shows as not loaded
+until it is set back to Inherit. A `[Levels]` value of `0` or
 `inherit` (the menu's Inherit) sets no level, so the key falls through to the
 next step above. The bridge reads the file when the game starts, and edits
 apply when ModCore Settings applies the Logs page, when

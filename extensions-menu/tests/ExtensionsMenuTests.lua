@@ -206,33 +206,72 @@ do
     assert(select(2, Menu.normalizeLevels('')) == false and select(2, Menu.normalizeLevels(nil)) == false)
     assert(Menu.rankOf(' Warning ') == 4 and Menu.rankOf('0') == 0 and Menu.rankOf('8') == nil)
 
-    -- A row per module, sorted, then its categories indented under it; keys keep config.ini's spelling.
+    -- A row per module, sorted, then its categories beyond main indented under it; keys keep
+    -- config.ini's spelling. The module row is main's: main never has a row of its own.
     local list = {
         {name = 'Zeta', loaded = true, categories = {{name = 'main', loaded = true}}},
         {name = 'Preymonition', loaded = true, categories = {{name = 'main', loaded = true},
-            {name = 'combat', loaded = true}, {name = 'net', loaded = false}}},
+            {name = 'combat', loaded = true}, {name = 'net', loaded = false}, {name = 'old', loaded = false}}},
         {name = 'Gone Mod', loaded = false, categories = {}},
+        {name = 'Idle Mod', loaded = false, categories = {}},
+        {name = 'Parent', loaded = false, categories = {{name = 'main', loaded = false}, {name = 'ai', loaded = false}}},
     }
-    local rows, count = Menu.levelRows(list, {preymonition = 'preymonition', ['preymonition.combat'] = 'PREYMONITION.Combat'})
-    assert(count == 7)
-    local order = {}
-    for label in rows:gmatch('\nLabel=([^\n]+)') do order[#order + 1] = label end
+    local stored = {preymonition = 'preymonition', ['preymonition.combat'] = 'PREYMONITION.Combat',
+        ['preymonition.net'] = 'Preymonition.net', ['gone mod'] = 'Gone Mod', ['parent.ai'] = 'Parent.ai'}
+    local rows, count = Menu.levelRows(list, stored)
+    local function labels(text)
+        local order = {}
+        for label in text:gmatch('\nLabel=([^\n]+)') do order[#order + 1] = label end
+        return table.concat(order, ',')
+    end
     local I = Menu.INDENT
-    assert(table.concat(order, ',') == table.concat({'Gone Mod (not loaded)', 'Preymonition', I .. 'main', I .. 'combat',
-        I .. 'net (not loaded)', 'Zeta', I .. 'main'}, ','), table.concat(order, ','))
+    -- Not loaded shows only while [Levels] sets it (a module also for a category it holds).
+    assert(labels(rows) == table.concat({'Gone Mod (not loaded)', 'Parent (not loaded)', I .. 'ai (not loaded)',
+        'Preymonition', I .. 'combat', I .. 'net (not loaded)', 'Zeta'}, ','), labels(rows))
+    assert(count == 7)
+    assert(not rows:find('main', 1, true), 'no main row')
     assert(rows:find('Id=Level_Gone_Mod\n', 1, true) and rows:find('ConfigKey=Gone Mod\n', 1, true))
     assert(rows:find('ConfigKey=preymonition\n', 1, true) and rows:find('ConfigKey=PREYMONITION.Combat\n', 1, true))
-    assert(rows:find('ConfigKey=preymonition.main\n', 1, true) and rows:find('ConfigKey=preymonition.net\n', 1, true))
+    assert(rows:find('ConfigKey=Preymonition.net\n', 1, true) and rows:find('ConfigKey=Parent.ai\n', 1, true))
     assert(rows:find('Group=Levels\nPresetValues=0|1|2|3|4|5|6|7\nPresetLabels=Inherit|Trace|Debug|Info|Warn|Error|Critical|Off\n'
         .. 'Default=0\nConfigSection=Levels\n', 1, true))
     assert(select(2, rows:gsub('%[Setting%.', '')) == 7)
+    -- A module that registered only main is one row.
+    local single, one = Menu.levelRows({{name = 'Fangdango', loaded = true, categories = {{name = 'main', loaded = true}}}})
+    assert(one == 1 and labels(single) == 'Fangdango' and single:find('ConfigKey=Fangdango\n', 1, true))
     assert(select(2, Menu.levelRows(nil)) == 0 and Menu.levelRows({}) == '')
+
+    -- With the loggers, [Levels] is tidied: Inherit entries naming nothing registered go, set ones
+    -- stay (shown as not loaded), and <Module>.main folds into <Module>.
+    local fang = {{name = 'Fangdango', loaded = true, categories = {{name = 'main', loaded = true}}},
+        {name = 'Preymonition', loaded = true, categories = {{name = 'main', loaded = true}, {name = 'combat', loaded = true}}}}
+    local config = '[UE4SSLuaEXtensions.Logs]\r\nGlobalLevel=4\r\n\r\n[Levels]\r\nFangdango=3\r\nFangdango.main=0\r\n'
+        .. 'Fangdango.config=0\r\nFangdango.ui=0\r\nFangdango.input=2\r\nPreymonition=0\r\nPreymonition.combat=0\r\n'
+        .. 'Preymonition.main=5\r\nGhost=0\r\nGhost.main=6\r\nShade.main=0\r\nStay=1\r\nBoth=2\r\nboth.MAIN=6\r\n'
+    local tidy, tidied, left = Menu.normalizeLevels(config, fang)
+    assert(tidied)
+    assert(tidy == '[UE4SSLuaEXtensions.Logs]\r\nGlobalLevel=4\r\n\r\n[Levels]\r\nFangdango=3\r\nFangdango.input=2\r\n'
+        .. 'Preymonition=5\r\nPreymonition.combat=0\r\nGhost=6\r\nStay=1\r\nBoth=2\r\n', tidy)
+    assert(left.fangdango == 'Fangdango' and left['fangdango.input'] == 'Fangdango.input' and left.ghost == 'Ghost'
+        and left['fangdango.config'] == nil and left['fangdango.main'] == nil and left['preymonition.main'] == nil)
+    assert(select(2, Menu.normalizeLevels(tidy, fang)) == false, 'tidying twice changes nothing')
+    -- A module set only through <Module>.main keeps that spelling for <Module>.
+    local moved = Menu.normalizeLevels('[Levels]\nMyMod.Main=4\n', {})
+    assert(moved == '[Levels]\nMyMod=4\n', moved)
+    -- Fangdango today: its module row, and the stale category it still sets.
+    local fangList = {{name = 'Fangdango', loaded = true, categories = {{name = 'main', loaded = true},
+        {name = 'config', loaded = false}, {name = 'ui', loaded = false}, {name = 'input', loaded = false}}}}
+    assert(labels((Menu.levelRows(fangList, left))) == 'Fangdango,' .. I .. 'input (not loaded)')
+    local plainFang = Menu.normalizeLevels('[Levels]\nFangdango=3\nFangdango.config=0\nFangdango.ui=0\nFangdango.input=0\n', fangList)
+    local _, _, plainKeys = Menu.normalizeLevels(plainFang)
+    assert(labels((Menu.levelRows(fangList, plainKeys))) == 'Fangdango', 'a main-only module is one row')
+
     -- Ids stay unique when names differ only in characters an id can't hold.
     local twins = Menu.levelRows({{name = 'A B', categories = {}}, {name = 'A-B', categories = {}}})
     assert(twins:find('Id=Level_A_B\n', 1, true) and twins:find('Id=Level_A_B_2\n', 1, true))
     -- At most MAX_LEVEL_ROWS rows.
     local many = {}
-    for n = 1, 100 do
+    for n = 1, 150 do
         many[n] = {name = string.format('Mod%03d', n), categories = {{name = 'main'}, {name = 'ui'}}}
     end
     assert(select(2, Menu.levelRows(many)) == Menu.MAX_LEVEL_ROWS)
@@ -244,7 +283,7 @@ do
     local LOGS = Menu.extensions[4]
     assert(LOGS.levels and LOGS.slot == 'Logs')
     local placed = Menu.withLevelRows(ini, rows)
-    assert(placed:find('Default=1\n\n[Setting.Level_', 1, true) and placed:find('ConfigKey=Zeta.main\n\n[Setting.EnableVerifications]', 1, true))
+    assert(placed:find('Default=1\n\n[Setting.Level_', 1, true) and placed:find('ConfigKey=Zeta\n\n[Setting.EnableVerifications]', 1, true))
     assert(Menu.withLevelRows(ini, '') == ini)
     assert(Menu.withLevelRows('[Mod]\nId=X\n', '[Setting.Y]\nId=Y\n'):find('Id=X\n\n[Setting.Y]', 1, true))
 
@@ -273,8 +312,9 @@ do
     assert(#Menu.settingIds(other.contribution.pages[1].manifest) == 2)
     -- contributions passes the list on to the Log Bridge's page.
     local withLogs = Menu.contributions({LOGS}, '/mods/0_ModCore_UE4SSLuaEXtensions', '/mods', '1.1.0',
-        function(path) return path == '/mods/' .. LOGS.folder .. '/mod_settings.ini' and ini or nil end, {list = list})
-    assert(#Menu.settingIds(withLogs[2].contribution.pages[1].manifest) == 9)
+        function(path) return path == '/mods/' .. LOGS.folder .. '/mod_settings.ini' and ini or nil end,
+        {list = list, keys = stored})
+    assert(#Menu.settingIds(withLogs[2].contribution.pages[1].manifest) == 2 + 7)
 end
 
 print('PASS extensions menu: detection, count, sections, settings files, storage and publishing as a ModCore Settings module')

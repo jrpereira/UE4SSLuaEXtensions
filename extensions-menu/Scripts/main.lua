@@ -73,7 +73,7 @@ local function logBridge()
 end
 
 -- The Log Bridge's level rows: its loggers, and its config.ini's [Levels] made readable by the
--- menu (written back only when that changed something).
+-- menu and tidied (written back only when that changed something, then re-read by the bridge).
 local function levelsFor(menu, extension)
     local env = logBridge()
     if not env then return nil end
@@ -85,10 +85,12 @@ local function levelsFor(menu, extension)
     local keys = {}
     if readable and text then
         local normalized, changed
-        normalized, changed, keys = menu.normalizeLevels(text)
+        normalized, changed, keys = menu.normalizeLevels(text, list)
         if changed then
             local written, why = pcall(files.write, path, normalized)
-            if written then print('[UE4SSLuaEXtensions] Log Bridge config.ini: [Levels] values stored as ranks\n')
+            if written then
+                print('[UE4SSLuaEXtensions] Log Bridge config.ini: [Levels] stored as ranks and tidied\n')
+                pcall(env.ReloadSettings)
             else print('[UE4SSLuaEXtensions] Log Bridge config.ini not rewritten: ' .. tostring(why) .. '\n') end
         end
     end
