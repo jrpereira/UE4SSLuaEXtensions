@@ -17,19 +17,6 @@
     "tools",
     "tests"
   ],
-  "filters": {
-    "drop_sections": [
-      "Internal native contract",
-      "Open points for review"
-    ],
-    "drop_paragraph_prefixes": [
-      "Status: **"
-    ],
-    "drop_lines_containing": [
-      "(#internal-native-contract)",
-      "(#open-points-for-review)"
-    ]
-  },
   "folders": [
     {
       "name": "UE4SSLuaEXtensions",
