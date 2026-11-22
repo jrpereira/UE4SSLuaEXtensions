@@ -6,7 +6,7 @@
 *.pdb
 *.ilk
 
-# Shared repository hygiene (generated/local files are not source)
+# Generated and local files
 build/
 dist/
 artifacts/

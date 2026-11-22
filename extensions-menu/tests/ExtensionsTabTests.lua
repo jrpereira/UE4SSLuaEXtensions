@@ -4,8 +4,8 @@
 -- the extensions' rows fill the tab, keeping their sections, the Logs page's rows inside its
 -- section; the mod list entry opens the tab; Apply there saves into the Log Bridge's
 -- config.ini and reaches the Log Bridge's reload. Without the tab, the page is listed on its own.
--- Needs the real DMM parser and ModCore Settings' sources, which CI does not have; skip without
--- them. MCS_SCRIPTS_PATH defaults to ../ModCoreSettings/Scripts.
+-- Needs the real DMM parser and ModCore Settings' sources; skips without them.
+-- MCS_SCRIPTS_PATH defaults to ../ModCoreSettings/Scripts.
 local choicesPath = os.getenv('DMM_CHOICES_PATH')
 local settings = os.getenv('MCS_SCRIPTS_PATH') or '../ModCoreSettings/Scripts'
 local probe = io.open(settings .. '/menu_pages.lua', 'rb')

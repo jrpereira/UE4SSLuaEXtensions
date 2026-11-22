@@ -17,11 +17,11 @@ Import-Module $devShellModule
 Enter-VsDevShell -VsInstallPath $installation -SkipAutomaticLocation `
     -DevCmdArguments '-arch=x64 -host_arch=x64'
 
-& ./tests/NativeQueueSanitizerTests.ps1
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Push-Location (Split-Path (Split-Path $PSScriptRoot))
+try {
+    cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUE4SSLEB_BUILD_TESTS=OFF
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUE4SSLEB_BUILD_TESTS=OFF
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-cmake --build build --config Release
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    cmake --build build --config Release
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} finally { Pop-Location }

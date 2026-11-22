@@ -11,8 +11,7 @@
 #      *Tests.lua   run with lua5.4 from the repository root
 #      test_*.py    run with python3 -m unittest
 #
-# Suites named *WinTests.cpp need Windows; CMake builds them in the Windows CI
-# job. The repository's tooling tests (tests/test_*.py, *.ps1) run separately.
+# Suites named *WinTests.cpp need Windows and are not run here.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

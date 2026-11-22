@@ -1,5 +1,5 @@
 """Compiles an extension's native sources against the pinned UE4SS headers with
-g++ -fsyntax-only, so ABI and header mistakes show up before the Windows CI
+g++ -fsyntax-only, so ABI and header mistakes show up before a Windows
 build:
 
     python3 shared/tests/abi_syntax.py bridge-files

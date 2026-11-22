@@ -8,7 +8,6 @@ prefix and version from contract/Version.hpp, the Lua API and the embedding
 delimiter from the lex_embed_lua call in CMakeLists.txt, and the bootstrap
 identity from its add_bridge_bootstrap call.
 """
-import importlib.util
 import json
 from pathlib import Path
 import re
@@ -19,11 +18,19 @@ ROOT = Path(__file__).resolve().parents[2]
 SHARED = ROOT / 'shared'
 
 
-def _load_release_notes():
-    spec = importlib.util.spec_from_file_location('release_notes', ROOT / 'tools/release_notes.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def changelog_sections(text):
+    """[(heading, body)] for each "## " section, ignoring lines inside fenced code."""
+    sections, fence = [], None
+    for line in text.splitlines():
+        marker = re.match(r'^\s{0,3}(`{3,}|~{3,})', line)
+        if marker:
+            fence = None if fence and marker[1][0] == fence[0] else (fence or marker[1])
+        elif fence is None and line.startswith('## '):
+            sections.append((line[3:].strip(), []))
+            continue
+        if sections:
+            sections[-1][1].append(line)
+    return [(heading, '\n'.join(body)) for heading, body in sections]
 
 
 def cmake_call(text, function):
@@ -152,17 +159,18 @@ class ProductChecks(unittest.TestCase):
                          'menus are not declared in mod.json')
 
     def test_changelog_sections_are_extractable(self):
-        release_notes = _load_release_notes()
-        text = (EXTENSION.folder / 'CHANGELOG.md').read_text(encoding='utf-8')
-        headings = re.findall(r'^## (.+?)\s*$', text, re.M)
+        sections = changelog_sections((EXTENSION.folder / 'CHANGELOG.md').read_text(encoding='utf-8'))
+        headings = [heading for heading, _ in sections]
         self.assertTrue(headings)
-        for index, heading in enumerate(headings):
+        for index, (heading, body) in enumerate(sections):
             with self.subTest(heading=heading):
                 if heading == 'Unreleased':
                     self.assertEqual(index, 0, '"## Unreleased" must be the first section')
                     continue
                 self.assertRegex(heading, r'^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$')
-                self.assertTrue(release_notes.extract_notes(text, heading).strip())
+                self.assertEqual(headings.count(heading), 1, 'one section per version')
+                notes = re.sub(r'^\s*#{3,6}[ \t]+Changes[ \t]*$', '', body, count=1, flags=re.M)
+                self.assertTrue(notes.strip(), 'a version section needs notes')
         self.assertIn('v' + EXTENSION.version, headings, 'the current version needs a changelog section')
 
 

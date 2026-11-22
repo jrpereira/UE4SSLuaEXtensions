@@ -1,0 +1,53 @@
+name: native
+run-name: native ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit to build, full SHA
+        required: true
+      tag:
+        description: Release tag, <product>/vMAJOR.MINOR.PATCH
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: windows-2022
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      SOURCE_COMMIT: ${{ inputs.ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Build
+        shell: pwsh
+        run: ./.github/scripts/build.ps1
+      - name: Verify, package and checksum
+        id: package
+        shell: pwsh
+        run: ./.github/scripts/package.ps1 -Tag $env:RELEASE_TAG -SourceCommit $env:SOURCE_COMMIT -OutputFile $env:GITHUB_OUTPUT
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.package.outputs.archive }}
+      - name: Attach to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          gh release upload $env:RELEASE_TAG $env:ARCHIVE "$env:ARCHIVE.sha256" "$env:ARCHIVE.manifest.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

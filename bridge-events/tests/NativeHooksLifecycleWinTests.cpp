@@ -2,8 +2,8 @@
 // handlers on the fake frame (support/FakeFrame.hpp): the sink with filters
 // and limits, both drains (an injected engine tick and the on_update
 // fallback), a fake Lua session, notices, pending names and orphaning, unload.
-// Built by the Windows CI job with /W4 /WX; the code is portable, so it also
-// compiles with g++ for a local run.
+// Built on Windows with /W4 /WX; the code is portable, so it also compiles
+// with g++.
 
 #include <HookRuntime.hpp>
 #include <FakeFrame.hpp>
