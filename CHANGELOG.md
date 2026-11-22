@@ -8,7 +8,8 @@ extension keeps its own changelog in its folder.
 ### Changes
 
 - The Logs section lists, under the global level, every mod that registered
-  a logger with the Log Bridge (1.0.0, API 2) and each of its categories,
+  a logger with the Log Bridge (1.0.0, API 2), its `main` category and each
+  category it registered,
   each set to Inherit or a level from Trace to Off; mods named only in the
   bridge's `[Levels]` show as not loaded. The section is republished when a
   mod or category registers later and shows the change the next time the

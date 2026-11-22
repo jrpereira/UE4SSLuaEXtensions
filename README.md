@@ -28,7 +28,7 @@ Mod folder: `0_ModCore_UE4SSLuaSoundBridge`. Documentation: [Sound Bridge README
 
 ## UE4SS Lua Log Bridge (1.0.0)
 
-Leveled logging for Lua mods: TRACE to CRITICAL, WARN by default, set per mod, per category or globally from config.ini, the ModCore Settings menu or Lua, and applied while the game runs. Lines go to UE4SS.log or to the mod's own `logs/<category>.log`, written without holding up the game. Every line is kept safe before the call returns, so a crash loses nothing: the next start writes the previous session's lines to `logs/previous-session.log`.
+Leveled logging for Lua mods: TRACE to CRITICAL, WARN by default, set per mod, per category the mod registers or globally from config.ini, the ModCore Settings menu or Lua, and applied while the game runs. Lines go to UE4SS.log or to the mod's own `logs/<category>.log`, written without holding up the game. Every line is kept safe before the call returns, so a crash loses nothing: the next start writes the previous session's lines to `logs/previous-session.log`.
 
 Mod folder: `0_ModCore_UE4SSLuaLogBridge`. Documentation: [Log Bridge README](bridge-logs/README.md).
 

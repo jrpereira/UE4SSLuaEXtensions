@@ -99,7 +99,7 @@ whenever a module or category registers or any level may have changed, like
 ### `GetCapabilities()`
 
 `{ api = 2, journal_bytes, max_message_bytes = 65536, frame = <engine tick>,
-levels, targets, frequencies, default_categories }`.
+levels, targets, frequencies, default_categories = { "main" } }`.
 
 ### `GetStats()`
 
@@ -110,9 +110,9 @@ reached their target.
 
 ## Loggers and categories
 
-A logger is its `main` category. Every logger has `main`, `config`, `ui` and
-`input`; other categories exist only once registered, through the `categories`
-option of `Register` (a later `Register` of the same name adds its categories)
+A logger is its `main` category, the only one it has from the start. Every
+other category exists only once the module registers it, through the
+`categories` option of `Register` (a later `Register` of the same name adds its categories)
 or `log.register("combat", "ai")`, which returns them in order. A registered
 category is a field of the logger (`log.combat`, or `log[name]`); an
 unregistered one reads as `nil`, so a misspelt `log.commbat.debug(...)` raises
@@ -158,7 +158,7 @@ MyMod.combat=TRACE
 
 The ModCore Settings menu edits `GlobalLevel` (1 for TRACE to 7 for OFF; a
 name works too) and, under it, each module listed by `ListLoggers` and its
-categories, stored in `[Levels]` as ranks. A `[Levels]` value of `0` or
+registered categories, stored in `[Levels]` as ranks. A `[Levels]` value of `0` or
 `inherit` (the menu's Inherit) sets no level, so the key falls through to the
 next step above. The bridge reads the file when the game starts, and edits
 apply when ModCore Settings applies the Logs page, when

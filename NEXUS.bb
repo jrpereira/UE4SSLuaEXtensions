@@ -22,7 +22,7 @@ Lets Lua mods play WAV files outside the game's audio engine. A mod loads sounds
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaSoundBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-sounds/README.md]Sound Bridge README[/url].
 
 [size=4][b]UE4SS Lua Log Bridge (1.0.0)[/b][/size]
-Leveled logging for Lua mods: TRACE to CRITICAL, WARN by default, set per mod, per category or globally from config.ini, the ModCore Settings menu or Lua, and applied while the game runs. Lines go to UE4SS.log or to the mod's own [font=Courier New]logs/<category>.log[/font], written without holding up the game. Every line is kept safe before the call returns, so a crash loses nothing: the next start writes the previous session's lines to [font=Courier New]logs/previous-session.log[/font].
+Leveled logging for Lua mods: TRACE to CRITICAL, WARN by default, set per mod, per category the mod registers or globally from config.ini, the ModCore Settings menu or Lua, and applied while the game runs. Lines go to UE4SS.log or to the mod's own [font=Courier New]logs/<category>.log[/font], written without holding up the game. Every line is kept safe before the call returns, so a crash loses nothing: the next start writes the previous session's lines to [font=Courier New]logs/previous-session.log[/font].
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaLogBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-logs/README.md]Log Bridge README[/url].
 

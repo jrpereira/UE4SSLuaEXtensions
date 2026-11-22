@@ -4,8 +4,8 @@ Leveled logging for UE4SS Lua mods, controlled per mod and per category, with
 crash-safe delivery.
 
 - Levels TRACE, DEBUG, INFO, WARN, ERROR and CRITICAL; WARN by default.
-- Each mod registers a logger with categories (`main`, `config`, `ui`, `input`
-  and any it registers).
+- Each mod registers a logger, which logs to `main`, plus any categories it
+  registers (`combat`, `ui`, ...).
 - Levels change per mod, per category or globally, from config.ini, the
   ModCore Settings menu (a row for every mod that registered and each of its
   categories) or Lua, and apply while the game runs.

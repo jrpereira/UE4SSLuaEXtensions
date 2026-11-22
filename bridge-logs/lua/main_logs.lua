@@ -69,8 +69,7 @@ local function main()
         refused("bad module name", "invalid", logs.Register("bad/name"))
         refused("global is not a module name", "invalid", logs.Register("global"))
         if fileLog then
-            check("default categories", fileLog.main == fileLog and fileLog.config ~= nil and fileLog.ui ~= nil
-                and fileLog.input ~= nil)
+            check("main is the only default category", fileLog.main == fileLog and fileLog.config == nil)
             check("one logger per name", logs.Register("lexverify") == fileLog)
             check("an unregistered category is no field", fileLog.lexverifx == nil)
             check("register adds a category", fileLog.register("extra") == fileLog.extra and fileLog.extra ~= nil)

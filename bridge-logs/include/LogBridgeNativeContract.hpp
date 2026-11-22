@@ -56,8 +56,8 @@
 // ---------------------------------------------------------------------------
 // The native side is the only place every Lua mod's loggers meet, so it keeps
 // the list of modules registered this session: Register records the module
-// with the default categories, AddCategory one category the Lua layer
-// registered after them. ListLoggers returns that list, plus the modules and
+// with its one default category, main, AddCategory each category the Lua
+// layer registers for it. ListLoggers returns that list, plus the modules and
 // categories config.ini's [Levels] names that have not registered (not
 // loaded), each with its effective level and where it comes from. A new
 // module or category, like any level change, changes the generation.

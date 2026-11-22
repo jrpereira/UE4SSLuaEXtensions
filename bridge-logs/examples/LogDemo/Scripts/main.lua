@@ -6,7 +6,7 @@ if not Logs then
     return
 end
 
-local log = assert(Logs.Register("LogDemo", { level = "info" }))
+local log = assert(Logs.Register("LogDemo", { level = "info", categories = { "config" } }))
 local trace = assert(Logs.Register("LogDemoTrace", {
     target = "module", frequency = "frame", level = "trace", categories = { "combat" },
 }))

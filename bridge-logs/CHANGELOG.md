@@ -5,8 +5,8 @@
 ### Changes
 
 - First version: leveled logging for UE4SS Lua mods (TRACE to CRITICAL, WARN
-  by default) with a logger per module and categories (`main`, `config`, `ui`,
-  `input` and any the mod registers).
+  by default) with a logger per module, logging to `main`, and the
+  categories the mod registers.
 - Levels per module, per category and global, from config.ini (`[Levels]`),
   the ModCore Settings menu or `SetLevel`, applied while the game runs. The
   menu lists every registered module and its categories, each with Inherit or

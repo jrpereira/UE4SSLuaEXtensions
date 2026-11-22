@@ -48,8 +48,8 @@ inline std::string lower(std::string_view text)
     return out;
 }
 
-// The four categories every logger has, in this order.
-inline constexpr std::array<std::string_view, 4> default_categories{"main", "config", "ui", "input"};
+// The categories every logger has; any other exists once the module registers it.
+inline constexpr std::array<std::string_view, 1> default_categories{"main"};
 
 // The rank a level name (any case) or a rank digit 1..7 gives; surrounding
 // spaces are ignored.
@@ -265,7 +265,7 @@ public:
         ++generation_;
     }
 
-    // Records a registered module (with the default categories) and, when not
+    // Records a registered module (with the default category) and, when not
     // empty, one of its categories. The first spelling of a module is kept;
     // categories are folded. A new name changes the generation.
     void note(std::string_view module, std::string_view category = {})

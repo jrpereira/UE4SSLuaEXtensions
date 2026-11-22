@@ -29,9 +29,7 @@ local __RANK = { warning = 4, none = 7 }
 for rank, name in ipairs(__LEVELS) do __RANK[name:lower()] = rank end
 local __DEFAULT_RANK = 4
 local __OFF = 7
-local __DEFAULT_CATEGORIES = { "main", "config", "ui", "input" }
-local __IS_DEFAULT = {}
-for _, name in ipairs(__DEFAULT_CATEGORIES) do __IS_DEFAULT[name] = true end
+local __DEFAULT_CATEGORIES = { "main" }
 local __TARGETS = { default = 0, module = 1 }
 local __FREQUENCIES = { immediate = 0, frame = 1, periodic = 2 }
 -- How long a cached level is trusted before the native generation is asked again.
@@ -229,8 +227,8 @@ local function __newLogger(id, name)
             found = __newCategory(state, key)
             state.categories[key] = found
             methods[key] = found
-            -- The bridge lists it for every mod (ListLoggers); the defaults it knows already.
-            if not __IS_DEFAULT[key] then __native("AddCategory", __session, state.id, key) end
+            -- The bridge lists it for every mod (ListLoggers); main it knows already.
+            __native("AddCategory", __session, state.id, key)
         end
         return found
     end
@@ -249,9 +247,6 @@ local function __newLogger(id, name)
     end
     state.categories.main = logger
     methods.main = logger
-    for _, default in ipairs(__DEFAULT_CATEGORIES) do
-        if default ~= "main" then add(default) end
-    end
     return logger
 end
 

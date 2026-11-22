@@ -57,7 +57,7 @@ test("version, capabilities and stats", function(_, bridge, logs)
     local caps = logs.GetCapabilities()
     expect(caps.api == 2 and caps.journal_bytes == 4194304 and caps.max_message_bytes == 65536 and caps.frame == true)
     expect(#caps.levels == 7 and caps.levels[1] == "TRACE" and caps.levels[7] == "OFF")
-    expect(caps.default_categories[1] == "main" and #caps.default_categories == 4)
+    expect(caps.default_categories[1] == "main" and #caps.default_categories == 1)
     expect(caps.targets[1] == "default" and caps.targets[2] == "module" and #caps.targets == 2)
     expect(caps.frequencies[1] == "immediate" and caps.frequencies[2] == "frame"
         and caps.frequencies[3] == "periodic" and #caps.frequencies == 3)
@@ -151,14 +151,16 @@ test("colon calls and write with a level", function(fake, _, logs)
     expect(last(fake).category == "combat" and last(fake).message == "category colon")
 end)
 
-test("default and extra categories", function(fake, _, logs)
+test("main is the only default category", function(fake, _, logs)
     local log = logs.Register("Mod")
-    for _, name in ipairs({ "main", "config", "ui", "input" }) do
-        expect(type(log[name]) == "table", name)
-    end
     expect(log.main == log)
-    log.config.error("bad value")
-    expect(last(fake).category == "config")
+    for _, name in ipairs({ "config", "ui", "input" }) do
+        expect(log[name] == nil, name)
+    end
+    expect(#fake.added == 0, "main is not added again")
+    local config = log.register("config")
+    config.error("bad value")
+    expect(log.config == config and last(fake).category == "config")
 end)
 
 test("categories are registered explicitly", function(fake, _, logs)
@@ -235,7 +237,7 @@ test("enabled and the level field alone see a level change", function(fake, _, l
 end)
 
 test("registered defaults and per-category levels", function(fake, _, logs)
-    local log = logs.Register("Mod", { level = "debug" })
+    local log = logs.Register("Mod", { level = "debug", categories = { "ui" } })
     log.debug("shown")
     expect(#fake.lines == 1)
     fake.setLevel("mod.ui", 6)
@@ -312,13 +314,13 @@ end)
 
 -- The registry ---------------------------------------------------------------------
 
-test("categories beyond the defaults reach the native registry once", function(fake, _, logs)
+test("registered categories reach the native registry once", function(fake, _, logs)
     local log = logs.Register("Mod", { categories = { "Combat", "main" } })
     log.register("ai", "combat", "ui")
     logs.Register("Mod", { categories = { "AI", "net" } })
     local added = {}
     for _, call in ipairs(fake.added) do added[#added + 1] = call.category end
-    expect(table.concat(added, ",") == "combat,ai,net", table.concat(added, ","))
+    expect(table.concat(added, ",") == "combat,ai,ui,net", table.concat(added, ","))
 end)
 
 test("ListLoggers parses the native listing", function(fake, _, logs)
