@@ -1,4 +1,4 @@
-# UE4SSLuaSoundBridge Lua API (1.1.0)
+# UE4SSLuaSoundBridge Lua API (1.2.0)
 
 API version 1. Every Lua mod gets the global `UE4SSLuaSoundBridge` when the
 bridge is installed; without the bridge the global is `nil`.

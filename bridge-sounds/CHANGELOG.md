@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## v1.2.0
 
 ### Changes
 
 - Breaking: settings move from `settings.ini` `[Settings]` to `config.ini`
   `[UE4SSLuaEXtensions.Sounds]` (`EnableVerifications`). `settings.ini`
   is no longer read, so switches return to their defaults until set again.
+- While nothing plays, the audio thread sleeps until a play, a stop or an
+  output-device change, instead of waking on a timer.
 
 ## v1.1.0
 

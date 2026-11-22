@@ -1,4 +1,4 @@
-# UE4SSLuaFileBridge Lua API (1.1.0)
+# UE4SSLuaFileBridge Lua API (1.2.0)
 
 - [Conventions](#conventions)
 - [Entry point and version](#entry-point-and-version)
@@ -54,7 +54,7 @@
 
 ```lua
 local env = UE4SSLuaFileBridge()           -- the safe environment
-local version = UE4SSLuaFileBridge.GetVersion()        -- "1.1.0"
+local version = UE4SSLuaFileBridge.GetVersion()        -- "1.2.0"
 local caps = UE4SSLuaFileBridge.GetCapabilities()
 local api = UE4SSLuaFileBridge.API_VERSION             -- 1
 ```
@@ -64,7 +64,7 @@ the [safe environment](#the-safe-set) for the calling mod. Each call returns an
 equivalent environment; whether it is the same table is unspecified.
 
 `GetVersion()` returns the product version string. `API_VERSION` is the API
-contract number, `1` for 1.1.0. Every environment also has `env.GetVersion`,
+contract number, `1` for 1.2.0. Every environment also has `env.GetVersion`,
 `env.GetCapabilities` and `env.GetDispatchStats`, identical to the global ones.
 
 ### `GetCapabilities()`
@@ -139,7 +139,7 @@ names can start a path.
 | `user` | The game's user data folder, `%LOCALAPPDATA%\Dawnwalker`. It holds saves, user config and logs |
 
 **Presets** are worked out once when the bridge starts (`mod` when the Lua
-environment starts). 1.1.0 ships exactly these:
+environment starts). 1.2.0 ships exactly these:
 
 | Preset | Resolves to | Rules |
 |---|---|---|
@@ -198,7 +198,7 @@ text file of `key=value` lines:
 folder=MyMod
 first_write=2026-10-10T12:00:00Z
 last_write=2026-10-10T12:00:00Z
-bridge_version=1.1.0
+bridge_version=1.2.0
 ```
 
 `last_write` and `bridge_version` are refreshed by the first write under
@@ -488,7 +488,7 @@ Unix epoch, possibly fractional). The values come from the folder's directory
 entries, which NTFS may update lazily for a file with several hard links; `Stat`
 reads the file itself, so use `Stat` when exact sizes or times matter.
 
-Not recursive in 1.1.0. Hidden and system entries are included. Names that
+Not recursive in 1.2.0. Hidden and system entries are included. Names that
 can't be returned as UTF-8 (unpaired UTF-16 surrogates, which Windows permits)
 or that contain a tab or newline are skipped and logged once; `RemoveTree` still
 removes them. Mode: `stat` on the folder. Errors: `not_found`, `invalid` (path is a file).
@@ -574,7 +574,7 @@ file), `busy`, `read_only`.
 
 Copies a file. Options: `overwrite` (boolean, default `false`). The destination
 is written like an atomic `WriteText` (temporary sibling, then replace; `.bak`
-under `savegames`). Folders are not copied in 1.1.0. Returns `true`. Mode:
+under `savegames`). Folders are not copied in 1.2.0. Returns `true`. Mode:
 `ro` on `from`, `wo` or `rw` on `to`. Errors: `not_found`, `exists`
 (destination exists and `overwrite` is false), `invalid` (a folder), `busy`,
 `read_only`.
@@ -586,7 +586,7 @@ one volume it is a rename (keeping a `.bak` when overwriting under
 `savegames`). Across volumes (the two roots may be on
 different drives) it copies, flushes, then removes the source. A **link** can't
 be moved across volumes, because the copy would follow it and leave a plain
-file: that is refused with `invalid`. Folders are not moved in 1.1.0. Returns `true`. Mode: `wo` or `rw` plus `delete` on `from`;
+file: that is refused with `invalid`. Folders are not moved in 1.2.0. Returns `true`. Mode: `wo` or `rw` plus `delete` on `from`;
 `wo` or `rw` on `to`. Errors: `not_found`, `exists`, `invalid`, `busy`,
 `read_only`, `denied` (including the delete floor on `from`).
 
@@ -601,7 +601,7 @@ log:Close()
 ### `env.Open(path, options?)`
 
 Opens a file for writing and returns a stream. The environment is checked when
-the stream is opened, not on each write. Streams are write-only in 1.1.0.
+the stream is opened, not on each write. Streams are write-only in 1.2.0.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
@@ -744,7 +744,7 @@ says otherwise (non-atomic `WriteText`, `RemoveTree`).
 
 ## Deferred and out of scope
 
-**Deferred** (not in 1.1.0; `GetCapabilities()` reports `false`):
+**Deferred** (not in 1.2.0; `GetCapabilities()` reports `false`):
 
 - `Lock`: advisory or byte-range locking between writers.
 - `Hash`: content hashes of files.
@@ -757,6 +757,6 @@ says otherwise (non-atomic `WriteText`, `RemoveTree`).
 - **Whiteboard messaging:** shared state between mods.
 - **Windows named pipes** (`\\.\pipe\…`).
 
-Also not in 1.1.0: reading streams, recursive `List`, copying or moving
+Also not in 1.2.0: reading streams, recursive `List`, copying or moving
 folders, file watching beyond `Tail`, presets beyond the four above. There is no `mods` location: reach another
 mod's folder as `game/Dawnwalker/Binaries/Win64/ue4ss/Mods/<mod>/…`.

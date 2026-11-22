@@ -56,7 +56,7 @@ Mods/
     │   ├── main.dll
     │   ├── main.json
     │   └── versions/
-    │       └── UE4SSLuaSoundBridge-1.1.0.dll
+    │       └── UE4SSLuaSoundBridge-1.2.0.dll
     ├── enabled.txt
     └── mod.json
 ```

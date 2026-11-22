@@ -13,19 +13,19 @@ There are four independent extensions. Each has its own mod folder, version and 
 [*][b]Extensions tab[/b]: with ModCore Settings, every installed extension's settings in one tab, including a log level for each mod and category that logs through the Log Bridge.
 [/list]
 
-[size=4][b]UE4SS Lua Event Bridge (1.3.0)[/b][/size]
+[size=4][b]UE4SS Lua Event Bridge (1.4.0)[/b][/size]
 Connects Unreal Enhanced Input to UE4SS Lua callbacks. Bind existing Input Actions or create key bindings with native Tap and Hold triggers: Unreal handles the stopwatch, your mod handles the action. Lua receives copies of the event values after Unreal's input handling. It can also hook a single Blueprint or native function, pre and post, without turning on a process-wide UE4SS hook.
 
 It also provides native object-lifetime validation and weak handles, so a mod can tell that an object has been freed instead of reading it, plus session-owned handles, explicit cleanup, binding inspection, dispatch statistics, configurable queue budgets and a callback when the game window regains focus.
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaEventBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-events/README.md]Event Bridge README[/url].
 
-[size=4][b]UE4SS Lua File Bridge (1.1.0)[/b][/size]
+[size=4][b]UE4SS Lua File Bridge (1.2.0)[/b][/size]
 Gives Lua mods file and folder access inside the game's own folders. Each mod gets named locations (its own folder, a per-mod data folder, a scratch folder and the save folder), explicit write grants, atomic writes and file sockets that let mods talk through a path. Lua already has [font=Courier New]io[/font]; this is [font=Courier New]io[/font] with a seatbelt. The sandbox prevents mistakes; it is not a security boundary.
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaFileBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-files/README.md]File Bridge README[/url].
 
-[size=4][b]UE4SS Lua Sound Bridge (1.1.0)[/b][/size]
+[size=4][b]UE4SS Lua Sound Bridge (1.2.0)[/b][/size]
 Lets Lua mods play WAV files outside the game's audio engine. A mod loads sounds once, from its own folder or any path, then plays them at once with pan, volume, pitch and a low-pass filter chosen per play; plays overlap, and playback follows the default output device when headphones are plugged in or out. Built for cues that must land with what is on screen, such as a sound that tells which side an attack comes from.
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaSoundBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-sounds/README.md]Sound Bridge README[/url].

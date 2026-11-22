@@ -50,14 +50,14 @@ through it.
 ## Version and capabilities
 
 ```lua
-local version = UE4SSLuaFileBridge.GetVersion()        -- "1.1.0"
+local version = UE4SSLuaFileBridge.GetVersion()        -- "1.2.0"
 local capabilities = UE4SSLuaFileBridge.GetCapabilities()
 local api = UE4SSLuaFileBridge.API_VERSION             -- 1
 ```
 
 Gate features on `GetCapabilities()` (`streams`, `tail`, `append_only` and so
 on; see [API.md](API.md#getcapabilities)), not on the version number. `lock`,
-`hash` and `temp_file` are `false` in 1.1.0: those features are deferred.
+`hash` and `temp_file` are `false` in 1.2.0: those features are deferred.
 
 ## Locations
 
