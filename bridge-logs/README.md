@@ -7,8 +7,10 @@ crash-safe delivery.
 - Each mod registers a logger, which logs to `main`, plus any categories it
   registers (`combat`, `ui`, ...).
 - Levels change per mod, per category or globally, from config.ini, the
-  ModCore Settings menu (a row for every mod that registered and each of its
-  categories) or Lua, and apply while the game runs.
+  Logs Extension section of ModCore Settings' Extensions tab (a row for every
+  mod that registered and each of its categories, set to Inherit or a level)
+  or Lua, and apply while the game runs. Edits to config.ini apply when
+  ModCore Settings reloads config.
 - Lines go to UE4SS.log or to the mod's own `logs/<category>.log`.
 - Written at once, once per frame or every few seconds, without holding up
   the game.

@@ -18,6 +18,14 @@ native function without turning on a process-wide UE4SS hook.
   delivered to Lua once per frame on the game thread. `Install` attaches now or
   says why not; `Request` also waits for a class that is not loaded yet and
   attaches when it appears. A function nobody hooks costs nothing.
+- Check whether an object your mod still holds has been freed, and keep weak
+  handles to objects instead of live wrappers.
+- Run a callback each time the game window comes back to the foreground
+  (`onFocusRegained`), with the time it spent in the background.
+
+Its switches, **Enable function hooks** and **Enable load-time
+verifications**, are in the bridge's `config.ini` and, with ModCore Settings,
+on the Events Extension section of the Extensions tab.
 
 Supply exact live component and subsystem paths. Your mod owns target discovery
 and rebinding when the game replaces those objects.
