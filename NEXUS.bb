@@ -4,8 +4,17 @@ UE4SS runs Lua mods inside the game, but Lua alone cannot reach everything a mod
 
 There are four independent extensions. Each has its own mod folder, version and documentation. A mod depends on whichever it uses, and you can keep all of them installed. They do nothing on their own: install them when a mod asks for them.
 
+[size=4][b]Features[/b][/size]
+[list]
+[*][b]Event Bridge[/b]: Enhanced Input bindings with native Tap and Hold triggers, hooks on single Blueprint or native functions, checks that tell a mod when an object it holds has been freed, and a callback when the game window regains focus.
+[*][b]File Bridge[/b]: file and folder access inside the game's folders, with named locations per mod, explicit write grants, atomic writes and file sockets between mods.
+[*][b]Sound Bridge[/b]: WAV playback beside the game's audio, with pan, volume, pitch and a low-pass filter per play; it follows the default output device.
+[*][b]Log Bridge[/b]: leveled logging (TRACE to CRITICAL) per mod and per category, set while the game runs, with every line kept through a crash.
+[*][b]Extensions tab[/b]: with ModCore Settings, every installed extension's settings in one tab, including a log level for each mod and category that logs through the Log Bridge.
+[/list]
+
 [size=4][b]UE4SS Lua Event Bridge (1.3.0)[/b][/size]
-Connects Unreal Enhanced Input to UE4SS Lua callbacks. Bind existing Input Actions or create key bindings with native Tap and Hold triggers: Unreal handles the stopwatch, your mod handles the action. Lua receives copies of the event values after Unreal's input handling.
+Connects Unreal Enhanced Input to UE4SS Lua callbacks. Bind existing Input Actions or create key bindings with native Tap and Hold triggers: Unreal handles the stopwatch, your mod handles the action. Lua receives copies of the event values after Unreal's input handling. It can also hook a single Blueprint or native function, pre and post, without turning on a process-wide UE4SS hook.
 
 It also provides native object-lifetime validation and weak handles, so a mod can tell that an object has been freed instead of reading it, plus session-owned handles, explicit cleanup, binding inspection, dispatch statistics, configurable queue budgets and a callback when the game window regains focus.
 
@@ -22,7 +31,7 @@ Lets Lua mods play WAV files outside the game's audio engine. A mod loads sounds
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaSoundBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-sounds/README.md]Sound Bridge README[/url].
 
 [size=4][b]UE4SS Lua Log Bridge (1.0.0)[/b][/size]
-Leveled logging for Lua mods: TRACE to CRITICAL, WARN by default, set per mod, per category the mod registers or globally from config.ini, the ModCore Settings menu or Lua, and applied while the game runs. Lines go to UE4SS.log or to the mod's own [font=Courier New]logs/<category>.log[/font], written without holding up the game. Every line is kept safe before the call returns, so a crash loses nothing: the next start writes the previous session's lines to [font=Courier New]logs/previous-session.log[/font].
+Leveled logging for Lua mods: TRACE to CRITICAL, WARN by default, set per mod, per category the mod registers or globally from config.ini, the Extensions tab of ModCore Settings or Lua, and applied while the game runs. Lines go to UE4SS.log or to the mod's own [font=Courier New]logs/<category>.log[/font], written without holding up the game. Every line is kept safe before the call returns, so a crash loses nothing: the next start writes the previous session's lines to [font=Courier New]logs/previous-session.log[/font].
 
 Mod folder: [font=Courier New]0_ModCore_UE4SSLuaLogBridge[/font]. Documentation: [url=https://github.com/jrpereira/UE4SSLuaEXtensions/blob/main/bridge-logs/README.md]Log Bridge README[/url].
 
