@@ -139,6 +139,5 @@ frame); they cannot block or change it. `hooks_sync` is false in this version.
 ## Documentation
 
 - [Developer guide](docs/DEVELOPERS.md): API, examples, lifecycle, debugging, and tuning.
-- [Maintainer guide](docs/BUILD.md): building from source.
 - [Changelog](CHANGELOG.md): version history.
 - [Complete sample](examples/EnhancedInputTapHold/Scripts/main.lua): rollback and cleanup.

@@ -1,7 +1,6 @@
 #pragma once
 
-// Native function hooks: the UFunction::Func swap and the shared thunk
-// (docs/BUILD.md, "Native Func swap").
+// Native function hooks: the UFunction::Func swap and the shared thunk.
 //
 // Assumptions:
 // - Every engine path that runs a native UFunction goes through

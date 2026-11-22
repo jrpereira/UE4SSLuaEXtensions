@@ -3,11 +3,9 @@
 // UE4SSLuaFileBridge: internal contract between the native DLL and the
 // embedded Lua layer (bridge-files/lua/files_api.lua).
 //
-// Status: G-spec review applied (L's SPEC-REVIEW.md M1-M15 and K's decisions
-// K1-K4, F9, F12, 2026-10-10); ready to freeze. It implements the public API in
-// bridge-files/docs/API.md. Nothing here is visible to mods: mods see only the
-// `UE4SSLuaFileBridge` table that the Lua layer builds. Changes after G-spec go
-// through K and reach F, L and D together.
+// It implements the public API in bridge-files/docs/API.md. Nothing here is
+// visible to mods: mods see only the `UE4SSLuaFileBridge` table that the Lua
+// layer builds.
 //
 // This header is portable (no Win32, no UE4SS includes) so the portable core,
 // its tests and the Lua-layer fake-native tests can share one description.
@@ -21,11 +19,11 @@
 //   UE4SSLEB_IMPLEMENTATION_MAGIC to the same value (shared/contract/ImplementationABI.h
 //   defaults to the event bridge's 'LEB1' otherwise). `implementation_magic`
 //   below must equal both.
-// * Tail delivery builds against E's shared dispatch code: INTERFACE target
+// * Tail delivery builds against the shared dispatch code: INTERFACE target
 //   UE4SSXBDispatch, namespace UE4SSXB, includes <dispatch/...>; portable tests
 //   add -I<repo>/shared.
 // * Import library: shared/ue4ss-abi/UE4SS-97b7e501.def, which includes three
-//   LuaMadeSimple exports verified in UE4SS 97b7e501 (K1):
+//   LuaMadeSimple exports verified in UE4SS 97b7e501:
 //       ?get_stack_size@Lua@LuaMadeSimple@RC@@QEBAHXZ
 //       ?is_string@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
 //       ?is_integer@Lua@LuaMadeSimple@RC@@QEBA_NH@Z
@@ -48,7 +46,7 @@
 //       one string in the record format (section 6). (UE4SS also exports
 //       enough to build tables; records were kept as simpler to fake in Lua
 //       tests.)
-//   R2  Checked arity and types (K1). Each native first compares
+//   R2  Checked arity and types. Each native first compares
 //       get_stack_size() with its declared argument count and checks each
 //       slot with is_integer/is_string, then consumes arguments left to right
 //       (get_integer/get_string remove argument 1). A mismatch returns
@@ -68,7 +66,7 @@
 //       target). The Lua layer captures every name in `native_functions` into
 //       an upvalue table at load, asserts each is present, and sets each
 //       global to nil.
-//   R6  Coroutines (M9). UE4SS raises a Lua error when a registered C function
+//   R6  Coroutines. UE4SS raises a Lua error when a registered C function
 //       is called from a lua_State not created through Lua::new_thread, i.e.
 //       from any coroutine the mod creates with coroutine.create/wrap. That
 //       error is UE4SS's, before the native runs. The Lua layer pcalls every
@@ -95,7 +93,7 @@
 //      `temp` are bound from the same name. A mod name that isn't one valid
 //      path segment leaves `mod`, `moddata` and `temp` unbound: Locations
 //      reports them with an empty path field (Lua: path = nil,
-//      exists = false), and any path through them is `invalid` (M6).
+//      exists = false), and any path through them is `invalid`.
 //   2. Registers every `native_functions` entry on `lua` as
 //      native_prefix + name.
 //   3. Executes `<session_global> = <id>`, then the embedded files_api.lua.
@@ -109,7 +107,7 @@
 //      UE4SSLuaFileBridge.
 //
 // Every native that acts for a mod takes the session id as its first
-// argument. The id alone identifies the session (M8): it is not compared with
+// argument. The id alone identifies the session: it is not compared with
 // the calling lua_State, because hook_lua is created lazily after
 // on_lua_start (as in bridge-events' session_for_id). An unknown or stopped
 // id is `nil, "invalid", "Lua session is not registered or is stopping"`.
@@ -129,15 +127,15 @@
 //     list. The parent never changes. Lua raises on failure
 //     ("<code>: <message>", level 2), as API.md requires.
 //   * ReleasePolicy(session, policy) frees one id. On the safe-set id it is a
-//     no-op returning true (M10). Releasing doesn't affect policies derived
+//     no-op returning true. Releasing doesn't affect policies derived
 //     from it (each holds its own flattened grant list, storage shared
 //     internally), nor streams or subscriptions opened through it.
-//   * Garbage collection (M11): no native is called from __gc. The Lua
+//   * Garbage collection: no native is called from __gc. The Lua
 //     layer's __gc only queues policy and stream ids; the queue is drained
 //     (ReleasePolicy / StreamClose) at the start of the next helper call in
 //     that Lua environment. Whatever is left is freed natively at session stop.
 //   * Limits: 256 grants per policy, 4096 live policies per session. Beyond
-//     either: `io` (F9). On the policy limit Lua runs one collectgarbage(),
+//     either: `io`. On the policy limit Lua runs one collectgarbage(),
 //     drains its queue and retries once.
 //
 // Grant fields (native representation, `Grant` below):
@@ -146,7 +144,7 @@
 //   mode        stat | ro | wo | rw | ao | inherit
 //   extensions  inherit | list (possibly empty = covers no files); lowercase,
 //               no dot; compared case-insensitively. An entry may not contain
-//               `.`, `/`, `\`, `;`, `< > : " | ? *` or a control character (M5)
+//               `.`, `/`, `\`, `;`, `< > : " | ? *` or a control character
 //   delete      bool, never inherited (default false)
 //   recursive   bool (default true); false covers the path and its direct
 //               children only
@@ -158,7 +156,7 @@
 //      links), GetFinalPathNameByHandleW, append the non-existing rest.
 //      Remove, RemoveTree, Move (both ends) and the bridge's own .bak and
 //      temporary siblings act on a link itself: for them the parent is
-//      resolved and the leaf appended unfollowed (M1). Everything else,
+//      resolved and the leaf appended unfollowed. Everything else,
 //      including Stat, follows the leaf.
 //   3. Containment: the real path must equal or lie under the final path of
 //      `game` or `user`; otherwise `outside_root`.
@@ -173,15 +171,15 @@
 //      most specific OTHER grant covering the grant's own path (as a folder),
 //      recursively; the safe set's root grants have explicit values, so this
 //      terminates. They depend on the policy, not on the target, so they are
-//      worked out once per policy (F5).
+//      worked out once per policy.
 //   7. required_permissions(access) must be a subset of
 //      permissions_for(effective mode, delete); otherwise `denied`. `delete`
-//      with an effective mode that can't write is inert (F6).
+//      with an effective mode that can't write is inert.
 //   8. Fixed denials, whatever the grants (`denied`):
 //      - delete floor, for Remove, RemoveTree and the Move source: any
 //        location's own path, any drive root, the user profile root, and any
 //        folder that CONTAINS a location, unless the winning grant for that
-//        folder was added on exactly that path with delete = true (K4/F12);
+//        folder was added on exactly that path with delete = true;
 //      - moddata/.owner for anything but stat and read.
 //   9. Fixed savegames rules (`invalid`): no non-atomic WriteText, no
 //      truncating Open.
@@ -198,7 +196,7 @@
 //            an operating-system failure. Wording isn't part of the contract.
 // The Lua layer tests success with `~= nil` and passes failures through
 // unchanged (AddPath: raises). Win32 mapping: `win32_error_mapping`. Every
-// capacity limit (grants, policies, streams, subscriptions) is `io` (F9).
+// capacity limit (grants, policies, streams, subscriptions) is `io`.
 //
 // ---------------------------------------------------------------------------
 // 5. Data escape for inbound content (R3)
@@ -219,7 +217,7 @@
 // seconds with up to 7 fraction digits. Field order is fixed by the `*_fields`
 // arrays. An empty result is "". List skips any entry whose name isn't valid
 // UTF-16 or contains '\t' or '\n' (possible through the NT API), and logs it
-// once per call (M12; API.md 27).
+// once per call (API.md 27).
 //
 // ---------------------------------------------------------------------------
 // 7. Threads, delivery and lifetime
@@ -241,7 +239,7 @@
 // FileBridgeTailDelivery.hpp), which calls the session's dispatcher on the
 // session's root `lua` state:
 //     dispatcher(kind, token, text, offset, flags)
-// The consumer is the thread every bridge-events callback uses (M15): with
+// The consumer is the thread every bridge-events callback uses: with
 // UE4SS's engine-tick detour, decided in on_unreal_init, an engine-tick
 // post-callback on the game thread; without it, on_update itself. No bridge
 // lock is held during call_function. on_lua_stop off the consumer thread
@@ -249,15 +247,15 @@
 // sets the gate inert; the DLL stays loaded once the tick callback exists.
 //   kind = data    text is a line (no terminator) or a chunk; offset is its
 //                  byte offset; flags has DeliveryFlag bits (reset, partial;
-//                  Lua maps them to info.reset and info.partial, M2).
+//                  Lua maps them to info.reset and info.partial).
 //   kind = closed  the native side closed the subscription (file error,
 //                  limit, a dispatcher error for that token). text is
 //                  "<code>\t<message>". The bridge has already logged it. Lua
 //                  sets sub.closed = true and drops the callback; the mod's
-//                  callback isn't called (K2).
+//                  callback isn't called.
 //   kind = stop    the session is stopping (on_lua_stop or reload); token,
 //                  text, offset and flags are 0/"". Lua clears all callback
-//                  and queue state (M7). Delivered only on the game thread,
+//                  and queue state. Delivered only on the game thread,
 //                  where on_lua_stop runs it, as bridge-events does.
 // The dispatcher returns nothing. If it raises for a data delivery (the mod's
 // callback failed), the bridge closes that subscription and logs the path and
@@ -421,7 +419,7 @@ constexpr uint32_t permissions_for(Mode mode, bool delete_allowed)
     }
     // `delete` only counts together with write: AddPath rejects it with an
     // explicit ro/stat/ao, and it is inert with an inherited mode that can't
-    // write (F6).
+    // write.
     if (delete_allowed && (bits & write) != 0) bits |= remove;
     return bits;
 }
@@ -477,7 +475,7 @@ inline constexpr int64_t known = delete_allowed | non_recursive | extensions_set
 }
 
 inline constexpr char extension_separator = ';';
-// Bytes an extension entry may not contain, besides control characters (M5).
+// Bytes an extension entry may not contain, besides control characters.
 inline constexpr std::string_view extension_forbidden = "./\\;<>:\"|?*";
 
 // --- Other flag arguments (unknown bits are `invalid`) ----------------------
@@ -529,7 +527,7 @@ inline constexpr int64_t partial = 1 << 1; // info.partial: a piece of a line ov
 inline constexpr char record_separator = '\n';
 inline constexpr char field_separator = '\t';
 
-// Locations(session), public env.Locations() (M14): one record per enabled
+// Locations(session), public env.Locations(): one record per enabled
 // location, in this table's order. An unbound location has an empty path.
 inline constexpr std::array<std::string_view, 4> location_fields{"name", "path", "root", "exists"};
 
@@ -549,7 +547,7 @@ inline constexpr std::array<LocationEntry, 7> locations{{
     {"moddata", false, true, true, "<user>/Saved/ModData/<mod name>"},
     {"temp", false, true, true, "<moddata>/temp"},
     {"savegames", false, false, true, "<user>/Saved/SaveGames"},
-    // PENDING (Jorge, API.md 1 / F11): the UE4SS Mods folder, read-only through
+    // PENDING (API.md 1): the UE4SS Mods folder, read-only through
     // `game`. Hook only; enable by flipping `enabled` once decided. It joins
     // the delete floor like every location.
     {"mods", false, false, false, "<Mods>"},
@@ -615,7 +613,7 @@ inline constexpr std::array<NativeFunction, 26> native_functions{{
      "GetCapabilities (Lua adds `locations` and the deferred keys)"},
     {"GetDispatchStats", 0, "",
      "subscriptions:int, delivered:int, budget_exhausted_passes:int",
-     "GetDispatchStats (public, K3)"},
+     "GetDispatchStats (public)"},
     {"Locations", 1, "s", "records:str (location_fields)", "Locations"},
 
     // Paths (no grant; reads only the cached locations)
@@ -677,22 +675,11 @@ inline constexpr std::array<std::string_view, 9> check_steps{
 } // namespace UE4SSLuaFileBridge::NativeContract
 
 // ---------------------------------------------------------------------------
-// Decisions recorded at G-spec (2026-10-10)
+// Open points
 // ---------------------------------------------------------------------------
-// L's M1-M15 accepted. K1: the file bridge's .def adds get_stack_size,
-// is_string, is_integer; natives validate arity and types. F9: every capacity
-// limit is `io`. K2: a natively closed subscription is logged and surfaces as
-// sub.closed, with no callback. K3: GetDispatchStats is public. K4/F12: the
-// delete floor covers folders containing a location unless granted with
-// delete on exactly that path. F11 (`mods`): pending Jorge, hook disabled
-// in `locations`.
-//
-// Remaining open points
-// ---------------------------------------------------------------------------
-// O1  `mods` location (F11 / API.md 1): pending Jorge.
+// O1  `mods` location (API.md 1): not enabled; the hook stays disabled in
+//     `locations`.
 // O2  `stop` is delivered only when on_lua_stop runs on the game thread (as
 //     bridge-events does its helper cleanup). Off the game thread the session
 //     is still closed natively; Lua state then simply goes away with the
-//     environment. E/K to confirm on_lua_stop's thread in the game.
-// O3  API.md needs D's edits for M1, M2, M4, M5, M6, M9, M11, M14, K2, K3
-//     and the extended delete floor; this header already follows them.
+//     environment. on_lua_stop's thread in the game is still to be confirmed.

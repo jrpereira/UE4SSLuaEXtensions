@@ -1,6 +1,6 @@
 #pragma once
 // Which thread makes a bridge's calls into Lua, and a marker for the pass that
-// is making them (bridge-events/docs/BUILD.md, "Ownership and event delivery").
+// is making them.
 //
 // A bridge decides its delivery once, at Unreal initialization: `tick` when
 // UE4SS's engine-tick detour exists (one engine-tick post-callback on the game

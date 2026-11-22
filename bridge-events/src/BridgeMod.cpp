@@ -186,7 +186,7 @@ bool decode_packed_path(const Lua& lua, std::string& path, std::string& error)
 // ------------------------------------------------------------ function hooks
 // The glue between the hook core (HookTable.hpp, Core), the parameter code
 // (ParamSchema.hpp, ParamCopier.hpp, HookFilters.hpp), the delivery runtime
-// (HookRuntime.hpp) and the Lua natives below (docs/BUILD.md, "Function hook design reference").
+// (HookRuntime.hpp) and the Lua natives below.
 
 namespace Hooks = UE4SSLuaEventBridge::Hooks;
 namespace HookLayout = RC::Unreal::HookLayout;
@@ -472,7 +472,7 @@ std::string lower_trimmed(std::string_view text)
     return out;
 }
 
-// [UE4SSLuaEXtensions.Events] EnableHooks in the mod's config.ini (written by ModCore Settings; docs/BUILD.md, "Hook design rules").
+// [UE4SSLuaEXtensions.Events] EnableHooks in the mod's config.ini (written by ModCore Settings).
 // Only "0" turns hooks off: a missing file or an unreadable value keeps the
 // default, so configuration never blocks the bridge.
 bool read_hooks_setting()

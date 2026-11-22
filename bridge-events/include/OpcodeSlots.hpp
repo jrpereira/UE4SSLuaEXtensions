@@ -1,6 +1,6 @@
 #pragma once
 
-// Opcode slots for the Blueprint handlers (docs/BUILD.md, "Opcode slots").
+// Opcode slots for the Blueprint handlers.
 //
 // GNatives (UE4SS: GNatives_Internal) is the engine's FNativeFuncPtr
 // GNatives[EX_Max] table, EX_Max = 0x100, indexed by a bytecode opcode; the

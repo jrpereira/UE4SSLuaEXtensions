@@ -26,7 +26,7 @@ from release_notes import HEADING, extract_notes
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
 LINK = re.compile(r'(\]\()([^)\s]+)(\))')
-# A dependency version may carry update placeholders (AGENTS.md 7.5): X.Y.?+ follows the
+# A dependency version may carry update placeholders: X.Y.?+ follows the
 # dependency's latest minor, X.?.?+ its latest major. The package publishes 0 for each ?.
 PLACEHOLDER = re.compile(r'(0|[1-9][0-9]*)\.((0|[1-9][0-9]*)\.\?|\?\.\?)\+')
 

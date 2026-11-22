@@ -2,8 +2,7 @@
 
 // Types the hook tracks share: core patching, parameter schemas and copying,
 // filters, the queue and the Lua wiring. Portable: no UE4SS header, so every
-// test suite compiles against it on Linux. The natives and messages built on
-// it are described in docs/BUILD.md, "Hook natives and messages".
+// test suite compiles against it on Linux.
 
 #include <atomic>
 #include <cstddef>

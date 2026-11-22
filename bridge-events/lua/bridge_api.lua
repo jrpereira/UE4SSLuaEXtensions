@@ -43,7 +43,7 @@ local function __traceback(message)
 end
 
 -- Hook messages (token <= -3) are routed here; the Hooks block below replaces
--- this no-op. Messages: docs/BUILD.md, "Hook natives and messages".
+-- this no-op.
 local __hookDispatch = function() end
 
 local function __dispatchInput(
@@ -1128,7 +1128,7 @@ __UE4SSLuaEventBridge_StopHelperScopes = function()
     return true
 end
 
--- Function hooks (docs/BUILD.md, "Hook natives and messages").
+-- Function hooks.
 -- Native functions this block calls (registered per Lua state by BridgeMod.cpp):
 --   UE4SSLuaEventBridge_HooksEnabled() -> bool, reason|nil
 --   UE4SSLuaEventBridge_HookFunction(session, functionAddress, phaseMask,

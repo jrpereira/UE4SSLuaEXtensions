@@ -1,6 +1,6 @@
 #pragma once
 
-// Bridge-to-Lua delivery (docs/BUILD.md, "Ownership and event delivery"): one
+// Bridge-to-Lua delivery: one
 // consumer thread makes every call into a session's Lua state.
 //
 // - Tick mode (UE4SS's engine-tick detour exists): one engine-tick

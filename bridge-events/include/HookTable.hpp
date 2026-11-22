@@ -1,6 +1,6 @@
 #pragma once
 
-// The process-wide hook table (docs/BUILD.md, "Hook lifetime") and the context the
+// The process-wide hook table and the context the
 // handlers run against.
 //
 // - One entry per hooked UFunction, keyed by its address. Entries are never

@@ -1,6 +1,6 @@
 #pragma once
 
-// Payload writer and flattener (docs/BUILD.md, "Parameter schema", "Hook natives and messages"). Portable.
+// Payload writer and flattener. Portable.
 //
 // Record (little endian): tag(1) | field index(2) | length word(2) | value.
 //   length word = (element index << 13) | value length in bytes.

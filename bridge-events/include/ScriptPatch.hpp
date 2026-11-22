@@ -1,7 +1,7 @@
 #pragma once
 
 // Blueprint function hooks: the two-byte bytecode patch and the handlers that
-// run in its place (docs/BUILD.md, "Blueprint patch").
+// run in its place.
 //
 // Bytecode assumptions (Kismet compiler output, UE4/UE5 script VM):
 // - UStruct::Script is a heap TArray<uint8> holding the function's bytecode.

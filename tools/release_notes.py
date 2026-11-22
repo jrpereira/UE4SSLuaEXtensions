@@ -1,7 +1,7 @@
 # Vendored from ModCoreSettings (owner). Do not edit copies; change the source and re-vendor.
 """Extract one version's release notes from the consolidated changelog.
 
-Release notes open with a "## Changes" heading (AGENTS.md 7.6), whether or not
+Release notes open with a "## Changes" heading, whether or not
 the changelog section has one."""
 import argparse
 from pathlib import Path

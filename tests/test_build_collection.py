@@ -43,12 +43,10 @@ def product_release(extension, version, tamper=None):
 REPO = {
     'LICENSE': b'MIT\n',
     'README.md': b'root readme\n',
-    'bridge-x/README.md': b'# X\n- [Guide](docs/DEVELOPERS.md#a)\n- [Maintainer guide](docs/BUILD.md): build.\n'
+    'bridge-x/README.md': b'# X\n- [Guide](docs/DEVELOPERS.md#a)\n'
                           b'- [Sample](examples/A/Scripts/main.lua)\n- [Source](src/a.cpp)\n- [Changes](CHANGELOG.md)\n',
     'bridge-x/CHANGELOG.md': b'# Changelog\n',
-    'bridge-x/docs/DEVELOPERS.md': b'# Dev\nSee the [maintainer guide](BUILD.md#t).\n[Back](../README.md)\nKept.\n',
-    'bridge-x/docs/BUILD.md': b'# Build\n',
-    'bridge-x/docs/SPEC-REVIEW.md': b'# Review\n',
+    'bridge-x/docs/DEVELOPERS.md': b'# Dev\n[Back](../README.md)\nKept.\n',
     'bridge-x/docs/API.md': (b'# API\n\nStatus: **frozen.** Process note\nacross two lines.\n\nIntro stays.\n\n'
                              b'- [Used](#used)\n- [Internal native contract](#internal-native-contract)\n\n'
                              b'## Used\n\nUsage.\n\n## Internal native contract\n\nSecret.\n\n## Open points for review\n\n- p\n'),
@@ -73,7 +71,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual([e['mod_folder'] for e in MANIFEST['extensions']],
                          ['0_ModCore_UE4SSLuaEventBridge', '0_ModCore_UE4SSLuaFileBridge',
                           '0_ModCore_UE4SSLuaSoundBridge', '0_ModCore_UE4SSLuaLogBridge'])
-        self.assertEqual(MANIFEST['not_deployed'], ['NEXUS.bb', 'DEVELOPMENT.md', 'CHANGELOG.md'])
+        self.assertEqual(MANIFEST['not_deployed'], ['NEXUS.bb', 'CHANGELOG.md'])
         self.assertEqual(MANIFEST['nexus_description'], {'source': 'README.md', 'output': 'NEXUS.bb'})
 
     def test_every_extension_the_menu_lists_is_in_the_package(self):
@@ -161,9 +159,6 @@ class DocumentTests(unittest.TestCase):
         self.assertIn('Usage.', api)
         for dropped in ('Status:', 'Process note', 'Secret', 'Internal native', 'Open points', 'across two lines'):
             self.assertNotIn(dropped, api)
-        for name, data in documents().items():
-            for dropped in ('BUILD.md', 'SPEC-REVIEW.md', 'Maintainer'):
-                self.assertNotIn(dropped, data.decode(), name)
 
     def test_a_rule_that_matches_nothing_is_an_error(self):
         broken = dict(X, documents=[{'from': 'guides/*.md', 'to': 'docs/'}])

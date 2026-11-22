@@ -1,6 +1,6 @@
 #pragma once
 
-// Parameter schema builder (docs/BUILD.md, "Parameter schema"). Portable; only the native
+// Parameter schema builder. Portable; only the native
 // walker adapter at the bottom (src/ParamSchema.cpp) needs UE4SS.
 //
 // Walker interface: PropertyView is one FProperty. `next()` is the sibling

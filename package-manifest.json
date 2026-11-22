@@ -11,7 +11,6 @@
   },
   "not_deployed": [
     "NEXUS.bb",
-    "DEVELOPMENT.md",
     "CHANGELOG.md"
   ],
   "forbidden_folders": [
@@ -27,8 +26,6 @@
       "Status: **"
     ],
     "drop_lines_containing": [
-      "BUILD.md",
-      "SPEC-REVIEW.md",
       "(#internal-native-contract)",
       "(#open-points-for-review)"
     ]
@@ -67,11 +64,7 @@
         },
         {
           "from": "docs/*.md",
-          "to": "docs/",
-          "except": [
-            "BUILD.md",
-            "SPEC-REVIEW.md"
-          ]
+          "to": "docs/"
         },
         {
           "from": "examples/**/*.lua",
@@ -94,11 +87,7 @@
         },
         {
           "from": "docs/*.md",
-          "to": "docs/",
-          "except": [
-            "BUILD.md",
-            "SPEC-REVIEW.md"
-          ]
+          "to": "docs/"
         },
         {
           "from": "examples/**/*.lua",
@@ -121,11 +110,7 @@
         },
         {
           "from": "docs/*.md",
-          "to": "docs/",
-          "except": [
-            "BUILD.md",
-            "SPEC-REVIEW.md"
-          ]
+          "to": "docs/"
         },
         {
           "from": "examples/**/*.lua",
@@ -148,11 +133,7 @@
         },
         {
           "from": "docs/*.md",
-          "to": "docs/",
-          "except": [
-            "BUILD.md",
-            "SPEC-REVIEW.md"
-          ]
+          "to": "docs/"
         },
         {
           "from": "examples/**/*.lua",
