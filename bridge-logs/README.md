@@ -10,10 +10,10 @@ crash-safe delivery.
   ModCore Settings menu (a row for every mod that registered and each of its
   categories) or Lua, and apply while the game runs.
 - Lines go to UE4SS.log or to the mod's own `logs/<category>.log`.
-- Written at once, once per frame or every few seconds, always by the
-  bridge's own thread, so disk writes never touch a frame.
-- Every line lands in a memory-mapped journal before the call returns, so a
-  crash loses nothing; the next start writes the previous session's lines to
+- Written at once, once per frame or every few seconds, without holding up
+  the game.
+- Every line is kept safe before the call returns, so a crash loses nothing;
+  the next start writes the previous session's lines to
   `logs/previous-session.log`.
 
 ```lua

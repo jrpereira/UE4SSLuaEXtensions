@@ -15,17 +15,13 @@
 - Breaking: the verification switch in `settings.ini` is now `[Settings]
   EnableVerifications`, replacing `[Verifications] LoadTime`. The old key is
   ignored, so verifications stay off until switched on again.
-- With UE4SS's engine-tick detour (the default), `Tail` callbacks run on the
-  game thread, once per frame from the engine tick, the thread that also runs
-  every UE4SSLuaEventBridge callback, so a mod that uses both bridges never
-  has two of their callbacks in its Lua state at once. Files are still read
-  from UE4SS's update thread. Without the detour, callbacks run from the
-  update callback as before.
-- With the engine tick, the bridge DLL stays loaded until the game exits:
-  UE4SS cannot unregister the tick callback.
+- `Tail` callbacks run on the game thread once per frame, like every
+  UE4SSLuaEventBridge callback, so a mod that uses both bridges never has two
+  of their callbacks running at once. With UE4SS's engine-tick hook turned
+  off, they run off the game thread as before.
+- The bridge stays loaded until the game exits.
 - The default `Tail` delivery time limit drops from 2,000 to 500 microseconds
-  per pass, since a pass now runs every frame on the game thread
-  (`UE4SSLFB_MAX_DISPATCH_US` still overrides it).
+  per frame (`UE4SSLFB_MAX_DISPATCH_US` still overrides it).
 
 ## v1.0.1
 
@@ -51,9 +47,7 @@ through a native bridge.
 - `GetCapabilities`, `GetVersion` and `GetDispatchStats`.
 - Path policy: `..` escapes, absolute paths outside both roots, device and UNC
   paths, and links that leave the roots are refused.
-- Load-time verifications: in-game checks of this API, shipped as
-  `Scripts/main.lua` with the shared `Scripts/lex_verify.lua` harness, and a
-  ModCore Settings page whose **Enable load-time verifications** toggle turns
-  them on (off by default). Results go to UE4SS.log.
-- The package ships `mod.json` (with its version) and `mod_settings.ini`, so
-  ModCore Settings lists the bridge with its name, category and version.
+- Load-time verifications: in-game checks of this API, turned on by the
+  **Enable load-time verifications** toggle on its ModCore Settings page (off
+  by default). Results go to UE4SS.log.
+- ModCore Settings lists the bridge with its name, category and version.

@@ -39,13 +39,13 @@ registering it again returns the same logger and ignores the options except
 | `level` | the module's level when settings name none | none (WARN) |
 | `categories` | a list of category names to register | |
 
-The logging call only copies the line into the journal; the bridge's own
-thread writes it to its target, so no disk write ever runs on the game thread.
-`immediate` wakes that thread for each line (typically under a millisecond
-later), `frame` once per frame, `periodic` every `interval`. A line can
+A logging call returns at once and its line is written to its target shortly
+after, without holding up the game: `immediate` writes each line (typically
+under a millisecond later), `frame` once per frame, `periodic` every
+`interval`. A line can
 therefore reach UE4SS.log just after a `print` made right after it; call
-`Flush()` first when that order matters. Without the engine tick (rare),
-`frame` becomes `periodic` at 16 ms.
+`Flush()` first when that order matters. When the game reports no frames
+(rare), `frame` writes every 16 ms instead.
 
 `module` target files: on a file's first write in a session, the previous
 session's file becomes `<category>.prev.log`. Lines read
@@ -66,12 +66,12 @@ The effective level of a key, as `SetLevel` takes it.
 
 ### `Flush()` → true
 
-Writes every pending line now, from the calling thread.
+Writes every pending line now, before it returns.
 
 ### `ReloadSettings()` → true
 
-Asks the bridge to re-read config.ini. The bridge's thread reads it shortly
-after; when levels changed, every logger sees them within a second, as with
+Asks the bridge to re-read config.ini. It is read shortly after; when levels
+changed, every logger sees them within a second, as with
 `SetLevel`. ModCore Settings' extensions menu calls it for you (see Levels).
 
 ### `ListLoggers()` → list, generation
@@ -104,8 +104,8 @@ levels, targets, frequencies, default_categories }`.
 ### `GetStats()`
 
 `{ written, delivered, pending, stalls, recovered, loggers, generation }`.
-`stalls` counts writes that found the journal full and wrote everything
-pending first; `recovered` counts lines of the previous session that never
+`stalls` counts logging calls that had to wait for pending lines to be
+written first; `recovered` counts lines of the previous session that never
 reached their target.
 
 ## Loggers and categories
@@ -130,8 +130,7 @@ and not a method name (`write`, `level`, ...); names are folded to lower case.
 | `register(name, ...)` | logger only: registers categories and returns them; `nil, "invalid", message` for a bad name, registering none |
 
 `log:warn(...)` works as well as `log.warn(...)`. From a coroutine the mod
-created, UE4SS refuses native calls; the line then goes to UE4SS.log through
-`print`, and a category whose level the main thread has not asked for yet is
+created, lines go to UE4SS.log whatever the target, and a category whose level the main thread has not asked for yet is
 filtered at the module's last known level (WARN if none is known).
 
 ## Levels
@@ -161,23 +160,20 @@ The ModCore Settings menu edits `GlobalLevel` (1 for TRACE to 7 for OFF; a
 name works too) and, under it, each module listed by `ListLoggers` and its
 categories, stored in `[Levels]` as ranks. A `[Levels]` value of `0` or
 `inherit` (the menu's Inherit) sets no level, so the key falls through to the
-next step above. The bridge reads the file when the game starts and never
-polls it: it is re-read when ModCore Settings applies the Logs page, when
+next step above. The bridge reads the file when the game starts, and edits
+apply when ModCore Settings applies the Logs page, when
 ModCore Settings reloads config (its Reload Config button, or the game window
 regaining focus), and on `ReloadSettings()`. Without ModCore Settings, an edit
 applies on the next launch or after `ReloadSettings()`. Unknown keys and
 levels are ignored and noted in UE4SS.log.
 
-The Lua layer keeps levels it has asked for, so a filtered call makes no native
-call; a written line tells it when any level changed, and any call (a filtered
-line, `enabled`, the `level` field) checks again once a second has passed.
+A level change reaches every logger within a second.
 
 ## Crash safety
 
-Every line is copied into `0_ModCore_UE4SSLuaLogBridge/logs/journal.bin`, a 4
-MiB file mapped into memory, before the logging call returns. Windows writes a
-mapped file's pages even when the game crashes or is killed, so only an
-operating-system crash or power loss loses a logged line.
+Every line is saved to `0_ModCore_UE4SSLuaLogBridge/logs/journal.bin` (4 MiB)
+before the logging call returns, and survives the game crashing or being
+killed; only an operating-system crash or power loss loses a logged line.
 
 At the next start, the previous session's retained lines go to
 `logs/previous-session.log` (the newest 4 MiB, every target, oldest first),
@@ -186,9 +182,9 @@ loggers are also appended to their own files. UE4SS.log of the crashed session
 is gone by then (UE4SS starts it anew), so that file is where its last lines
 are.
 
-A full journal never drops a line: the writing call first writes everything
-pending, then continues. Messages over 64 KiB are cut and end in
+A full journal never drops a line: the logging call waits until pending lines
+are written, then continues. Messages over 64 KiB are cut and end in
 ` [truncated]`.
 
-A second game process gets no journal file and keeps it in memory, without
-crash safety; UE4SS.log says so.
+A second game process running at the same time has no crash safety; UE4SS.log
+says so.

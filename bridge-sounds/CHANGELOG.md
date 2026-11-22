@@ -33,14 +33,12 @@
   optional `max_seconds` limit.
 - `sound:Play` and `Play` start a play at once, with pan, volume, pitch and an
   optional low-pass filter per play; plays overlap freely.
-- XAudio2 playback on its own audio thread with 32 voices; when all are busy
-  the oldest play is taken over.
+- 32 voices; when all are busy the oldest play is taken over.
 - Follows the default output device and restarts on a new one; plays are
   dropped quietly while no device exists.
 - `Stop`, `sound:Stop`, `StopAll` and `sound:Release`; sounds are released when
   their Lua state stops, or when garbage collected.
 - `GetVersion`, `GetCapabilities` and `GetStats`.
-- Load-time verifications: in-game checks of this API, shipped as
-  `Scripts/main.lua` with the shared `Scripts/lex_verify.lua` harness, and a
-  ModCore Settings page whose **Enable load-time verifications** toggle turns
-  them on (off by default). Results go to UE4SS.log.
+- Load-time verifications: in-game checks of this API, turned on by the
+  **Enable load-time verifications** toggle on its ModCore Settings page (off
+  by default). Results go to UE4SS.log.

@@ -3,14 +3,14 @@
 UE4SSLuaSoundBridge lets UE4SS Lua mods play their own sounds. A mod loads WAV
 files once, then plays them at once, as often as it likes,
 with pan, volume, pitch and a low-pass filter chosen per play. Playback runs
-through XAudio2, beside the game's own audio engine, so it works where the
+beside the game's own audio, so it works where the
 game's sound banks can't help: sounds the game doesn't ship, and cues whose
 direction must not lag the camera.
 
 ## Features
 
-- Load once, play many times: `Load` reads and decodes a WAV file into memory;
-  `Play` does no file I/O and never waits on the audio engine.
+- Load once, play many times: `Load` reads a WAV file once;
+  `Play` starts it at once, without reading the file again.
 - Per play: pan from full left to full right, volume, pitch as a playback rate
   (0.5 to 2) and an optional low-pass filter.
 - 32 voices; when all are busy a new play takes over the oldest instead of
@@ -37,7 +37,7 @@ needs that offers its own volume and stops playing while paused.
 
 ## Compatibility
 
-Windows 10 or later (XAudio2 2.9 ships with Windows), Unreal Engine 5.5, and
+Windows 10 or later, Unreal Engine 5.5, and
 UE4SS 3.0.1 Beta #0 at commit `97b7e501`, the same pin as the other UE4SS Lua
 extensions. Check `GetCapabilities()` for API features rather than inferring
 them from the product version.
@@ -61,8 +61,7 @@ Mods/
     └── mod.json
 ```
 
-`main.dll` is a small bootstrap that validates and loads the versioned
-implementation from `dlls/versions`, as in the other extensions. The packaged
+The packaged
 `enabled.txt` enables the bridge without a `mods.txt` entry, and its `0_`
 folder name sorts ahead of the mods that use it.
 
@@ -86,8 +85,8 @@ cue:Play({ pitch = 1.2 })                            -- higher, centre
 cue:Play({ pitch = 0.8, lowpass = 1200 })            -- lower and muffled
 ```
 
-`Play` returns at once from any Lua thread UE4SS runs (game thread, hooks,
-`LoopAsync`); the sound starts on the next audio pass, about 10 ms later.
+`Play` returns at once from any Lua code UE4SS runs, hooks and delayed or
+looping callbacks included; the sound starts about 10 ms later.
 
 ## Documentation
 

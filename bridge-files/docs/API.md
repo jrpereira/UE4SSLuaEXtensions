@@ -1,12 +1,5 @@
 # UE4SSLuaFileBridge Lua API (1.1.0)
 
-Status: **reviewed, ready to freeze (Gate G-spec).** This file is the contract
-the native product and the Lua helpers implement. It folds in L's review
-(`bridge-files/docs/SPEC-REVIEW.md`, M1–M15), F's native contract and K's
-decisions of 2026-10-10. Once K freezes it, any change goes through K to the
-native, Lua and documentation tracks together. One point is still pending; see
-[Open points for review](#open-points-for-review).
-
 - [Conventions](#conventions)
 - [Entry point and version](#entry-point-and-version)
 - [Locations: roots and presets](#locations-roots-and-presets)
@@ -17,8 +10,6 @@ native, Lua and documentation tracks together. One point is still pending; see
 - [File sockets: `Tail`](#file-sockets-tail)
 - [Error codes](#error-codes)
 - [Deferred and out of scope](#deferred-and-out-of-scope)
-- [Internal native contract](#internal-native-contract)
-- [Open points for review](#open-points-for-review)
 
 ## Conventions
 
@@ -42,25 +33,22 @@ native, Lua and documentation tracks together. One point is still pending; see
   value of the wrong type or range is `invalid`.
 - **Strings** are Lua byte strings. Paths are UTF-8. File contents are bytes,
   passed through unchanged unless an operation says otherwise.
-- **Threads.** File operations are synchronous and run on the calling thread.
-  They work from the mod's main Lua state, the game thread
-  (`ExecuteInGameThread`), loop callbacks (`LoopAsync`) and hook callbacks, but
-  large reads and writes on the game thread stall the frame. The bridge never
-  calls into Unreal.
+- **Threads.** File operations are synchronous: they finish before they return.
+  They work from the mod's main Lua state, code run on the game thread, loop
+  and delayed callbacks and hook callbacks, but large reads and writes on the
+  game thread stall the frame. The bridge never calls into Unreal.
 - **Coroutines.** Operations are **not available inside coroutines the mod
-  creates itself** (`coroutine.create`, `coroutine.wrap`). UE4SS refuses native
-  calls from a Lua thread it didn't register; there every operation returns
+  creates itself** (`coroutine.create`, `coroutine.wrap`). There every operation returns
   `nil, "invalid", message` (`AddPath` raises). Call the bridge outside the
   coroutine and pass results in.
 - **Callbacks** (`Tail`) run on the mod's root Lua state, on the game thread
-  from the bridge's engine-tick callback when UE4SS's engine-tick detour exists
-  (the normal case), otherwise from the bridge's update callback, not on the
+  once per frame. With UE4SS's engine-tick hook turned off they run off the
   game thread, where Unreal work must be scheduled with `ExecuteInGameThread`.
 - **Isolation.** Every Lua environment (each mod's Lua state) receives its own
   `UE4SSLuaFileBridge`. Environments, streams and subscriptions belong to the Lua
   environment that created them and are closed when it stops. After
   the Lua environment starts stopping, operations return `nil, "invalid",
-  message`. The native functions behind the table are not reachable from mods.
+  message`.
 
 ## Entry point and version
 
@@ -109,10 +97,9 @@ local stats = UE4SSLuaFileBridge.GetDispatchStats()
 -- { subscriptions = 2, delivered = 1840, budget_exhausted_passes = 3 }
 ```
 
-Process-wide `Tail` delivery counters, for parity with UE4SSLuaEventBridge:
-active subscriptions, deliveries made, and dispatch passes that ran out of
-budget with text still waiting. Counters last for the bridge lifetime. Read them
-on demand; the bridge adds no polling. Never fails.
+Process-wide `Tail` delivery counters, as in UE4SSLuaEventBridge: active
+subscriptions, deliveries made, and dispatch passes that ran out of
+budget with text still waiting. Counters last for the bridge lifetime. Never fails.
 
 ### Limits
 
@@ -132,12 +119,10 @@ are collected.
 **`Tail` read caps** are tuning, not capacity limits: nothing fails when they
 are reached. On each dispatch pass (20 passes per second by default) the bridge
 reads at most **256 KiB in total across all subscriptions** and at most **64 KiB
-from any one subscription's file**. Subscriptions are polled round-robin,
-starting each pass after the one where the previous pass stopped, so one busy
-file can't starve the others. Text not read in a pass stays in the file and is
+from any one subscription's file**. Subscriptions take turns, so one busy file
+can't starve the others. Text not read in a pass stays in the file and is
 read on a later pass. Together with the [delivery budget](#envtailpath-fn-options),
-this keeps polling from stalling UE4SS's update thread; it also bounds
-throughput, to roughly 5 MiB/s in total and 1.25 MiB/s per file at the default
+this bounds throughput, to roughly 5 MiB/s in total and 1.25 MiB/s per file at the default
 rate.
 
 ## Locations: roots and presets
@@ -151,7 +136,7 @@ names can start a path.
 | Location | Resolves to |
 |---|---|
 | `game` | The game install folder, which holds `Dawnwalker/` and `Engine/` (for Steam, `…/steamapps/common/The Blood of Dawnwalker`). Worked out from the running executable, `<game>/Dawnwalker/Binaries/Win64/Dawnwalker.exe` |
-| `user` | The game's user data folder, `%LOCALAPPDATA%\Dawnwalker`, from `SHGetKnownFolderPath(FOLDERID_LocalAppData)` plus the project name (the folder that holds `Binaries/Win64`). It holds saves, user config and logs |
+| `user` | The game's user data folder, `%LOCALAPPDATA%\Dawnwalker`. It holds saves, user config and logs |
 
 **Presets** are worked out once when the bridge starts (`mod` when the Lua
 environment starts). 1.1.0 ships exactly these:
@@ -233,7 +218,7 @@ Folders without a marker are left alone. A Lua reload doesn't empty `temp`.
 
 - **Every overwrite keeps one backup.** Any operation that replaces an existing
   file under `savegames` (`WriteText`, `Copy` or `Move` with `overwrite = true`)
-  goes through `ReplaceFileW` and leaves the previous content in
+  leaves the previous content in
   `<name>.bak` (for example `Autosave0.sav.bak`), replacing any older `.bak`.
   This is a fixed rule, not an option. The `.bak` is written by the bridge and
   isn't checked against the grant's `extensions`.
@@ -264,8 +249,7 @@ Every path argument accepts either form:
 ### Rules
 
 - **Encoding.** Paths are UTF-8 in Lua. Invalid UTF-8 or a NUL byte is
-  `invalid`. The native side converts to UTF-16 and uses long-path (`\\?\`)
-  forms internally; these never appear in Lua.
+  `invalid`.
 - **Returned paths** are absolute, with forward slashes, an uppercase drive
   letter, no `.` segments, no doubled or trailing slash. Case is kept as given;
   the bridge doesn't fold case or look up on-disk spelling.
@@ -328,8 +312,6 @@ write anywhere the user can. The bridge checks only what goes through it.
 | `temp` | `rw` | `true` |
 
 Writing to `moddata`, `savegames` or anything else must be granted explicitly.
-`temp` allows deleting because scratch space that can't be cleaned is no
-scratch space.
 
 ### `env.AddPath(path, options?)`
 
@@ -345,8 +327,8 @@ unchanged, so variants derived from one base can't interfere. There is no
 global switch and nothing to reset: an environment's **scope is wherever the
 variable holding it is visible**. A function taken from an environment
 (`local read = env.ReadText`) keeps that environment's grants alive for as long
-as it lives. Assigning a field of an environment raises an error; even a
-`rawset` can't change its grants, which are held natively.
+as it lives. Assigning a field of an environment raises an error, and not even a
+`rawset` can change its grants.
 
 `path` is a location or a location-relative path (or an absolute path inside the
 roots). It needn't exist. A grant on a file covers that file; a grant on a
@@ -438,9 +420,8 @@ For each path an operation touches:
    [`.owner`](#the-owner-marker) rule (`denied`), then the
    [`savegames`](#savegames) rules (`invalid`).
 
-Checks are made natively: each environment carries a policy id, and the native
-side checks every call against the resolved real path (normalization,
-junctions, Unicode).
+Every call is checked against the resolved real path, after normalization and
+links.
 
 ### Delete floor
 
@@ -544,14 +525,11 @@ Options: `atomic` (boolean, default `true`).
 **Atomic write (default).** Readers see the old content or the new content,
 never a mix, and a failure leaves the target unchanged:
 
-1. Create a temporary sibling `<name>.xbtmp-<pid>-<n>` in the same folder
-   (`CREATE_NEW`, not shared).
-2. Write all bytes, then `FlushFileBuffers`, then close.
-3. If the target exists: `ReplaceFileW(target, temp, backup)`, with `backup`
-   = `<name>.bak` under `savegames` and none elsewhere. The target's
-   attributes, ACL and creation time are kept. Otherwise:
-   `MoveFileExW(temp, target, MOVEFILE_WRITE_THROUGH)`.
-4. On any failure, delete the temporary file and return the error.
+the new content goes to a temporary sibling `<name>.xbtmp-<pid>-<n>` in the
+same folder, is flushed to disk, and then takes the target's place. An existing
+target keeps its attributes, permissions and creation time; under `savegames`
+its old content becomes `<name>.bak`. On any failure the temporary file is
+deleted and the error returned.
 
 The temporary sibling isn't checked against `extensions`. A crash can leave one
 behind; its name makes it recognizable. At bridge start, leftovers are removed
@@ -570,7 +548,7 @@ write/delete sharing), `read_only` (the target has the read-only attribute),
 ### `env.Append(path, text)`
 
 Appends `text` to the end of the file, creating it if missing. Each call is one
-`FILE_APPEND_DATA` write, so concurrent appenders don't overwrite each other.
+appending write, so concurrent appenders don't overwrite each other.
 Returns `true`. The parent folder must exist. Mode: `wo`, `rw` or `ao`. Errors:
 `not_found`, `busy`, `read_only`, `invalid`.
 
@@ -604,8 +582,8 @@ under `savegames`). Folders are not copied in 1.1.0. Returns `true`. Mode:
 ### `env.Move(from, to, options?)`
 
 Moves or renames a file, or a link as a link. Options: `overwrite` (boolean, default `false`). Within
-one volume it is a rename (`MoveFileExW`, or `ReplaceFileW` with `.bak` when
-overwriting under `savegames`). Across volumes (the two roots may be on
+one volume it is a rename (keeping a `.bak` when overwriting under
+`savegames`). Across volumes (the two roots may be on
 different drives) it copies, flushes, then removes the source. A **link** can't
 be moved across volumes, because the copy would follow it and leave a plain
 file: that is refused with `invalid`. Folders are not moved in 1.1.0. Returns `true`. Mode: `wo` or `rw` plus `delete` on `from`;
@@ -632,8 +610,7 @@ the stream is opened, not on each write. Streams are write-only in 1.1.0.
 | `flush` | `"write"`, `"manual"` | `"write"` | `"write"` hands every `Write` to the operating system at once, so readers and `Tail` see it immediately. `"manual"` buffers up to 64 KiB until `Flush`, `Close` or a full buffer |
 
 Mode: `wo`, `rw` or `ao` (with `append = true` only). The parent folder must
-exist. The file is opened with read and delete sharing
-(`FILE_SHARE_READ | FILE_SHARE_DELETE`): others can read it, and it can be
+exist. Others can read the file, and it can be
 renamed for rotation, while it is open. A second writer gets `busy`. Errors:
 `not_found`, `busy`, `read_only`, `invalid`, and `io` when the Lua environment
 already has 64 open streams.
@@ -643,15 +620,14 @@ already has 64 open streams.
 | Method | Returns | Notes |
 |---|---|---|
 | `stream:Write(text, ...)` | `true` | Writes the arguments in order, as one write. Strings and numbers are accepted (numbers as `tostring`); anything else is `invalid` and nothing is written. No arguments writes nothing and returns `true` |
-| `stream:Flush()` | `true` | Hands buffered data to the operating system. It doesn't force it to disk (`FlushFileBuffers`) |
+| `stream:Flush()` | `true` | Hands buffered data to the operating system. It doesn't force it to disk |
 | `stream:Close()` | `true` | Flushes and closes. Calling it again returns `true` |
 | `stream.path` | string | The normalized path, read-only |
 
 After `Close`, `Write` and `Flush` return `nil, "invalid", "stream is closed"`.
 Streams close automatically when their Lua environment stops. A
 stream that is garbage-collected without `Close` is closed after it is
-collected, at the latest when its Lua environment stops (the close runs at the
-next bridge call from that Lua environment, never inside the collector). Close
+collected, at the latest when its Lua environment stops. Close
 streams explicitly when you are done; collection timing is not a schedule.
 
 ## File sockets: `Tail`
@@ -696,7 +672,7 @@ Subscribes `fn` to data appended to the file. Returns a subscription. Mode:
   `partial = false`.
 
 **Truncation and rotation.** When the file becomes shorter than the read
-position (truncated), or its identity (volume serial and file index) changes
+position (truncated), or it is replaced by another file
 (rotated, deleted and recreated), the read position goes back to `0` and a held
 partial line is discarded. Identity is checked by path at most every 250 ms,
 so a rotation is noticed within that time.
@@ -705,14 +681,12 @@ so a rotation is noticed within that time.
 its folder exists; delivery starts from offset `0` when the file appears.
 Folder missing: `not_found`.
 
-**Delivery.** The bridge checks subscribed files from its update callback, using
-the dispatch schedule and budget code it shares with UE4SSLuaEventBridge, and
-calls `fn` on the mod's root Lua state within the per-pass dispatch budget:
-on the game thread, once per frame from its engine-tick callback, when UE4SS's
-engine-tick detour exists (the thread of every UE4SSLuaEventBridge callback),
-otherwise from the update callback itself, not on the game thread. Text left
-over when the budget runs out is delivered on the next pass, in order. The file itself is
-the buffer: the bridge reads only what it delivers, so a slow subscriber falls
+**Delivery.** The bridge checks subscribed files and calls `fn` on the mod's
+root Lua state within the per-pass dispatch budget: on the game thread, once
+per frame, like every UE4SSLuaEventBridge callback, or off the game thread
+when UE4SS's engine-tick hook is turned off. Text left
+over when the budget runs out is delivered on the next pass, in order. The bridge reads
+only what it delivers, so a slow subscriber falls
 behind but loses nothing (unless the file is truncated or rotated first). Expect
 delivery in the next frame or so after the writer's flush. A line longer than
 1 MiB is delivered in 1 MiB pieces (`info.partial`).
@@ -755,14 +729,14 @@ a function, the path is a folder), `io` (64 subscriptions already open).
 
 | Code | When |
 |---|---|
-| `not_found` | The file or folder doesn't exist, or a parent folder an operation needs is missing (`ERROR_FILE_NOT_FOUND`, `ERROR_PATH_NOT_FOUND`) |
-| `denied` | The environment doesn't grant the operation (mode, extension, `delete`); the [delete floor](#delete-floor) or the `.owner` rule; or Windows refuses access (`ERROR_ACCESS_DENIED`, for example under `Program Files` without elevation). The message says which |
+| `not_found` | The file or folder doesn't exist, or a parent folder an operation needs is missing |
+| `denied` | The environment doesn't grant the operation (mode, extension, `delete`); the [delete floor](#delete-floor) or the `.owner` rule; or Windows refuses access (for example under `Program Files` without elevation). The message says which |
 | `exists` | The destination exists and the operation won't replace it: `Copy` or `Move` without `overwrite`, or `MakeDir` where a file is in the way |
 | `outside_root` | The path, after normalization or link resolution, is outside both roots; a `..` climbs out of its location or root; a device, UNC or reserved-name path |
-| `read_only` | The target file has the read-only attribute (Windows reports `ERROR_ACCESS_DENIED`; the bridge checks the attribute), or the volume is write-protected (`ERROR_WRITE_PROTECT`). The bridge never clears the attribute |
-| `busy` | Another process or handle holds the file in a conflicting way (`ERROR_SHARING_VIOLATION`, `ERROR_LOCK_VIOLATION`, `ERROR_USER_MAPPED_FILE`), for example the game writing a save. Returned at once, without waiting or retrying |
-| `io` | Any other operating-system failure (disk full, a device error, a failed step of an atomic replace that `ReplaceFileW` reports, an internal error), and every [capacity limit](#limits): grants, environments, streams, subscriptions |
-| `invalid` | A bad argument or option, a malformed path, an unknown or unbound location, the wrong kind of target (folder vs file), a folder not empty for `Remove` (`ERROR_DIR_NOT_EMPTY`), a read larger than `max_read_bytes`, an operation that would bypass the `savegames` backup, a link moved across volumes, a closed stream, a call from a coroutine the mod created, or a call while its Lua environment is stopping |
+| `read_only` | The target file has the read-only attribute, or the volume is write-protected. The bridge never clears the attribute |
+| `busy` | Another process or handle holds the file in a conflicting way, for example the game writing a save. Returned at once, without waiting or retrying |
+| `io` | Any other operating-system failure (disk full, a device error, a failed atomic replace, an internal error), and every [capacity limit](#limits): grants, environments, streams, subscriptions |
+| `invalid` | A bad argument or option, a malformed path, an unknown or unbound location, the wrong kind of target (folder vs file), a folder not empty for `Remove`, a read larger than `max_read_bytes`, an operation that would bypass the `savegames` backup, a link moved across volumes, a closed stream, a call from a coroutine the mod created, or a call while its Lua environment is stopping |
 
 Policy refusals and Windows refusals both use `denied`; they differ in the
 message. An operation that fails leaves no partial result unless its section
@@ -776,25 +750,13 @@ says otherwise (non-atomic `WriteText`, `RemoveTree`).
 - `Hash`: content hashes of files.
 - `TempFile`: unique temporary files with automatic cleanup.
 
-**Out of scope** (decided 2026-10-10):
+**Out of scope**:
 
 - **Queuing:** brokers, delivery guarantees, distribution among receivers.
   `Tail` delivers what is in the file; it doesn't acknowledge or redeliver.
 - **Whiteboard messaging:** shared state between mods.
-- **Windows named pipes** (`\\.\pipe\…`). They would need an explicit exception
-  to the ban on device paths.
+- **Windows named pipes** (`\\.\pipe\…`).
 
 Also not in 1.1.0: reading streams, recursive `List`, copying or moving
-folders, file watching beyond `Tail`, presets beyond the four above.
-
-## Internal native contract
-
-The boundary between the DLL and the Lua layer (native functions, argument
-shapes, record formats, the content escape, dispatch and lifetime) is specified
-in [`bridge-files/include/FileBridgeNativeContract.hpp`](../include/FileBridgeNativeContract.hpp).
-It is internal: mods use only the API in this file.
-
-## Open points for review
-
-- **`mods` location:** pending Jorge's decision. 1.1.0 ships without it; until
-  then another mod's folder is reached as `game/Dawnwalker/Binaries/Win64/ue4ss/Mods/<mod>/…`.
+folders, file watching beyond `Tail`, presets beyond the four above. There is no `mods` location: reach another
+mod's folder as `game/Dawnwalker/Binaries/Win64/ue4ss/Mods/<mod>/…`.

@@ -9,7 +9,7 @@ native function without turning on a process-wide UE4SS hook.
 ## Features
 
 - Bind existing Input Actions or create private key bindings through Lua helpers.
-- Receive copied event values outside Unreal's native input-dispatch stack.
+- Receive copies of event values, delivered after Unreal's input dispatch rather than inside it.
 - Use session-owned handles, explicit cleanup, and optional delivery-fault handlers.
 - Inspect bindings and dispatch statistics on demand; enable tracing when needed.
 - Tune bounded dispatch queues and per-pass budgets for your workload.
@@ -25,18 +25,18 @@ and rebinding when the game replaces those objects.
 ## Compatibility
 
 Windows x64, Unreal Engine 5.5, and UE4SS 3.0.1 Beta #0 at commit `97b7e501`.
-Native layouts are ABI-pinned; nearby engine or UE4SS builds are not assumed
+Nearby engine or UE4SS builds are not assumed
 compatible. Check `GetCapabilities()` for API features rather than inferring
 them from the product version.
 
 Function hooks (1.1.0) do not need `HookProcessInternal = 1` in
 `UE4SS-settings.ini`. Once your mods have moved their Blueprint hooks to
-`Hooks.Install` or `Hooks.Request`, set `HookProcessInternal = 0`: UE4SS then stops looking up a
-callback on every Blueprint function the game enters. Leave
+`Hooks.Install` or `Hooks.Request`, set `HookProcessInternal = 0`, which saves UE4SS work on every Blueprint
+function the game runs. Leave
 `HookProcessLocalScriptFunction` at 0 and `HookEngineTick` at UE4SS's default
-(on); the bridge delivers hook events, input and every other callback from the
-engine tick on the game thread, and falls back to a slower event-loop drain
-without it (`GetCapabilities().frame_delivery` tells you which). Mods that still use UE4SS `RegisterHook` on Blueprint
+(on); with it the bridge delivers hook events, input and every other callback once
+per frame on the game thread, and more slowly without it
+(`GetCapabilities().frame_delivery` tells you which). Mods that still use UE4SS `RegisterHook` on Blueprint
 functions keep needing `HookProcessInternal = 1`.
 
 ## Installation layout
@@ -57,17 +57,10 @@ Mods/
     └── mod.json
 ```
 
-`main.dll` is a small bootstrap. It reads `dlls/main.json`, validates the
-selected implementation's embedded product, version, private ABI, UE4SS commit,
-and Unreal target, then loads it from `dlls/versions`. A missing configuration
-or an explicit `"version": "auto"` selects the highest compatible discovered
-version. A malformed configuration or unavailable exact version fails closed.
-
-Both DLLs carry Windows version resources and can be inspected without loading
-them. Use the published SHA-256 checksum to verify the exact archive bytes.
+Use the published SHA-256 checksum to verify the exact archive bytes.
 
 The packaged `enabled.txt` marker enables the bridge, so it loads without any
-`mods.txt` entry. It is a native DLL mod, which UE4SS loads before Lua mods, and
+`mods.txt` entry, and
 its `0_` folder name sorts ahead of the mods that use it.
 
 Keep only one active bridge installation.
@@ -107,8 +100,7 @@ end
 ```
 
 Off-thread Lua shutdown disables callbacks but can leave helper-generated mapping
-contexts installed. Explicit game-thread cleanup remains required. Offline tests
-do not establish live-game acceptance or performance.
+contexts installed. Explicit game-thread cleanup remains required.
 
 ## Minimal hook example
 
@@ -147,6 +139,6 @@ frame); they cannot block or change it. `hooks_sync` is false in this version.
 ## Documentation
 
 - [Developer guide](docs/DEVELOPERS.md): API, examples, lifecycle, debugging, and tuning.
-- [Maintainer guide](docs/BUILD.md): native architecture, build instructions, and tests.
+- [Maintainer guide](docs/BUILD.md): building from source.
 - [Changelog](CHANGELOG.md): version history.
 - [Complete sample](examples/EnhancedInputTapHold/Scripts/main.lua): rollback and cleanup.

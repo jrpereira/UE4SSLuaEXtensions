@@ -30,10 +30,9 @@
   `orphaned` and stays so.
 - `Hooks.Request` attaches now if it can, otherwise waits for the owner class
   to load, and attaches again after a reload deletes the function. Pending
-  hooks no longer retry every second for as long as they are pending (each
-  retry cost about 33 ms on a miss in a loaded level). A request now retries
-  only after its class-name wake-up: on the next tick, then about 100 ms and
-  1 s later, and then it waits for the next wake-up.
+  hooks no longer retry every second, which could cost about 33 ms each time
+  in a loaded level; a request now retries only when an object of its class
+  appears, then about 100 ms and 1 s later.
 - Refusals that can never succeed (unknown parameter, unsupported parameter
   kind, a target that is not a `UFunction`, a property layout mismatch) return
   `nil, reason` from both calls. A pending request that meets one when its
@@ -43,102 +42,83 @@
   are logged as a `WARN` line with the function path.
 - `h:Remove()` is safe on any status: pending, active, orphaned, failed or
   already removed.
-- Fix a race that could corrupt a mod's Lua state: input callbacks ran on
-  UE4SS's event-loop thread while function-hook callbacks for the same mod ran
-  on the game thread, with nothing keeping the two apart. Every bridge
+- Fix a race that could corrupt a mod's Lua state when input callbacks and
+  function-hook callbacks for the same mod ran at the same time. Every bridge
   callback now runs on one thread.
-- With UE4SS's engine-tick detour (the default), input, delivery-fault, trace
-  and `onLoopStart` callbacks run on the game thread, once per frame from the
-  engine tick, in the same frame as the input and after the frame's hook
-  events. Callbacks may touch UObjects directly; `ExecuteInGameThread`
-  wrappers keep working, one frame later. Without the detour every callback,
-  hooks included, runs from the event loop as before.
-- `onLoopStart` callbacks still wait until the whole Lua-mod batch has
-  started; with the engine tick they arrive on the next frame after that.
+- Input, delivery-fault, trace and `onLoopStart` callbacks run on the game
+  thread once per frame, in the same frame as the input and after the frame's
+  hook events. Callbacks may touch UObjects directly; `ExecuteInGameThread`
+  wrappers keep working, one frame later. With UE4SS's engine-tick hook turned
+  off every callback, hooks included, runs off the game thread as before.
+- `onLoopStart` callbacks still wait until every Lua mod has loaded; they now
+  arrive on the next frame after that.
 - Breaking: `GetCapabilities().hooks_frame_delivery` is replaced by
   `frame_delivery`, which covers every callback. `GetDispatchStats()` adds
   `delivery = "tick"|"loop"`.
 - `UE4SSLEB_MAX_DISPATCH_US` defaults to 500 microseconds instead of 2,000,
-  since the input pass now runs every frame. `UE4SSLEB_QUEUE_CHECKS_PER_SECOND`
-  applies only without the engine tick.
+  since input is now delivered every frame. `UE4SSLEB_QUEUE_CHECKS_PER_SECOND`
+  applies only with UE4SS's engine-tick hook turned off.
 - Fix `BindAction` and `SubscribeEnhancedInput` refusing an InputAction asset
-  that nothing had weakly referenced yet ("InputAction weak-reference
-  initialization failed"). Unreal assigns that reference lazily; the bridge
-  now asks Unreal to assign it and retries once.
+  the game had not used yet ("InputAction weak-reference initialization
+  failed").
 - `BindAction` and `SubscribeEnhancedInput` also accept a live `UInputAction`
-  wrapper in place of its path; it binds by address and skips the lookup.
-- With the engine tick, the bridge DLL stays loaded until the game exits:
-  UE4SS cannot unregister the tick callback. Restarting the C++ mods then
+  wrapper in place of its path, which skips the lookup.
+- The bridge stays loaded until the game exits, so restarting UE4SS's C++ mods
   needs a game restart, as it already did once a hook had been used.
 
 ## v1.2.2
 
 ### Changes
 
-- Fix a slowdown in 1.2.1: its lookup was UE4SS's name-matching walk, not the
-  engine's hashed one, and made each `BindAction` about ten times slower
-  (around 440 ms in a loaded level). Lookups now walk the objects of one class
-  once (`FindAllOf`, as 1.2.0 did) and keep every object found, indexed by
-  path. Further `OpenInputComponent` and `BindAction` calls for any of those
-  paths need no walk while the object stays alive; a path that is not found
-  walks again. Error messages are those of 1.2.0, and paths are no longer
-  required to start with `/`.
+- Fix a slowdown in 1.2.1 that made each `BindAction` about ten times slower
+  (around 440 ms in a loaded level). Repeated `OpenInputComponent` and
+  `BindAction` calls for objects already found are now fast. Error messages
+  are those of 1.2.0, and paths are no longer required to start with `/`.
 
 ## v1.2.1
 
 ### Changes
 
-- `OpenInputComponent` and `BindAction` look objects up by path in the engine's
-  name hash instead of scanning every loaded object. Each call took about one
-  full object scan (around 45 ms in a loaded level); it now takes microseconds.
-  Paths, results and error messages are unchanged, and a path that is not a
-  full object path (starting with `/`) is reported as not found.
+- `OpenInputComponent` and `BindAction` are faster: each call took around
+  45 ms in a loaded level. A path that is not a full object path (starting
+  with `/`) is reported as not found.
 
 ## v1.2.0
 
 ### Changes
 
 - Hook events carry the frame and time of the call itself. `call.frame` is the
-  game's frame counter when the call was captured and `call.clock` is
-  `os.clock()` at that moment. Before, Lua saw only delivery time, so events
-  compared against in-game stamps looked a frame or more late.
+  game's frame counter when the call was made and `call.clock` is
+  `os.clock()` at that moment, so events can be compared against in-game
+  stamps.
 
 ## v1.1.0
-
-Minor, not patch: this release adds a public API (`UE4SSLuaEventBridge.Hooks`),
-capability fields, a setting and a new native mechanism that patches engine data
-when used. Patch releases (1.0.x) did not change what the bridge can do to the
-game; this one does, so the version says so. Consumers that never call
-`Hooks.Hook` see no change: nothing is read or written until the first call.
 
 ### Changes
 
 - Add function hooks. `Hooks.Hook(target, options)` hooks one Blueprint or
-  native `UFunction`, pre and post, by path or wrapper. Parameters are copied
-  at call time by a schema built when the hook attaches; filters by object,
-  object name set and outer class run before any copying. Events go to a queue
-  of their own with per-hook limits, and are delivered to Lua once per frame on
-  the game thread from an engine-tick callback (falling back to the event loop
-  when the engine-tick detour is off). Observation only: no parameter edits,
-  no blocking, and `delivery = "sync"` is refused.
-- Hooks install no process-wide detour. A Blueprint function gets two
-  single-byte writes in its bytecode through two claimed opcode slots; a native
-  function gets its `Func` pointer swapped. Both are reversed on unhook, on
-  Lua stop and on hot reload.
+  native `UFunction`, pre and post, by path or wrapper, with copies of the
+  parameters. Filters by object, object name set and outer class. Events are
+  delivered to Lua once per frame on the game thread, with per-hook limits.
+  Observation only: no parameter edits, no blocking, and `delivery = "sync"`
+  is refused.
+- Hooks need no process-wide UE4SS hook, and are removed on unhook and when
+  the Lua state stops.
 - A hook on a class that is not loaded yet stays pending and attaches when the
-  class object appears; a hook whose function is deleted returns to pending
-  (level or class reload).
+  class loads; a hook whose function is deleted (level or class reload)
+  returns to pending.
 - Add capabilities `hooks`, `hooks_reason`, `hooks_bp`, `hooks_native`,
   `hooks_sync` and `hooks_frame_delivery`; API number 7.
 - Add a ModCore Settings toggle, **Enable function hooks** (default on).
 - Mods that moved their Blueprint hooks to this API can set
   `HookProcessInternal = 0` in `UE4SS-settings.ini`.
-- Extend the startup layout probe to the class, name and outer fields that
-  filters and pending hooks read. Hooks stay off if it fails.
+- Hooks stay off when the bridge can't confirm this game build's object
+  layout at startup.
 - Add function-hook checks to the load-time verifications.
 - New environment variables `UE4SSLEB_MAX_QUEUED_HOOK_EVENTS`,
   `UE4SSLEB_MAX_HOOK_EVENTS_PER_PASS`, `UE4SSLEB_MAX_HOOK_DISPATCH_US` and
-  `UE4SSLEB_HOOK_CHECKS_PER_SECOND` (fallback drain only).
+  `UE4SSLEB_HOOK_CHECKS_PER_SECOND` (only with UE4SS's engine-tick hook turned
+  off).
 
 ### Limits
 
@@ -146,45 +126,34 @@ game; this one does, so the version says so. Consumers that never call
 - A native function called from Blueprint bytecode is reported without
   parameters (`params_available = false`) and, after the call, with its return
   value only.
-- Parameter kinds without a copier (arrays, maps, sets, delegates, interfaces,
-  soft, weak and lazy pointers, text) are delivered as `nil`.
+- Arrays, maps, sets, delegates, interfaces, soft, weak and lazy pointers, and
+  text parameters are delivered as `nil`.
 
 ## v1.0.13
 
 ### Changes
 
-- Write non-ASCII text in UE4SS.log lines correctly. Mod and path names were
-  copied byte by byte into the log and came out garbled.
-- Ship `mod.json`, with its version filled in at build time, and
-  `mod_settings.ini` in the package. ModCore Settings now shows the bridge's
-  name, category and version instead of guessing them.
-- Add load-time verifications: in-game checks of this API, shipped as
-  `Scripts/main.lua` with the shared `Scripts/lex_verify.lua` harness, and a
-  ModCore Settings toggle, **Enable load-time verifications**, that turns them
-  on (off by default). Results go to UE4SS.log.
-- Build from the UE4SSLuaEXtensions repository, which also holds
-  UE4SSLuaFileBridge. The Lua global, the mod folder, the DLL names and the API
-  are unchanged.
+- Write non-ASCII text in UE4SS.log lines correctly. Mod and path names came
+  out garbled.
+- ModCore Settings now shows the bridge's name, category and version.
+- Add load-time verifications: in-game checks of this API, turned on by the
+  **Enable load-time verifications** toggle in ModCore Settings (off by
+  default). Results go to UE4SS.log.
 
 ## v1.0.12
 
 ### Changes
 
-- Capture live objects that were never weakly referenced. Unreal assigns their
-  object-item serial lazily, so `lifetimes.captureObject` and `lifetimes.weak`
-  rejected freshly created widgets as not live. They now initialize the serial
-  through `KismetSystemLibrary` and validate once more, as generated
-  InputActions already did.
+- `lifetimes.captureObject` and `lifetimes.weak` accept freshly created
+  objects, such as new widgets, which they rejected as not live.
 
 ## v1.0.11
 
 ### Changes
 
-- Probe the UObject layout by walking the start of the object array by index
-  instead of looking up `Class` objects by name. On Dawnwalker the name lookup
-  returned nothing at initialization, so the probe checked no objects and
-  disabled lifetimes for the process.
-- Report a probe that found no live objects separately from a layout mismatch.
+- Fix object lifetimes being unavailable on Dawnwalker.
+- `object_lifetimes_reason` tells a startup check that found no live objects
+  apart from a layout mismatch.
 
 ## v1.0.10
 
@@ -194,171 +163,136 @@ game; this one does, so the version says so. Consumers that never call
   numbered ModCore folders so the bridge sorts before the mods that use it.
   Rename an existing `_ModCore_UE4SSLuaEventBridge` folder and its `mods.txt`
   entry when upgrading.
-- Remove the boot-time retirement of a legacy `UE4SSLuaEventBridge` folder.
-- Probe the UObject layout once, at Unreal initialization, instead of retrying
-  from the game thread. A failed probe is a layout mismatch that a retry would
-  not change, and a successful retry registered object-array listeners
-  mid-game, where the engine's loading threads may be using them.
+- The bridge no longer disables a legacy `UE4SSLuaEventBridge` folder at
+  startup.
+- Object lifetimes are checked once, at startup.
 
 ## v1.0.9
 
 ### Changes
 
-- Root helper mapping contexts at construction so a game that clears its
-  mappings cannot get them collected, and reuse emptied contexts instead of
-  rooting new ones.
-- Hold the helper subsystem through a weak handle, so a freed subsystem is never
-  dereferenced.
+- Helper mapping contexts survive a game that clears its mappings.
 - Add `input:Refresh()` to re-apply a scope's contexts after the game clears its
   mappings.
 - Write failed input callbacks, which disable their binding, to UE4SS.log.
-- Generate the embedded Lua API chunks from the file's size, so the API can
-  grow without build changes.
-- Run every Python test module in CI.
 
 ## v1.0.8
 
 ### Changes
 
 - Add `lifetimes.weak(object)` handles. `get()` returns the wrapper only while
-  its native lifetime is valid, so a wrapper kept past garbage collection is
-  never dereferenced; off the game thread it fails without forgetting the
-  object. Advertised as `weak_handles`.
+  its object is alive, so a wrapper kept past garbage collection is never
+  read; off the game thread it fails without forgetting the object.
+  Advertised as `weak_handles`.
 - Make loss reporting opt-in per session through `lifetimes.reportLosses()` or
   the first `takeLost()` call. Sessions that never drain losses can no longer
   overflow the loss queue and fault their validations. Advertised as
   `loss_opt_in`.
-- Retry a failed UObject layout probe from the game thread, at most once per
-  second and ten times in all, instead of disabling lifetimes for the process.
 - Report why lifetimes are unavailable in
   `GetCapabilities().object_lifetimes_reason`.
-- Index lifetime observations by object address and index, with an empty-set
-  fast path, so object-array listeners stay cheap as observations grow.
-- Reference-count lifetime observations. `lifetimes.release(token)` and weak
-  handle `release()` or collection end an observation without a reported loss
-  once no capture holds it.
-- Fall back in the bootstrap to the next compatible implementation, newest
-  first, when automatic selection's choice fails to load, fails its ABI check,
-  or does not start. Exact pins still never fall back.
-- Write bootstrap selection decisions and failures to UE4SS.log, resolving
-  UE4SS's output at runtime without a link-time dependency.
-- Write native diagnostics to UE4SS.log as well as the debugger: probe outcome,
-  legacy-folder migration, Lua-stop cleanup, loop-start and delivery-fault
-  handler failures.
+- `lifetimes.release(token)` and weak handle `release()` or collection end an
+  observation without a reported loss once no capture holds it.
+- Write the bridge's startup outcome, Lua-stop cleanup, and loop-start and
+  delivery-fault handler failures to UE4SS.log.
 
 API compatibility is version 6. Losses that occur before a session opts in are
 not reported; call `reportLosses()` at startup to receive all of them.
 
 ## v1.0.7
 
-- Consolidate API, lifecycle, diagnostics, and build documentation.
-- Correct queue-statistics documentation and include current capability fields.
-- Extract version-specific release notes from the changelog.
-- Add project metadata.
-- Add per-session one-shot loop-start callbacks delivered before the input queue
-  rate gate.
-- Add session-isolated, non-owning UObject lifetime tokens with native
-  create/delete invalidation, bounded loss queues, and fail-closed overflow.
-- Gate UObject lifetime support behind a one-time runtime layout probe; failed
-  address/index/slot/serial validation disables the capability and listeners.
-- Embed verifiable Windows file and product version metadata in the DLL and
-  reject packaging when it differs from the source release version.
+- Add per-session one-shot loop-start callbacks (`onLoopStart`).
+- Add session-isolated UObject lifetime tokens that become invalid when their
+  object is destroyed, with bounded loss queues.
+- Object lifetimes are available only when the bridge confirms this game
+  build's object layout at startup.
 - Rename the packaged mod folder to `_ModCore_UE4SSLuaEventBridge`; existing
   `_UE4SSLuaEventBridge` installs must rename the folder and `mods.txt` entry.
-- Split the native code into an independent bootstrap `main.dll` and a
-  versioned bridge implementation selected by `dlls/main.json`.
-- Add exact and automatic implementation selection with filename, version,
-  private-ABI, UE4SS-build, and Unreal-target validation before activation.
-- Keep the selected implementation and process-wide claim resident when native
-  bindings prevent safe unload, blocking activation of a second version.
+- Only one version of the bridge can be active at a time.
 
 API compatibility is version 5. The lifecycle APIs are additive and advertised
 through `GetCapabilities()`.
 
-Changes and compatibility notes for each version.
-
 ## v1.0.1
 
-This update installs the bridge under `_UE4SSLuaEventBridge` so UE4SS loads it
-before ordinary consumer mods. The Lua and native API names remain unchanged.
-
-On boot, the bridge detects a sibling legacy `UE4SSLuaEventBridge` folder. If
-that folder has no `deprecated.txt`, the bridge removes its `enabled.txt` marker
-and writes `deprecated.txt` containing `_UE4SSLuaEventBridge`.
-Existing deprecation markers are left unchanged, so the migration is idempotent.
+The bridge installs under `_UE4SSLuaEventBridge` so UE4SS loads it before the
+mods that use it. The Lua API names are unchanged. A legacy
+`UE4SSLuaEventBridge` folder next to it is disabled at startup.
 
 ## v1.0.0
 
-UE4SSLuaEventBridge provides a native Enhanced Input event boundary for UE4SS Lua mods. Unreal recognizes action phases and Tap/Hold triggers, while Lua receives copied event data outside the native input-dispatch stack.
+UE4SSLuaEventBridge delivers Enhanced Input events to UE4SS Lua mods. Unreal
+recognizes action phases and Tap/Hold triggers; Lua receives copies of the
+event data after Unreal's input handling.
 
 ### Reliability and lifecycle
 
-- Add target-scoped delivery-fault handling for queue rejection, allocation failure, and Lua callback failure. Faulted targets stop delivery and notify the consumer once so held state can fail closed.
-- Strengthen subscription teardown, stopped-session isolation, component-destruction handling, late-callback suppression, cleanup retry ownership, and repeated Lua reload behavior.
-- Add native lifecycle tests, simulated engine-boundary integration tests, and AddressSanitizer coverage for concurrent shutdown and queue ownership.
-- Retain the DLL conservatively if Unreal may still own a cloned native binding, preventing calls through an unloaded vtable.
+- Add target-scoped delivery-fault handling for queue rejection, allocation
+  failure and Lua callback failure. Faulted targets stop delivery and notify
+  the consumer once so held state can be reset.
+- More reliable cleanup when subscriptions end, sessions stop, components are
+  destroyed and Lua mods reload.
 
 ### Bounded delivery
 
-- Bound the producer event queue and diagnostic trace queue, expose dispatch statistics, and reject overload explicitly instead of allowing silent unbounded growth.
-- Preserve FIFO order across budgeted dispatch passes. Defaults allow 256 live callback attempts or 2 ms of dispatch work per eligible pass.
-- Keep native input delegates Lua-free and retain the configurable 20 Hz queue-dispatch schedule.
+- Bound the event and trace queues, expose dispatch statistics, and reject
+  overload explicitly instead of growing without limit.
+- Events keep their order across dispatch passes. Defaults allow 256 callbacks
+  or 2 ms of dispatch work per pass, 20 passes per second.
 
 ### Packaging
 
-- Unify runtime, build, archive, and release metadata around one product version.
-- Add package manifests and checksums for verifying release contents.
-- Preserve installed settings and user-controlled enablement during deployment.
+- Release ZIPs come with checksums.
+- Installed settings and enablement are kept on update.
 
-API compatibility remains version 4. This build targets Windows x64, Unreal Engine 5.5, and UE4SS commit `97b7e501`.
+API compatibility remains version 4. This build targets Windows x64, Unreal
+Engine 5.5, and UE4SS commit `97b7e501`.
 
-Helper scopes must still be closed explicitly on the Unreal game thread before Lua shutdown. An off-thread Lua stop deactivates native callbacks safely but cannot remove helper-created mapping contexts after the Lua state is destroyed. Primitive `BindAction` consumers that own their actions and contexts are unaffected by this helper limitation.
+Helper scopes must still be closed explicitly on the Unreal game thread before
+Lua shutdown. An off-thread Lua stop deactivates callbacks but cannot remove
+helper-created mapping contexts. Primitive `BindAction` consumers that own
+their actions and contexts are unaffected.
 
 ## v0.3.4-rc.3
 
-- Add eight offline lifecycle integration cases, including 100 fresh Lua sessions, late callbacks, cleanup retries, partial removal failures, and simulated component/subsystem destruction.
-- Preserve user-controlled enablement, including an absent enabled.txt on fresh installations.
+- Keep the user's enablement, including an absent enabled.txt on fresh
+  installations.
 
-API compatibility remains 4. The native input implementation is unchanged apart from the product version. The archive includes enabled.txt; existing installation enablement remains user-controlled.
-
-The lifecycle tests exercise the production Lua helper against simulated engine/native boundaries. They do not establish Unreal garbage-collection safety, native shutdown race safety, or resolve off-thread generated-context cleanup. No new gameplay acceptance or performance claim is made.
+API compatibility remains 4.
 
 ## v0.3.4-rc.2
 
 ### Changes
 
-- Scheduled event dispatch defaults to 20 passes per second, with configurable rate, event-count and time budgets. Pending events retain FIFO order across passes.
-- Bounded event and trace queues with explicit overflow rejection reporting and on-demand `GetDispatchStats()` counters. Defaults allow 256 events or 2 ms per pass and 65,536 queued producer events; slow callbacks cannot be preempted.
-- On-demand binding snapshots, stronger binding identity checks, and improved lifecycle regression coverage.
-- Consistent product/version metadata, package contents, and checksums.
+- Event dispatch defaults to 20 passes per second, with configurable rate,
+  event-count and time budgets. Pending events keep their order across passes.
+- Bounded event and trace queues with explicit overflow rejection and
+  on-demand `GetDispatchStats()` counters. Defaults allow 256 events or 2 ms
+  per pass and 65,536 queued events; slow callbacks cannot be preempted.
+- On-demand binding snapshots.
 
-### Compatibility and validation
+### Compatibility
 
-Windows x64, Unreal Engine 5.5 and UE4SS commit `97b7e501` only. API version remains 4.
-
-Automated native, Lua, and packaging checks accompany this release. No host-game acceptance run was performed, and no performance advantage is established.
+Windows x64, Unreal Engine 5.5 and UE4SS commit `97b7e501` only. API version
+remains 4.
 
 ### Known limitation
 
-When a Lua mod stops off the game thread, its callbacks are deactivated but helper-generated mapping contexts can remain installed. Close helper input scopes on the game thread before stopping/reloading the owning Lua mod where possible. Automatic off-thread context removal remains unresolved; this prerelease does not claim to fix it.
-
-The ZIP contains only `UE4SSLuaEventBridge/enabled.txt` and `UE4SSLuaEventBridge/dlls/main.dll`. Its SHA-256 checksum and source-commit/file-hash manifest are separate release assets.
+When a Lua mod stops off the game thread, its callbacks are deactivated but
+helper-generated mapping contexts can remain installed. Close helper input
+scopes on the game thread before stopping the owning Lua mod.
 
 ## v0.3.3
 
-### Changes since v0.3.2
+### Changes
 
-- Added descriptive primitive failure returns while preserving the existing
-  successful return values and `UnbindAll` completion flag.
-- Added opt-in per-`OpenInput` debug tracing for generated Enhanced Input
-  phases, native delegate entry, queue decisions, dequeue, and Lua callback
-  completion or failure.
-- Added stable helper scope/binding IDs, atomic event sequences, OS thread IDs,
-  game-thread state, and rejection reasons to trace lines.
+- Primitive calls return descriptive failure reasons, with the existing
+  successful return values and `UnbindAll` completion flag kept.
+- Opt-in per-`OpenInput` debug tracing of each input event from Unreal to the
+  Lua callback.
+- Trace lines carry stable helper scope and binding IDs, event sequences, OS
+  thread IDs, game-thread state and rejection reasons.
 - Added `sequence` to primitive callback payloads and `scope_id`/`binding_id`
   to helper callback payloads.
-- Delayed mapping-context activation until native subscriptions are ready and
-  made debug observer cleanup part of the logical helper binding lifecycle.
 - Raised the capability API to 4 and extended `GetCapabilities()` with
   `detailed_errors` and `debug_tracing`.
 
@@ -369,27 +303,21 @@ The ZIP contains only `UE4SSLuaEventBridge/enabled.txt` and `UE4SSLuaEventBridge
 - Windows x64
 
 Debug tracing is disabled by default. It covers the generated Enhanced Input
-action through native-to-Lua delivery; raw physical-key detection remains the
-responsibility of the consuming mod. Use `event_seq` to correlate every trace
-stage produced for one native action event.
+action up to the Lua callback; detecting raw physical keys remains the job of
+the consuming mod. Use `event_seq` to correlate every trace line for one
+action event.
 
 ## v0.3.2
 
-### Changes since v0.2.10
+### Changes
 
-- Hardened ABI validation, callback dispatch, teardown, native-binding ownership,
-  and DLL lifetime behavior.
 - Added `Helpers.OpenInput`, direct key binding with Enhanced Input Tap/Hold
   triggers, developer documentation, and a complete F10 sample mod.
-- Rejected helper mutations outside the Unreal game thread.
-- Synchronized Lua session aliases and retained inert stopped-session storage
-  while queued or in-flight work may still reference it.
-- Removed the unused generic event-registry scaffold from the source tree.
+- Helper changes outside the Unreal game thread are refused.
+- More reliable callback delivery and cleanup.
 
 ### Compatibility
 
 - UE4SS 3.0.1 Beta #0, commit `97b7e501`
 - Unreal Engine 5.5
 - Windows x64
-
-The release contains the installable mod ZIP and its SHA-256 checksum.

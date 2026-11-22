@@ -11,12 +11,11 @@
   the ModCore Settings menu or `SetLevel`, applied while the game runs. The
   menu lists every registered module and its categories, each with Inherit or
   a level; `ListLoggers()` returns the same list with effective levels.
-  config.ini is never polled: it is re-read when ModCore Settings applies the
-  Logs page or reloads config, and on `ReloadSettings()`.
+  Edits to config.ini apply when ModCore Settings applies the Logs page or
+  reloads config, and on `ReloadSettings()`.
 - Targets: UE4SS.log, or `<mod folder>/logs/<category>.log` with the previous
   session kept as `<category>.prev.log`.
-- Delivery immediate, once per frame or periodic, always on the bridge's own
-  thread.
-- A memory-mapped journal keeps every logged line through a crash; the next
+- Delivery immediate, once per frame or periodic, without holding up the game.
+- Every logged line survives a crash; the next
   start writes the previous session's lines to `logs/previous-session.log` and
   completes undelivered module files.

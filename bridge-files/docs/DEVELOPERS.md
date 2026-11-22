@@ -32,15 +32,14 @@ starts. Everything a mod creates through it (environments, streams,
 subscriptions) belongs to that mod's Lua environment and is closed when it
 stops.
 
-File operations are synchronous. They run on the calling thread and don't need
-the game thread: call them from the mod's main chunk, `LoopAsync`,
-`ExecuteInGameThread` or a hook callback. The bridge never calls into Unreal.
+File operations are synchronous and don't need the game thread: call them from
+the mod's main chunk, a loop or delayed callback, code run on the game thread
+or a hook callback. The bridge never calls into Unreal.
 Large reads and writes on the game thread stall the frame, so keep them small
 there.
 
 Operations are not available inside coroutines that the mod creates itself
-(`coroutine.create`, `coroutine.wrap`). UE4SS refuses native calls from a Lua
-thread it didn't register, so every operation returns `nil, "invalid",
+(`coroutine.create`, `coroutine.wrap`). Every operation returns `nil, "invalid",
 message` there. Do the file work outside the coroutine and pass results in.
 
 The bridge is a seatbelt, not a lock. Every UE4SS Lua mod already has the full
@@ -219,7 +218,7 @@ end
 - Operations that couldn't keep a backup are refused with `invalid`: a
   non-atomic `WriteText`, and `Open` that truncates an existing file.
 - **`busy`** means another process holds the file. The bridge returns it at once
-  instead of waiting; retry later, for example from a `LoopAsync` callback.
+  instead of waiting; retry later, for example from a delayed callback.
 
 ## File sockets: Open and Tail
 
@@ -251,11 +250,10 @@ local subscription = assert(files.Tail(inbox, function(line, info)
 end, { from = "start" }))
 ```
 
-- With UE4SS's engine-tick detour (the normal case) the callback runs on the
-  **game thread**, from the bridge's engine-tick callback, once per frame, the
-  same thread as every UE4SSLuaEventBridge callback. Without the detour
-  (`HookEngineTick = 0`) it runs from the bridge's update callback, not on the
-  game thread; schedule Unreal work with `ExecuteInGameThread` there. UE4SS.log
+- Normally the callback runs on the **game thread**, once per frame, like
+  every UE4SSLuaEventBridge callback. With UE4SS's engine-tick hook turned off
+  (`HookEngineTick = 0`) it runs off the game thread; schedule Unreal work
+  with `ExecuteInGameThread` there. UE4SS.log
   says which one at startup.
 - Delivery is budgeted per pass and usually arrives within a frame or so of
   the writer's write. The file is the buffer: a slow reader falls behind but
@@ -389,14 +387,11 @@ defaults:
 At least one line is delivered per pass that has data, and a slow callback can
 still exceed the time allowance; the budget isn't preemptive.
 
-With the engine tick the delivery budget applies to every frame, so it costs
-frame time.
+The delivery budget applies to every frame, so it costs frame time.
 
-Files are read from UE4SS's update thread, not the game thread, and the reads
-are capped too, so polling many busy files can't stall it. Each polling pass
-(20 per second by default) reads at most 256 KiB in
-total across all subscriptions and at most 64 KiB from any one file, visiting
-subscriptions round-robin so one busy file can't starve the rest. These are
+File reads are capped too. Each pass (20 per second by default) reads at most
+256 KiB in total across all subscriptions and at most 64 KiB from any one
+file, with subscriptions taking turns so one busy file can't starve the rest. These are
 tuning values, not capacity limits: nothing fails when they are reached, and
 the rest is read on later passes. They do bound throughput, to roughly 5 MiB/s
 in total and 1.25 MiB/s per file. A file socket is for messages, not bulk

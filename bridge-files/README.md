@@ -22,7 +22,7 @@ still use the standard library to write anywhere the user can.
 ## Compatibility
 
 Windows x64, Unreal Engine 5.5, and UE4SS 3.0.1 Beta #0 at commit `97b7e501`,
-the same pin as UE4SSLuaEventBridge. Native layouts are ABI-pinned; nearby
+the same pin as UE4SSLuaEventBridge. Nearby
 UE4SS builds are not assumed compatible. Check `GetCapabilities()` for API
 features rather than inferring them from the product version.
 
@@ -45,17 +45,10 @@ Mods/
     └── mod.json
 ```
 
-`main.dll` is a small bootstrap. It reads `dlls/main.json`, validates the
-selected implementation's embedded product, version, private ABI, UE4SS commit
-and Unreal target, then loads it from `dlls/versions`. A missing configuration
-or `"version": "auto"` selects the highest compatible discovered version. A
-malformed configuration or unavailable exact version fails closed. `mod.json`
-describes the module to ModCoreSettings.
-
 Use the published SHA-256 checksum to verify the exact archive bytes.
 
 The packaged `enabled.txt` marker enables the bridge, so it loads without any
-`mods.txt` entry. It is a native DLL mod, which UE4SS loads before Lua mods, and
+`mods.txt` entry, and
 its `0_` folder name sorts ahead of the mods that use it.
 
 Keep only one active installation of the file bridge.
@@ -76,9 +69,9 @@ local text = files.ReadText("mod/state.json")
 local saves = files.AddPath("savegames", { mode = "rw", extensions = { "sav" } })
 ```
 
-File operations don't need the game thread. `Tail` callbacks run on the game
-thread from the engine tick (or, without UE4SS's engine-tick detour, from the
-bridge's update callback, not on the game thread). The examples are untested in
+File operations work from any Lua code UE4SS runs. `Tail` callbacks run on the
+game thread once per frame (or, with UE4SS's engine-tick hook turned off, off
+the game thread). The examples are untested in
 the game until the first in-game acceptance run.
 
 ## Documentation

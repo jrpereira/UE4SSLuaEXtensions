@@ -11,9 +11,9 @@ bridge is installed; without the bridge the global is `nil`.
   and its wording isn't part of the API.
 - Environment functions accept both `sounds.Load(...)` and `sounds:Load(...)`.
   Sound methods need a colon: `cue:Play()`.
-- Calls work from every Lua thread UE4SS runs (game thread, hooks,
-  `LoopAsync`). UE4SS refuses native calls from a coroutine the mod created;
-  those calls fail with `invalid`.
+- Calls work from any Lua code UE4SS runs, hooks and delayed or looping
+  callbacks included. Calls from a coroutine the mod created fail with
+  `invalid`.
 
 ### Error codes
 
@@ -147,8 +147,8 @@ collection; when its Lua state stops, all its sounds are released.
 
 ### `sound:Play(options?)`, `sounds.Play(sound, options?)`
 
-Starts one play and returns its id, an integer. It returns at once: no file
-access, no decoding, no wait on the audio engine. Plays of the same sound are
+Starts one play and returns its id, an integer. It returns at once, without
+reading the file again. Plays of the same sound are
 independent and may overlap.
 
 `options`:
@@ -163,13 +163,12 @@ independent and may overlap.
 Values outside their range are clamped. A non-number, NaN or unknown option is
 `invalid`.
 
-- **Pan.** A mono sound pans with a constant-power law: full left is the sound
-  at full level in the left channel only; centre is about 0.71 in each, so the
-  loudness stays even across the field. A stereo sound pans as balance: centre
+- **Pan.** A mono sound keeps an even loudness across the field: full left
+  plays it at full level in the left channel only. A stereo sound pans as balance: centre
   plays both channels as recorded and the far side fades out. On surround
   output only the front pair is used.
-- **Low-pass.** The filter's top is a sixth of the output rate (8 kHz at
-  48 kHz); a cutoff at or above it plays unfiltered.
+- **Low-pass.** Cutoffs from about 8 kHz up (on 48 kHz output) play
+  unfiltered.
 
 When all 32 voices are busy, a new play takes over the oldest one. Without an
 output device, plays are dropped; `Play` still returns an id and `GetStats()`
